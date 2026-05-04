@@ -1,0 +1,1 @@
+module(name = "simple_bazel", version = "1.0.0")

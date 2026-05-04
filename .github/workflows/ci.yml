@@ -23,6 +23,48 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
 
+    # Maven is provided by setup-java when distribution=temurin? No — setup-java only installs
+    # the JDK. We rely on the Maven Wrapper (./mvnw) for the Tycho build, but new fixture
+    # tests will invoke `mvn` directly against fixture poms. Install it explicitly so all
+    # three OS runners have Maven on PATH.
+    - name: Install Maven (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get update && sudo apt-get install -y maven
+
+    - name: Install Maven (macOS)
+      if: matrix.os == 'macos-latest'
+      run: brew install maven
+
+    - name: Install Maven (Windows)
+      if: matrix.os == 'windows-latest'
+      run: choco install maven --no-progress
+
+    # Bazel via bazelisk — installs the Bazel version pinned in fixtures via .bazelversion files.
+    - name: Install bazelisk
+      uses: bazel-contrib/setup-bazel@0.8.5
+      with:
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
+    - name: Cache Maven local repository
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml', '**/test-resources/sample-projects/**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-m2-
+
+    - name: Cache Gradle caches
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/test-resources/sample-projects/**/*.gradle*', '**/test-resources/sample-projects/**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
     - name: Build and Test
       run: ./mvnw clean verify
 

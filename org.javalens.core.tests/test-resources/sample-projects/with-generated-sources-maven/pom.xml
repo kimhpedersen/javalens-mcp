@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>with-generated-sources-maven</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>With Generated Sources (Maven)</name>
+    <description>Fixture for Bug B (Maven side): generated-source directories under
+        target/generated-sources/ must be added to the analysis classpath as source folders.
+        The Generated.java referenced from Manual.java is created at test setup time
+        (target/ is gitignored) so the test exercises the discovery logic.</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+</project>

@@ -100,6 +100,25 @@ public class TestProjectHelper implements BeforeEachCallback, AfterEachCallback 
     }
 
     /**
+     * Load a test project fixture and return a structured result containing the service,
+     * a {@link ClasspathSnapshot} captured immediately after load, and any warnings surfaced
+     * during the load (empty until PR-4 wires {@code LoadWarning} through {@code loadProject}).
+     *
+     * <p>Tests should prefer this method over {@link #loadProject(String)} when they need to
+     * make structured assertions about classpath shape and content.
+     *
+     * @param fixtureName Name of the fixture project (e.g., "simple-maven")
+     * @return Structured load result
+     * @throws CoreException if project loading fails
+     * @throws org.eclipse.jdt.core.JavaModelException if classpath capture fails
+     */
+    public LoadedFixture loadFixture(String fixtureName) throws CoreException {
+        JdtServiceImpl service = loadProject(fixtureName);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+        return new LoadedFixture(service, snapshot, java.util.List.of());
+    }
+
+    /**
      * Copy a fixture project to a temporary directory.
      * Useful for tests that modify project files.
      *
