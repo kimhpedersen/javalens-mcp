@@ -3,10 +3,12 @@ package org.javalens.core.buildsystem;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.model.LoadWarning;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -65,10 +67,30 @@ class SilentSubprocessFailureTest {
     @Test
     @DisplayName("clean Maven project produces no warnings")
     void cleanProjectProducesNoWarnings() throws Exception {
+        // This assertion only makes sense when mvn can actually run. Without mvn on PATH the
+        // warning system fires (correctly) on every load, including the clean fixture. CI is
+        // expected to install Maven so this gate is a no-op there; locally without mvn the
+        // test skips rather than failing.
+        Assumptions.assumeTrue(isMavenAvailable(),
+            "Maven not available on PATH — skipping clean-project warnings assertion");
+
         JdtServiceImpl service = helper.loadProject("simple-maven");
         List<LoadWarning> warnings = service.getWarnings();
 
         assertTrue(warnings.isEmpty(),
             "Expected no warnings for the clean simple-maven fixture. Got: " + warnings);
+    }
+
+    private static boolean isMavenAvailable() {
+        String command = System.getProperty("os.name").toLowerCase().contains("win")
+            ? "mvn.cmd" : "mvn";
+        try {
+            Process p = new ProcessBuilder(command, "-v").redirectErrorStream(true).start();
+            p.waitFor();
+            return p.exitValue() == 0;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

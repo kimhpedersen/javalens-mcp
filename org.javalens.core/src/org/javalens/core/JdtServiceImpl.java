@@ -5,6 +5,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
@@ -14,6 +15,10 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.ISourceRange;
+import org.eclipse.jdt.core.search.IJavaSearchConstants;
+import org.eclipse.jdt.core.search.SearchEngine;
+import org.eclipse.jdt.core.search.SearchPattern;
+import org.eclipse.jdt.core.search.TypeNameRequestor;
 import org.javalens.core.project.ProjectImporter;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
@@ -111,8 +116,39 @@ public class JdtServiceImpl implements IJdtService {
         // Initialize search service
         this.searchService = new SearchService(javaProject);
 
+        // Bug F fix: force the JDT search index to be ready before loadProject returns.
+        // Without this, callers that issue SearchEngine queries immediately after load can
+        // race the background indexer and see zero results for symbols that do exist.
+        waitForIndexReady();
+
         this.loadedAt = Instant.now();
         log.info("Project loaded successfully at {}", loadedAt);
+    }
+
+    /**
+     * Block until JDT's search index has finished its background work for the loaded project.
+     * Issues a no-op {@code searchAllTypeNames} call with {@code WAIT_UNTIL_READY_TO_SEARCH},
+     * which the JDT contract documents as flushing pending index jobs before the search runs.
+     */
+    private void waitForIndexReady() {
+        try {
+            new SearchEngine().searchAllTypeNames(
+                null, SearchPattern.R_EXACT_MATCH,
+                null, SearchPattern.R_EXACT_MATCH,
+                IJavaSearchConstants.TYPE,
+                SearchEngine.createJavaSearchScope(new IJavaElement[] { javaProject }),
+                new TypeNameRequestor() {
+                    @Override
+                    public void acceptType(int modifiers, char[] packageName, char[] simpleTypeName,
+                                           char[][] enclosingTypeNames, String path) {
+                        // no-op — only here to flush the indexer
+                    }
+                },
+                IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
+                new NullProgressMonitor());
+        } catch (CoreException e) {
+            log.warn("Index readiness wait failed: {}. First searches may race.", e.getMessage());
+        }
     }
 
     @Override
