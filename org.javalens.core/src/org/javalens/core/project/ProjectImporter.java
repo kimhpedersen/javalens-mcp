@@ -113,8 +113,71 @@ public class ProjectImporter {
             new NullProgressMonitor()
         );
 
+        // Bug G fix: apply the project's declared compiler source level. Without this, JDT
+        // falls back to defaults that may be older than the source code, causing legitimate
+        // language features (e.g. Java 21 record patterns) to be reported as syntax errors.
+        applyCompilerOptions(javaProject, projectPath, detectBuildSystem(projectPath));
+
         log.info("Configured Java project with {} classpath entries", entries.size());
         return javaProject;
+    }
+
+    /**
+     * Read the project's declared Java source level from build metadata and apply it to
+     * the {@link IJavaProject}. Sets {@code COMPILER_SOURCE}, {@code COMPILER_COMPLIANCE},
+     * and {@code COMPILER_CODEGEN_TARGET_PLATFORM} so the JDT compiler parses and validates
+     * code at the same level the build system uses.
+     */
+    private void applyCompilerOptions(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
+        String level = switch (buildSystem) {
+            case MAVEN -> detectMavenCompilerLevel(projectPath);
+            // Gradle/Bazel detection is wired up in their respective bug fixes.
+            case GRADLE, BAZEL, UNKNOWN -> null;
+        };
+        if (level == null) {
+            warnings.add(new LoadWarning(
+                LoadWarning.COMPLIANCE_LEVEL_UNKNOWN,
+                "Could not determine Java source level from project metadata; JDT defaults will apply",
+                "Declare maven.compiler.source/release in pom.xml (or sourceCompatibility/toolchain in Gradle) so language-level features parse correctly"));
+            return;
+        }
+        javaProject.setOption(JavaCore.COMPILER_SOURCE, level);
+        javaProject.setOption(JavaCore.COMPILER_COMPLIANCE, level);
+        javaProject.setOption(JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, level);
+        log.info("Applied Java source level {} from build metadata", level);
+    }
+
+    /**
+     * Extract Maven's declared compiler level from {@code <properties>} in pom.xml.
+     * Tries {@code maven.compiler.release} first (the most precise), then
+     * {@code maven.compiler.source}, then {@code maven.compiler.target}.
+     * Returns {@code null} if none are declared.
+     */
+    private String detectMavenCompilerLevel(java.nio.file.Path projectPath) {
+        java.nio.file.Path pom = projectPath.resolve("pom.xml");
+        if (!Files.exists(pom)) return null;
+        try {
+            String content = Files.readString(pom);
+            for (String key : new String[]{"maven.compiler.release", "maven.compiler.source", "maven.compiler.target"}) {
+                String value = extractXmlText(content, key);
+                if (value != null) return value;
+            }
+        } catch (IOException e) {
+            log.debug("Failed to read pom.xml for compiler level: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Extract the trimmed text content of the first occurrence of {@code <tag>...</tag>}.
+     * Returns {@code null} if the tag is absent or empty.
+     */
+    private static String extractXmlText(String xml, String tag) {
+        Pattern p = Pattern.compile("<" + Pattern.quote(tag) + ">\\s*([^<]+?)\\s*</" + Pattern.quote(tag) + ">");
+        Matcher m = p.matcher(xml);
+        if (!m.find()) return null;
+        String value = m.group(1).trim();
+        return value.isEmpty() ? null : value;
     }
 
     /**
