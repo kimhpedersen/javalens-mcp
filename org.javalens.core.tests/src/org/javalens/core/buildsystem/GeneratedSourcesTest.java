@@ -33,7 +33,7 @@ class GeneratedSourcesTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     @Test
-    @DisplayName("target/generated-sources/* directories are added as source folders")
+    @DisplayName("Maven: target/generated-sources/* directories are added as source folders")
     void mavenGeneratedSourcesAddedAsSourceFolder() throws Exception {
         Path projectRoot = helper.copyFixture("with-generated-sources-maven");
 
@@ -52,14 +52,42 @@ class GeneratedSourcesTest {
         service.loadProject(projectRoot);
         ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
-        // The discovered source folders must include the generated dir.
         assertTrue(
             snapshot.sourceFolders().stream().anyMatch(p -> p.toString().replace('\\', '/')
                 .endsWith("target/generated-sources/annotations")),
             "Expected target/generated-sources/annotations among source folders. " +
             "Got: " + snapshot.sourceFolders());
 
-        // And the generated type must resolve through JDT.
+        IType generated = service.findType("com.example.Generated");
+        assertNotNull(generated, "Expected to resolve com.example.Generated through JDT");
+    }
+
+    @Test
+    @DisplayName("Gradle: build/generated/sources/<task>/main/java is added as source folder")
+    void gradleGeneratedSourcesAddedAsSourceFolder() throws Exception {
+        Path projectRoot = helper.copyFixture("with-generated-sources-gradle");
+
+        // Stand in for what `annotationProcessor` would write at build time.
+        Path generatedDir = projectRoot.resolve("build/generated/sources/annotationProcessor/main/java/com/example");
+        Files.createDirectories(generatedDir);
+        Files.writeString(generatedDir.resolve("Generated.java"), """
+            package com.example;
+            public final class Generated {
+                public static final String HELLO = "hello";
+                private Generated() {}
+            }
+            """);
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertTrue(
+            snapshot.sourceFolders().stream().anyMatch(p -> p.toString().replace('\\', '/')
+                .endsWith("build/generated/sources/annotationProcessor/main/java")),
+            "Expected build/generated/sources/annotationProcessor/main/java among source folders. " +
+            "Got: " + snapshot.sourceFolders());
+
         IType generated = service.findType("com.example.Generated");
         assertNotNull(generated, "Expected to resolve com.example.Generated through JDT");
     }
