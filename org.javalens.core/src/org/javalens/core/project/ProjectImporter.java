@@ -162,44 +162,78 @@ public class ProjectImporter {
 
     /**
      * Parse {@code <annotationProcessorPaths>} blocks from {@code maven-compiler-plugin}
-     * configuration and resolve each {@code <path>} to the corresponding jar in the local
-     * Maven repository. Property references in {@code <version>} (e.g. {@code ${lombok.version}})
-     * are resolved against pom {@code <properties>}.
+     * configuration across the whole reactor, resolve each {@code <path>} to the
+     * corresponding jar in the local Maven repository, and union the results.
+     *
+     * <p>In a multi-module project the {@code <annotationProcessorPaths>} block typically
+     * lives in a child module's pom (e.g. only {@code :model} declares Lombok), so reading
+     * just the root pom misses the processors entirely. We walk the reactor: root pom plus
+     * every module's pom, recursively for nested modules. Property references in
+     * {@code <version>} (e.g. {@code ${lombok.version}}) resolve against the pom they
+     * appear in first, then fall back to the parent if undefined.
      */
     private List<java.nio.file.Path> detectMavenAnnotationProcessors(java.nio.file.Path projectPath) {
-        java.nio.file.Path pom = projectPath.resolve("pom.xml");
-        if (!Files.exists(pom)) return List.of();
-
         List<java.nio.file.Path> jars = new ArrayList<>();
+        java.util.LinkedHashSet<java.nio.file.Path> visited = new java.util.LinkedHashSet<>();
+        collectMavenProcessorJarsRecursive(projectPath, null, jars, visited);
+        return jars;
+    }
+
+    private void collectMavenProcessorJarsRecursive(java.nio.file.Path moduleRoot, String parentPomContent,
+            List<java.nio.file.Path> jars, java.util.Set<java.nio.file.Path> visited) {
+        if (!visited.add(moduleRoot)) return;
+
+        java.nio.file.Path pom = moduleRoot.resolve("pom.xml");
+        if (!Files.exists(pom)) return;
+
+        String content;
         try {
-            String content = Files.readString(pom);
-            Matcher block = Pattern.compile(
-                "<annotationProcessorPaths>(.*?)</annotationProcessorPaths>",
-                Pattern.DOTALL).matcher(content);
-            while (block.find()) {
-                String inner = block.group(1);
-                Matcher pathBlock = Pattern.compile("<path>(.*?)</path>", Pattern.DOTALL).matcher(inner);
-                while (pathBlock.find()) {
-                    String pb = pathBlock.group(1);
-                    String group = extractXmlText(pb, "groupId");
-                    String artifact = extractXmlText(pb, "artifactId");
-                    String version = extractXmlText(pb, "version");
-                    if (group != null && artifact != null && version != null) {
-                        version = resolvePomProperty(content, version);
-                        java.nio.file.Path jar = mavenRepoJarPath(group, artifact, version);
-                        if (Files.isRegularFile(jar)) {
-                            jars.add(jar);
-                        } else {
-                            log.warn("Annotation processor jar missing in local repo: {} " +
-                                "(run 'mvn dependency:resolve' to download)", jar);
-                        }
+            content = Files.readString(pom);
+        } catch (IOException e) {
+            log.debug("Failed to read pom.xml at {}: {}", pom, e.getMessage());
+            return;
+        }
+
+        parseProcessorPathsFromPomContent(content, parentPomContent, jars);
+
+        // Recurse into <modules> entries.
+        Matcher matcher = MODULE_PATTERN.matcher(content);
+        while (matcher.find()) {
+            String moduleName = matcher.group(1).trim();
+            java.nio.file.Path childRoot = moduleRoot.resolve(moduleName);
+            if (Files.isDirectory(childRoot)) {
+                collectMavenProcessorJarsRecursive(childRoot, content, jars, visited);
+            }
+        }
+    }
+
+    private void parseProcessorPathsFromPomContent(String content, String parentPomContent, List<java.nio.file.Path> jars) {
+        Matcher block = Pattern.compile(
+            "<annotationProcessorPaths>(.*?)</annotationProcessorPaths>",
+            Pattern.DOTALL).matcher(content);
+        while (block.find()) {
+            String inner = block.group(1);
+            Matcher pathBlock = Pattern.compile("<path>(.*?)</path>", Pattern.DOTALL).matcher(inner);
+            while (pathBlock.find()) {
+                String pb = pathBlock.group(1);
+                String group = extractXmlText(pb, "groupId");
+                String artifact = extractXmlText(pb, "artifactId");
+                String version = extractXmlText(pb, "version");
+                if (group != null && artifact != null && version != null) {
+                    version = resolvePomProperty(content, version);
+                    if (version.startsWith("${") && parentPomContent != null) {
+                        version = resolvePomProperty(parentPomContent, version);
+                    }
+                    java.nio.file.Path jar = mavenRepoJarPath(group, artifact, version);
+                    if (Files.isRegularFile(jar)) {
+                        jars.add(jar);
+                    } else {
+                        log.warn("Annotation processor jar missing in local repo: {} " +
+                            "(run 'mvn dependency:resolve' to download)", jar);
                     }
                 }
             }
-        } catch (IOException e) {
-            log.debug("Failed to parse annotationProcessorPaths from pom: {}", e.getMessage());
         }
-        return jars;
     }
 
     /**
