@@ -371,8 +371,8 @@ JavaLens loads three real build systems plus plain Java directories. Each is exe
 |--------|-----------|:-:|:-:|:-:|:-:|:-:|
 | Maven | `pom.xml` | ✅ | ✅ (reactor classpath aggregation, cross-module navigation) | ✅ (`maven.compiler.release`/`source`/`target`) | ✅ (`target/generated-sources/*`) | ✅ (`<annotationProcessorPaths>` across the whole reactor) |
 | Gradle | `build.gradle` / `build.gradle.kts` | ✅ | ✅ (`settings.gradle include` parsed; per-subproject classpaths unioned) | ✅ (`sourceCompatibility`) | ✅ (`build/generated/sources/<task>/main/java`) | ✅ (`annotationProcessor` configuration) |
-| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ (every `BUILD.bazel` package scanned for sources; `bazel-bin` ↔ `bazel-out` symlink dedup) | ❌ (`javacopts` reading not yet implemented) | n/a | ❌ (`java_plugin` rules not yet wired) |
-| Plain Java | `src/` directory | ✅ | n/a | ❌ | n/a | n/a |
+| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ (every `BUILD.bazel` package scanned for sources; `bazel-bin` ↔ `bazel-out` symlink dedup) | ✅ (`javacopts` `-source`/`-target`/`--release` parsed across `BUILD.bazel` files) | n/a (Bazel actions write into `bazel-bin/`, not `target/generated-sources/`) | ✅ (any classpath jar with `META-INF/services/javax.annotation.processing.Processor` is auto-registered) |
+| Plain Java | `src/` directory | ✅ | n/a | ✅ (falls back to `Runtime.version().feature()` when no build file) | n/a | n/a |
 
 Subprocess invocations of `mvn` / `gradle` happen during project load. If a tool is missing or fails, JavaLens surfaces a structured `LoadWarning` (e.g. `MAVEN_SUBPROCESS_FAILED`, `GRADLE_SUBPROCESS_FAILED`, `COMPLIANCE_LEVEL_UNKNOWN`) in the `load_project` response so callers know analysis quality is degraded rather than silently getting an empty classpath.
 

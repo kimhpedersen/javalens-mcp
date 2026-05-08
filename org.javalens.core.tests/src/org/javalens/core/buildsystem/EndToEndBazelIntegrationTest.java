@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -103,6 +104,14 @@ class EndToEndBazelIntegrationTest {
         assertTrue(snapshot.sourceFolders().stream().anyMatch(p ->
             p.toString().replace('\\', '/').endsWith("web/src/main/java")),
             "Expected web/src/main/java as a source folder. Got: " + snapshot.sourceFolders());
+
+        // === Bug G (Bazel): javacopts source/target/release applied ====================
+        // The fixture declares -source 17 / -target 17 / --release=17 across its targets;
+        // detectBazelCompilerLevel walks every BUILD.bazel and picks the highest level.
+        assertEquals("17", snapshot.compilerSource(),
+            "Expected COMPILER_SOURCE=17 from javacopts in BUILD.bazel files");
+        assertEquals("17", snapshot.compilerCompliance(),
+            "Expected COMPILER_COMPLIANCE=17 from javacopts in BUILD.bazel files");
 
         // === Bug F: search works synchronously after loadProject =======================
         IType user = service.findType("com.example.model.User");

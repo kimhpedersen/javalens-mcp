@@ -55,4 +55,19 @@ class CompilerComplianceTest {
             "Did not expect COMPLIANCE_LEVEL_UNKNOWN when pom declares maven.compiler.source. " +
             "Warnings: " + warnings);
     }
+
+    @Test
+    @DisplayName("plain Java project falls back to runtime JVM major version")
+    void plainJavaFallsBackToRuntimeVersion() throws Exception {
+        // No pom.xml / build.gradle / BUILD.bazel — applyCompilerOptions's fallback uses
+        // Runtime.version().feature() rather than silently inheriting a JDT default.
+        LoadedFixture fixture = helper.loadFixture("plain-java");
+
+        String expected = String.valueOf(Runtime.version().feature());
+        assertEquals(expected, fixture.classpath().compilerSource(),
+            "Expected COMPILER_SOURCE to default to the runtime JVM major version when " +
+            "no build file declares a compliance level");
+        assertEquals(expected, fixture.classpath().compilerCompliance(),
+            "Expected COMPILER_COMPLIANCE to default to the runtime JVM major version");
+    }
 }

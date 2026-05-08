@@ -144,17 +144,35 @@ public class ProjectImporter {
     }
 
     /**
-     * Enable JDT's APT framework on the project and register declared annotation-processor
-     * jars on its factory path. We resolve {@code <annotationProcessorPaths>} entries from
-     * Maven's pom.xml against {@code ~/.m2/repository}; Gradle/Bazel processor wiring lands
-     * with their respective classpath fixes.
+     * Enable JDT's APT framework on the project and register annotation-processor jars on
+     * its factory path. We collect from two complementary sources:
+     *
+     * <ol>
+     *   <li><b>Build-system-specific declarations</b> — {@code <annotationProcessorPaths>}
+     *       (Maven), the {@code annotationProcessor} configuration (Gradle).</li>
+     *   <li><b>Generic classpath scan</b> — any jar on the resolved classpath that contains
+     *       {@code META-INF/services/javax.annotation.processing.Processor} is treated as
+     *       a processor. This catches Bazel projects (where processors come from
+     *       {@code java_plugin} rules) and any system that places a processor jar on the
+     *       compile classpath without a separate processor-path declaration.</li>
+     * </ol>
      */
     private void applyAnnotationProcessing(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
-        List<java.nio.file.Path> processorJars = switch (buildSystem) {
+        java.util.LinkedHashSet<java.nio.file.Path> processorJars = new java.util.LinkedHashSet<>();
+        processorJars.addAll(switch (buildSystem) {
             case MAVEN -> detectMavenAnnotationProcessors(projectPath);
             case GRADLE -> detectGradleAnnotationProcessors(projectPath);
             case BAZEL, UNKNOWN -> List.of();
-        };
+        });
+        // Cross-cutting scan: pick up any jar with a processor SPI descriptor so Bazel +
+        // any classpath that quietly carries a processor (compileOnly, transitive, etc.)
+        // gets APT wired up.
+        for (java.nio.file.Path jar : currentClasspathJars(projectPath, buildSystem)) {
+            if (jarDeclaresAnnotationProcessor(jar)) {
+                processorJars.add(jar);
+            }
+        }
+
         if (processorJars.isEmpty()) return;
 
         try {
@@ -171,6 +189,37 @@ public class ProjectImporter {
             log.info("Enabled APT with {} processor jar(s)", registered);
         } catch (CoreException e) {
             log.warn("Failed to configure APT: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Jars to feed the cross-cutting APT-discovery scan. Maven and Gradle already extract
+     * formal processor declarations from build files; the scan is redundant for them. For
+     * Bazel there is no per-target processor-path declaration we parse, so the only way
+     * APT gets wired for Bazel projects today is by scanning the resolved jars on the
+     * build classpath for the standard SPI descriptor. {@code getBazelDependencies} is a
+     * pure filesystem walk (no subprocess), so calling it again here is cheap.
+     */
+    private List<java.nio.file.Path> currentClasspathJars(java.nio.file.Path projectPath, BuildSystem buildSystem) {
+        if (buildSystem != BuildSystem.BAZEL) return List.of();
+        List<String> raw = getBazelDependencies(projectPath);
+        List<java.nio.file.Path> result = new ArrayList<>(raw.size());
+        for (String s : raw) {
+            java.nio.file.Path p = java.nio.file.Path.of(s);
+            if (Files.isRegularFile(p)) result.add(p);
+        }
+        return result;
+    }
+
+    /**
+     * Returns true iff the jar declares at least one annotation processor via the standard
+     * SPI descriptor at {@code META-INF/services/javax.annotation.processing.Processor}.
+     */
+    private boolean jarDeclaresAnnotationProcessor(java.nio.file.Path jar) {
+        try (java.util.jar.JarFile jf = new java.util.jar.JarFile(jar.toFile())) {
+            return jf.getEntry("META-INF/services/javax.annotation.processing.Processor") != null;
+        } catch (IOException e) {
+            return false;
         }
     }
 
@@ -279,14 +328,16 @@ public class ProjectImporter {
         String level = switch (buildSystem) {
             case MAVEN -> detectMavenCompilerLevel(projectPath);
             case GRADLE -> detectGradleCompilerLevel(projectPath);
-            case BAZEL, UNKNOWN -> null;
+            case BAZEL -> detectBazelCompilerLevel(projectPath);
+            case UNKNOWN -> null;
         };
+        // Final fallback for any build system that didn't surface a level: use the running
+        // JVM's feature version. This keeps Plain Java projects (no build file) and
+        // partially-declared Maven/Gradle/Bazel projects parsing modern syntax instead of
+        // silently inheriting an older JDT default.
         if (level == null) {
-            warnings.add(new LoadWarning(
-                LoadWarning.COMPLIANCE_LEVEL_UNKNOWN,
-                "Could not determine Java source level from project metadata; JDT defaults will apply",
-                "Declare maven.compiler.source/release in pom.xml (or sourceCompatibility/toolchain in Gradle) so language-level features parse correctly"));
-            return;
+            level = String.valueOf(Runtime.version().feature());
+            log.info("No compiler level declared; defaulting to runtime JVM major version {}", level);
         }
         javaProject.setOption(JavaCore.COMPILER_SOURCE, level);
         javaProject.setOption(JavaCore.COMPILER_COMPLIANCE, level);
@@ -1031,6 +1082,62 @@ public class ProjectImporter {
     /** Cached during {@link #getGradleDependencies}; null when no Gradle build ran. */
     private String detectGradleCompilerLevel(java.nio.file.Path projectPath) {
         return cachedGradleCompilerLevel;
+    }
+
+    /**
+     * Read Java source level from BUILD.bazel files. Bazel exposes javac flags via the
+     * {@code javacopts} attribute on {@code java_library} / {@code java_binary} / etc.,
+     * which we walk for {@code -source}, {@code -target}, {@code --release}, and
+     * {@code --release=N}-style entries. Returns the highest level found across the
+     * workspace (multi-target builds may declare it on every target).
+     *
+     * <p>Workspace-wide flags via {@code .bazelrc} (e.g. {@code build --javacopt=-source})
+     * are not parsed; teams that pin compliance globally typically still set it per-target.
+     */
+    private String detectBazelCompilerLevel(java.nio.file.Path projectPath) {
+        Integer best = null;
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
+            for (java.nio.file.Path file : (Iterable<java.nio.file.Path>) stream
+                    .filter(p -> {
+                        if (p.getFileName() == null) return false;
+                        String n = p.getFileName().toString();
+                        return n.equals("BUILD") || n.equals("BUILD.bazel");
+                    })
+                    .filter(p -> !isBazelOutputDirectory(projectPath, p))::iterator) {
+                String content = Files.readString(file);
+                Matcher block = Pattern.compile("javacopts\\s*=\\s*\\[(.*?)\\]", Pattern.DOTALL).matcher(content);
+                while (block.find()) {
+                    Integer level = highestLevelInJavacopts(block.group(1));
+                    if (level != null && (best == null || level > best)) best = level;
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Failed to walk for Bazel javacopts: {}", e.getMessage());
+        }
+        return best == null ? null : String.valueOf(best);
+    }
+
+    /**
+     * Extract the highest numeric Java level declared in a {@code javacopts} list literal.
+     * Recognizes {@code "-source", "17"}, {@code "-target", "17"}, {@code "--release", "17"},
+     * and {@code "--release=17"} forms.
+     */
+    private Integer highestLevelInJavacopts(String inner) {
+        Integer max = null;
+        // -source 17 / -target 17 / --release 17 (paired tokens)
+        Matcher paired = Pattern.compile(
+            "['\"](?:-source|-target|--release)['\"]\\s*,\\s*['\"](\\d+)['\"]").matcher(inner);
+        while (paired.find()) {
+            int v = Integer.parseInt(paired.group(1));
+            if (max == null || v > max) max = v;
+        }
+        // --release=17 (single token)
+        Matcher inline = Pattern.compile("['\"]--release=(\\d+)['\"]").matcher(inner);
+        while (inline.find()) {
+            int v = Integer.parseInt(inline.group(1));
+            if (max == null || v > max) max = v;
+        }
+        return max;
     }
 
     /** Cached during {@link #getGradleDependencies}; empty when no Gradle build ran. */

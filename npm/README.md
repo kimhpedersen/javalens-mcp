@@ -71,8 +71,8 @@ Single-module and multi-module projects load end-to-end across Maven, Gradle, an
 |--------|-----------|:-:|:-:|:-:|:-:|
 | Maven | `pom.xml` | ✅ | ✅ | ✅ | ✅ |
 | Gradle | `build.gradle` / `build.gradle.kts` | ✅ | ✅ | ✅ | ✅ |
-| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ❌ | n/a | ❌ |
-| Plain Java | `src/` directory | n/a | ❌ | n/a | n/a |
+| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ | n/a | ✅ |
+| Plain Java | `src/` directory | n/a | ✅ | n/a | n/a |
 
 If `mvn` / `gradle` is missing or the subprocess fails, JavaLens reports a structured warning (e.g. `MAVEN_SUBPROCESS_FAILED`) in the `load_project` response so callers know the classpath is degraded.
 
