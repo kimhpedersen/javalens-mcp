@@ -416,12 +416,44 @@ public class ProjectImporter {
             addSourcePathsFromDirectory(subproject, sourcePaths);
         }
 
-        // For Bazel projects without standard source layout, scan for Java source directories
+        // For Bazel multi-target builds, walk for every BUILD/BUILD.bazel package and
+        // probe it for standard layouts (src/main/java, etc.). Without this, only targets
+        // co-located with their .java files are discovered (the original
+        // addBazelSourcePaths behavior, kept below as a fallback for that layout).
+        if (detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
+            for (java.nio.file.Path targetPkg : getBazelTargetPackages(projectPath)) {
+                addSourcePathsFromDirectory(targetPkg, sourcePaths);
+            }
+        }
+
+        // For Bazel projects without standard source layout, scan for directories that
+        // hold both BUILD files and .java sources directly.
         if (sourcePaths.isEmpty() && detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
             addBazelSourcePaths(projectPath, sourcePaths);
         }
 
         return sourcePaths;
+    }
+
+    /**
+     * Walk the project tree for every directory containing a {@code BUILD} or
+     * {@code BUILD.bazel} file (a Bazel "package"). These are the natural roots from which
+     * to probe for {@code src/main/java}-style layouts in multi-target Bazel builds.
+     * Bazel output trees ({@code bazel-*}) are skipped.
+     */
+    private List<java.nio.file.Path> getBazelTargetPackages(java.nio.file.Path projectPath) {
+        List<java.nio.file.Path> packages = new ArrayList<>();
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
+            stream.filter(Files::isDirectory)
+                  .filter(dir -> !IGNORED_DIRS.contains(dir.getFileName().toString()))
+                  .filter(dir -> !isBazelOutputDirectory(projectPath, dir))
+                  .filter(dir -> Files.exists(dir.resolve("BUILD"))
+                              || Files.exists(dir.resolve("BUILD.bazel")))
+                  .forEach(packages::add);
+        } catch (IOException e) {
+            log.debug("Failed to walk for Bazel packages: {}", e.getMessage());
+        }
+        return packages;
     }
 
     /**
