@@ -2,8 +2,8 @@ package org.javalens.core.buildsystem;
 
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -53,9 +53,8 @@ class BazelSymlinkDedupTest {
         // admin or Developer Mode, so we fall back to a directory junction (mklink /J) which
         // does not. Path.toRealPath observes both as canonicalizing to the target.
         Path bazelBinLink = projectRoot.resolve("bazel-bin");
-        if (!createDirectoryLink(bazelBinLink, canonicalBin)) {
-            Assumptions.abort("Could not create symlink or junction in this environment");
-        }
+        TestEnvironment.requireOrSkip(createDirectoryLink(bazelBinLink, canonicalBin),
+            "directory symlink / junction creation (Windows: needs Developer Mode or admin)");
 
         JdtServiceImpl service = new JdtServiceImpl();
         service.loadProject(projectRoot);

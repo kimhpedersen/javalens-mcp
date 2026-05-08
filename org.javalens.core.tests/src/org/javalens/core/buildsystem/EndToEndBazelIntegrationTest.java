@@ -5,8 +5,8 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -45,8 +45,7 @@ class EndToEndBazelIntegrationTest {
     @DisplayName("realistic Bazel multi-target: every applicable fix exercised in a single load")
     void allFixesExercisedInASingleLoad() throws Exception {
         String bazel = resolveBazelBinary();
-        Assumptions.assumeTrue(bazel != null,
-            "No Bazel binary available — install bazelisk or set BAZEL_HOME");
+        TestEnvironment.requireOrSkip(bazel, "Bazel binary (end-to-end Bazel load)");
 
         Path projectRoot = helper.copyFixture("realistic-multi-target-bazel");
 

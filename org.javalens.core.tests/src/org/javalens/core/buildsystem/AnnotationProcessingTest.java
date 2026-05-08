@@ -3,8 +3,8 @@ package org.javalens.core.buildsystem;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -43,8 +43,8 @@ class AnnotationProcessingTest {
     @DisplayName("Lombok project: APT is enabled and processor jar is on the factory path")
     void aptIsEnabledForLombokProject() throws Exception {
         String mvn = resolveMavenBinary();
-        Assumptions.assumeTrue(mvn != null,
-            "Maven not available — APT wiring assertion needs a real mvn invocation to seed lombok in ~/.m2");
+        TestEnvironment.requireOrSkip(mvn,
+            "Maven binary (APT wiring needs mvn to seed lombok in ~/.m2)");
 
         String previousOverride = System.getProperty("javalens.maven.binary");
         System.setProperty("javalens.maven.binary", mvn);

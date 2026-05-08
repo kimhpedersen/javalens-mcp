@@ -2,8 +2,8 @@ package org.javalens.core.buildsystem;
 
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -62,8 +62,7 @@ class GradleClasspathTest {
     private void runWithGradle(String fixtureName, java.util.function.Consumer<ClasspathSnapshot> assertions)
             throws Exception {
         String gradle = resolveGradleBinary();
-        Assumptions.assumeTrue(gradle != null,
-            "No Gradle binary available — install Gradle or commit a Gradle Wrapper");
+        TestEnvironment.requireOrSkip(gradle, "Gradle binary (classpath aggregation)");
 
         String previousOverride = System.getProperty("javalens.gradle.binary");
         System.setProperty("javalens.gradle.binary", gradle);

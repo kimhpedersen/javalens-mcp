@@ -5,8 +5,8 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -48,9 +48,8 @@ class MultiModuleMavenTest {
     @DisplayName("classpath includes a unique dep from every reactor module")
     void everyReactorModuleContributesItsOwnDeps() throws Exception {
         String mvn = resolveMavenBinary();
-        Assumptions.assumeTrue(mvn != null,
-            "Maven not on PATH and no extracted Maven Wrapper distribution found — " +
-            "multi-module classpath assertion needs a real mvn invocation");
+        TestEnvironment.requireOrSkip(mvn,
+            "Maven binary on PATH or in ~/.m2/wrapper/dists (multi-module classpath aggregation)");
 
         // Point ProjectImporter at the same Maven binary the test will use. This is a
         // test-only override; production reads the default mvn / mvn.cmd from PATH.
@@ -83,8 +82,8 @@ class MultiModuleMavenTest {
     @DisplayName("cross-module find_references resolves callers in sibling reactor modules")
     void crossModuleFindReferencesResolvesAcrossSiblings() throws Exception {
         String mvn = resolveMavenBinary();
-        Assumptions.assumeTrue(mvn != null,
-            "Maven not available — cross-module navigation needs the reactor to be loaded");
+        TestEnvironment.requireOrSkip(mvn,
+            "Maven binary (cross-module navigation needs the reactor loaded)");
 
         String previousOverride = System.getProperty("javalens.maven.binary");
         System.setProperty("javalens.maven.binary", mvn);

@@ -7,9 +7,9 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.model.LoadWarning;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -42,8 +42,7 @@ class EndToEndGradleIntegrationTest {
     @DisplayName("realistic Gradle multi-project: every fix exercised in a single load")
     void allFixesExercisedInASingleLoad() throws Exception {
         String gradle = resolveGradleBinary();
-        Assumptions.assumeTrue(gradle != null,
-            "No Gradle binary available — install Gradle or extract a Gradle Wrapper");
+        TestEnvironment.requireOrSkip(gradle, "Gradle binary (end-to-end Gradle load)");
 
         String previousOverride = System.getProperty("javalens.gradle.binary");
         System.setProperty("javalens.gradle.binary", gradle);

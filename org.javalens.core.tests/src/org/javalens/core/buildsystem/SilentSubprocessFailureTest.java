@@ -1,9 +1,9 @@
 package org.javalens.core.buildsystem;
 
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.model.LoadWarning;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -67,12 +67,11 @@ class SilentSubprocessFailureTest {
     @Test
     @DisplayName("clean Maven project produces no warnings")
     void cleanProjectProducesNoWarnings() throws Exception {
-        // This assertion only makes sense when mvn can actually run. Without mvn on PATH the
-        // warning system fires (correctly) on every load, including the clean fixture. CI is
-        // expected to install Maven so this gate is a no-op there; locally without mvn the
-        // test skips rather than failing.
-        Assumptions.assumeTrue(isMavenAvailable(),
-            "Maven not available on PATH — skipping clean-project warnings assertion");
+        // This assertion only makes sense when mvn can actually run. Without mvn on PATH
+        // the warning system fires (correctly) on every load. Local dev without mvn skips;
+        // CI sets JAVALENS_TESTS_REQUIRE_TOOLS=true so missing tools fail loudly there.
+        TestEnvironment.requireOrSkip(isMavenAvailable(),
+            "Maven binary on PATH (clean-project warnings assertion)");
 
         JdtServiceImpl service = helper.loadProject("simple-maven");
         List<LoadWarning> warnings = service.getWarnings();

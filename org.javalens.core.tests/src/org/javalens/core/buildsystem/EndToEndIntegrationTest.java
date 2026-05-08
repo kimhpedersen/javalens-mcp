@@ -7,9 +7,9 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.model.LoadWarning;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -60,8 +60,8 @@ class EndToEndIntegrationTest {
     @DisplayName("realistic multi-module project: every bug fix is exercised in a single load")
     void allFixesExercisedInASingleLoad() throws Exception {
         String mvn = resolveMavenBinary();
-        Assumptions.assumeTrue(mvn != null,
-            "Maven not available — end-to-end load needs the reactor to be installed and resolved");
+        TestEnvironment.requireOrSkip(mvn,
+            "Maven binary (end-to-end Maven load)");
 
         String previousOverride = System.getProperty("javalens.maven.binary");
         System.setProperty("javalens.maven.binary", mvn);
