@@ -365,12 +365,16 @@ Each MCP session is independent with its own workspace UUID. Multiple sessions c
 
 ### Build System Support
 
-| System | Detection |
-|--------|-----------|
-| Maven | `pom.xml` |
-| Gradle | `build.gradle` / `build.gradle.kts` |
-| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` |
-| Plain Java | `src/` directory |
+JavaLens loads three real build systems plus plain Java directories. Each is exercised end-to-end in CI against synthetic real-shaped fixtures (multi-module reactors with cross-module deps, real external libraries, annotation processors).
+
+| System | Detection | Single-module | Multi-module / multi-project | Compiler compliance from build files | Generated sources | Annotation processors |
+|--------|-----------|:-:|:-:|:-:|:-:|:-:|
+| Maven | `pom.xml` | ✅ | ✅ (reactor classpath aggregation, cross-module navigation) | ✅ (`maven.compiler.release`/`source`/`target`) | ✅ (`target/generated-sources/*`) | ✅ (`<annotationProcessorPaths>` across the whole reactor) |
+| Gradle | `build.gradle` / `build.gradle.kts` | ✅ | ✅ (`settings.gradle include` parsed; per-subproject classpaths unioned) | ✅ (`sourceCompatibility`) | ✅ (`build/generated/sources/<task>/main/java`) | ✅ (`annotationProcessor` configuration) |
+| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ (every `BUILD.bazel` package scanned for sources; `bazel-bin` ↔ `bazel-out` symlink dedup) | ❌ (`javacopts` reading not yet implemented) | n/a | ❌ (`java_plugin` rules not yet wired) |
+| Plain Java | `src/` directory | ✅ | n/a | ❌ | n/a | n/a |
+
+Subprocess invocations of `mvn` / `gradle` happen during project load. If a tool is missing or fails, JavaLens surfaces a structured `LoadWarning` (e.g. `MAVEN_SUBPROCESS_FAILED`, `GRADLE_SUBPROCESS_FAILED`, `COMPLIANCE_LEVEL_UNKNOWN`) in the `load_project` response so callers know analysis quality is degraded rather than silently getting an empty classpath.
 
 ## Configuration
 
@@ -394,7 +398,27 @@ Distributions are output to `org.javalens.product/target/products/`.
 ### Build Requirements
 
 - Java 21+ (server runtime)
-- Maven 3.9+ (wrapper included)
+- Maven 3.9+ (wrapper included as `./mvnw`)
+
+To run the **full test suite** (which includes end-to-end tests against real Maven, Gradle, and Bazel builds), the corresponding tools must also be on `PATH`:
+
+- Maven (provided by the wrapper)
+- Gradle 8+
+- Bazel 9+ (or `bazelisk`)
+
+Tests gracefully skip when a tool is missing on a developer machine. Set `JAVALENS_TESTS_REQUIRE_TOOLS=true` to flip the gate: missing tools cause a hard failure instead of a skip. CI runs with this flag set so any provisioning gap surfaces as a real failure rather than weakening the suite silently.
+
+### Testing
+
+```bash
+# Full suite, gentle (missing tools skip)
+./mvnw verify
+
+# Full suite, strict (missing tools fail; what CI does)
+JAVALENS_TESTS_REQUIRE_TOOLS=true ./mvnw verify
+```
+
+Build-system coverage is structured as focused per-bug tests plus realistic end-to-end tests. The end-to-end tests load a single representative project per build system that exercises every fix in one pass — multi-module Maven with Lombok APT and cross-module references; multi-project Gradle with annotation processors; multi-target Bazel with cross-target deps. CI runs them on Linux, macOS, and Windows.
 
 ## Architecture
 
