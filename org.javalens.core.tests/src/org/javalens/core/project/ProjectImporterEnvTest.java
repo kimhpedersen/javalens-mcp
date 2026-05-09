@@ -19,20 +19,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ProjectImporterEnvTest {
 
+    /**
+     * The expected JAVA_HOME the helper resolves, accounting for the
+     * {@code JAVALENS_TESTS_CHILD_JAVA_HOME} override path used in CI.
+     */
+    private static String expectedJavaHome() {
+        String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
+        if (override != null) override = override.trim();
+        return (override != null && !override.isBlank())
+            ? override : System.getProperty("java.home").trim();
+    }
+
     @Test
-    @DisplayName("propagateJavaHome sets JAVA_HOME to the running JVM's java.home")
+    @DisplayName("propagateJavaHome sets JAVA_HOME from the running JVM (or the test override)")
     void setsJavaHomeFromRunningJvm() {
         ProjectImporter importer = new ProjectImporter();
         ProcessBuilder pb = new ProcessBuilder("dummy");
         importer.propagateJavaHome(pb);
 
-        String expected = System.getProperty("java.home");
-        assertEquals(expected, pb.environment().get("JAVA_HOME"),
-            "JAVA_HOME on the child env must equal the parent JVM's java.home");
+        assertEquals(expectedJavaHome(), pb.environment().get("JAVA_HOME"),
+            "JAVA_HOME on the child env must equal the resolved parent JVM home (or the " +
+            "JAVALENS_TESTS_CHILD_JAVA_HOME override)");
     }
 
     @Test
-    @DisplayName("propagateJavaHome prepends java.home/bin to the child PATH")
+    @DisplayName("propagateJavaHome prepends the resolved java.home/bin to the child PATH")
     void prependsJavaBinToPath() {
         ProjectImporter importer = new ProjectImporter();
         ProcessBuilder pb = new ProcessBuilder("dummy");
@@ -42,10 +53,10 @@ class ProjectImporterEnvTest {
         String pathKey = isWindows ? "Path" : "PATH";
         String path = pb.environment().get(pathKey);
 
-        String expectedPrefix = System.getProperty("java.home") + File.separator + "bin";
+        String expectedPrefix = expectedJavaHome() + File.separator + "bin";
         assertTrue(path != null && path.startsWith(expectedPrefix),
-            "Child PATH must begin with the parent JVM's bin so the launcher resolves " +
-            "the right java.exe. Got: " + path);
+            "Child PATH must begin with the resolved JDK's bin. Got prefix: " +
+            (path == null ? "null" : path.substring(0, Math.min(150, path.length()))));
     }
 
     @Test

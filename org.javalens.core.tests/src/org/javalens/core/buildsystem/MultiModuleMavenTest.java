@@ -160,8 +160,10 @@ class MultiModuleMavenTest {
         java.util.List<String> command = new java.util.ArrayList<>();
         if (isWindows) {
             String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
+            if (override != null) override = override.trim();
             String javaHome = (override != null && !override.isBlank())
                 ? override : System.getProperty("java.home");
+            javaHome = javaHome.trim();
             StringBuilder sb = new StringBuilder();
             sb.append("set \"JAVA_HOME=").append(javaHome).append("\" && ");
             sb.append("set \"Path=").append(javaHome).append("\\bin;%Path%\" && ");
@@ -179,9 +181,11 @@ class MultiModuleMavenTest {
 
     private static void propagateJavaHome(ProcessBuilder pb) {
         String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
+        if (override != null) override = override.trim();
         String javaHome = (override != null && !override.isBlank())
             ? override : System.getProperty("java.home");
         if (javaHome == null || javaHome.isBlank()) return;
+        javaHome = javaHome.trim();
         java.util.Map<String, String> env = pb.environment();
         env.put("JAVA_HOME", javaHome);
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");

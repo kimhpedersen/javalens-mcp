@@ -1420,10 +1420,16 @@ public class ProjectImporter {
      */
     void propagateJavaHome(ProcessBuilder pb) {
         String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
+        // Defensive trim: $GITHUB_ENV writes from PowerShell on Windows runners can
+        // leak a trailing \r into the env value. Without trimming, the resulting
+        // JAVA_HOME path picks up the CR and any subsequent path concatenation
+        // (e.g. %JAVA_HOME%\bin\java.exe) becomes invalid.
+        if (override != null) override = override.trim();
         String javaHome = (override != null && !override.isBlank())
             ? override
             : System.getProperty("java.home");
         if (javaHome == null || javaHome.isBlank()) return;
+        javaHome = javaHome.trim();
         java.util.Map<String, String> env = pb.environment();
         env.put("JAVA_HOME", javaHome);
         String pathKey = isWindows() ? "Path" : "PATH";
