@@ -149,11 +149,11 @@ class MultiModuleMavenTest {
      * this repo because {@code ./mvnw} extracts mvn there on first build.
      */
     /**
-     * On Windows, wrap the subprocess in {@code cmd /c "set JAVA_HOME=...&& <mvn>"} so
-     * the cmd shell that hosts mvn.cmd has JAVA_HOME set explicitly. Java's
-     * {@code ProcessBuilder.environment()} mutations don't reliably propagate through
-     * Windows cmd's env handling for .cmd batch scripts; the in-cmd {@code set} command
-     * sidesteps that by setting the variable inside the spawned cmd before mvn.cmd runs.
+     * On Windows, write env-set commands and the actual mvn invocation to a temp
+     * {@code .cmd} script and execute that. Routing through ProcessBuilder's argv
+     * with {@code cmd /c "set X=Y && mvn ..."} is unreliable: Java's command-line
+     * quoting for embedded {@code "} interacts unpredictably with cmd.exe's parser
+     * for compound commands. Writing a script file sidesteps every layer of quoting.
      */
     private static java.util.List<String> buildSubprocessCommand(String binary, String[] goals) {
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
@@ -164,14 +164,20 @@ class MultiModuleMavenTest {
             String javaHome = (override != null && !override.isBlank())
                 ? override : System.getProperty("java.home");
             javaHome = javaHome.trim();
-            StringBuilder sb = new StringBuilder();
-            sb.append("set \"JAVA_HOME=").append(javaHome).append("\" && ");
-            sb.append("set \"Path=").append(javaHome).append("\\bin;%Path%\" && ");
-            sb.append("\"").append(binary).append("\"");
-            for (String g : goals) sb.append(' ').append(g);
-            command.add("cmd");
-            command.add("/c");
-            command.add(sb.toString());
+            try {
+                Path script = Files.createTempFile("javalens-cmd-", ".cmd");
+                StringBuilder sb = new StringBuilder();
+                sb.append("@echo off\r\n");
+                sb.append("set \"JAVA_HOME=").append(javaHome).append("\"\r\n");
+                sb.append("set \"Path=").append(javaHome).append("\\bin;%Path%\"\r\n");
+                sb.append("\"").append(binary).append("\"");
+                for (String g : goals) sb.append(' ').append(g);
+                sb.append("\r\n");
+                Files.writeString(script, sb.toString());
+                command.add(script.toString());
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to write temp cmd script", e);
+            }
         } else {
             command.add(binary);
             for (String g : goals) command.add(g);
