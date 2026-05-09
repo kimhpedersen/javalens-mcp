@@ -25,10 +25,11 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
 
-    # Maven is provided by setup-java when distribution=temurin? No — setup-java only installs
-    # the JDK. We rely on the Maven Wrapper (./mvnw) for the Tycho build, but new fixture
-    # tests will invoke `mvn` directly against fixture poms. Install it explicitly so all
-    # three OS runners have Maven on PATH.
+    # Maven: setup-java installs the JDK only. We need mvn on PATH for fixture tests
+    # that invoke it directly. apt/brew provide working binaries; on Windows, choco's
+    # mvn.cmd launcher is incompatible with setup-java's Temurin JDK (it tries to read
+    # lib/jvm.cfg which Temurin doesn't ship), so we extract the Apache distribution
+    # directly and add its bin to PATH.
     - name: Install Maven (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt-get update && sudo apt-get install -y maven
@@ -39,29 +40,23 @@ jobs:
 
     - name: Install Maven (Windows)
       if: matrix.os == 'windows-latest'
-      run: |
-        choco install maven --no-progress
-        # choco updates the system PATH but the current step's shell snapshotted it at
-        # job start; subsequent steps need an explicit append to GITHUB_PATH so the
-        # surefire JVM can find mvn.cmd.
-        Add-Content $env:GITHUB_PATH "C:\ProgramData\chocolatey\bin"
       shell: pwsh
+      run: |
+        $version = "3.9.9"
+        $url = "https://archive.apache.org/dist/maven/maven-3/$version/binaries/apache-maven-$version-bin.zip"
+        Invoke-WebRequest -Uri $url -OutFile $env:RUNNER_TEMP\maven.zip
+        Expand-Archive -Path $env:RUNNER_TEMP\maven.zip -DestinationPath $env:RUNNER_TEMP\maven
+        $bin = "$env:RUNNER_TEMP\maven\apache-maven-$version\bin"
+        Add-Content $env:GITHUB_PATH $bin
 
-    # Gradle: apt's package on ubuntu-latest is Gradle 4.x, too old to run our init
-    # script (uses tasks.register and other 6.0+ syntax). Use the gradle-vendor-supported
-    # action which pins a current Gradle version and adds it to PATH for subsequent steps.
-    - name: Install Gradle (Linux + macOS)
-      if: matrix.os != 'windows-latest'
+    # Gradle: vendor-supported action works on all three OSes. apt's package on
+    # ubuntu-latest is Gradle 4.x, too old to run our init script (uses tasks.register
+    # and other 6.0+ syntax); choco's gradle.bat on Windows didn't propagate reliably
+    # to the surefire JVM. setup-gradle handles all of these uniformly.
+    - name: Install Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.10.2'
-
-    - name: Install Gradle (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        choco install gradle --no-progress
-        Add-Content $env:GITHUB_PATH "C:\ProgramData\chocolatey\bin"
-      shell: pwsh
 
     # Bazel via bazelisk — installs the Bazel version pinned in fixtures via .bazelversion files.
     - name: Install bazelisk
