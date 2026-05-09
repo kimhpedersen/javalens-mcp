@@ -388,12 +388,14 @@ public class ProjectImporter {
                 if (value != null) return resolvePomProperty(content, value);
             }
 
-            // 2. <plugin>maven-compiler-plugin</plugin>'s <configuration> block.
-            Matcher pluginBlock = Pattern.compile(
-                "<plugin>\\s*(?:<groupId>[^<]+</groupId>\\s*)?<artifactId>maven-compiler-plugin</artifactId>(.*?)</plugin>",
-                Pattern.DOTALL).matcher(content);
+            // 2. <plugin>maven-compiler-plugin</plugin>'s <configuration> block. Match
+            // <plugin>...</plugin> spans first, then check artifactId inside — handles
+            // groupId-before-artifactId, artifactId-before-groupId, or no groupId at all.
+            Matcher pluginBlock = Pattern.compile("<plugin>(.*?)</plugin>", Pattern.DOTALL).matcher(content);
             while (pluginBlock.find()) {
                 String inner = pluginBlock.group(1);
+                String artifact = extractXmlText(inner, "artifactId");
+                if (!"maven-compiler-plugin".equals(artifact)) continue;
                 Matcher configBlock = Pattern.compile("<configuration>(.*?)</configuration>", Pattern.DOTALL).matcher(inner);
                 if (configBlock.find()) {
                     String config = configBlock.group(1);
@@ -1287,17 +1289,23 @@ public class ProjectImporter {
         List<String> jars = new ArrayList<>(canonicalJars.size());
         for (java.nio.file.Path p : canonicalJars) jars.add(p.toString());
         log.debug("Found {} JARs from Bazel output ({} candidate roots)", jars.size(), rootsToScan.size());
-        // Surface BAZEL_NOT_BUILT once per import when the project is detected as Bazel
-        // but neither bazel-bin nor bazel-out exists (or both are empty). The signal is
-        // "the user hasn't run bazel build yet", not a JavaLens bug — but the agent needs
-        // to know analysis is degraded. Suppressed if a previous code path already added
-        // it to keep warnings deduped.
-        if (rootsToScan.isEmpty()
+        // Surface BAZEL_NOT_BUILT once per import when the user hasn't built the project
+        // recently. Two distinct cases produce the same signal:
+        //   1. Neither bazel-bin nor bazel-out exists (`rootsToScan.isEmpty()`).
+        //   2. The roots exist but contain no jars — typically `bazel clean` left the
+        //      symlinks pointing at empty trees. The signal is "JavaLens read what's there
+        //      and it's empty", not a JavaLens bug.
+        // Suppressed if a previous code path already added the warning.
+        boolean noScanRoots = rootsToScan.isEmpty();
+        boolean rootsButNoJars = !rootsToScan.isEmpty() && jars.isEmpty();
+        if ((noScanRoots || rootsButNoJars)
                 && warnings.stream().noneMatch(w -> LoadWarning.BAZEL_NOT_BUILT.equals(w.code()))) {
+            String detail = noScanRoots
+                ? "Neither bazel-bin nor bazel-out exists in " + projectPath
+                : "bazel-bin/bazel-out exist in " + projectPath + " but contain no jars (likely bazel clean was just run)";
             warnings.add(new LoadWarning(
                 LoadWarning.BAZEL_NOT_BUILT,
-                "Neither bazel-bin nor bazel-out exists in " + projectPath +
-                    "; classpath will be empty",
+                detail + "; classpath will be empty",
                 "Run 'bazel build //...' (or the relevant target set) in the project root " +
                     "before loading. JavaLens reads dependency jars from Bazel's build " +
                     "output, not from the source tree."));

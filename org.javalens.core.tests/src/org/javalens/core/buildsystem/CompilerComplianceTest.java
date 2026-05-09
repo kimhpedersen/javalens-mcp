@@ -1,5 +1,7 @@
 package org.javalens.core.buildsystem;
 
+import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.LoadedFixture;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.model.LoadWarning;
@@ -7,6 +9,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -91,5 +95,53 @@ class CompilerComplianceTest {
             "<configuration><release>17</release></configuration>");
         assertEquals("17", fixture.classpath().compilerCompliance(),
             "Expected COMPILER_COMPLIANCE to come from the plugin <configuration> block");
+    }
+
+    @Test
+    @DisplayName("COMPLIANCE_LEVEL_UNKNOWN fires when a build system declares no compiler level")
+    void unknownLevelOnDetectedBuildSystemEmitsWarning() throws Exception {
+        // Maven project with no maven.compiler.* property AND no maven-compiler-plugin
+        // <configuration>. Detection identifies it as Maven, the level extractor returns
+        // null, and we fall back to Runtime.version().feature() — but emit
+        // COMPLIANCE_LEVEL_UNKNOWN so the agent knows analysis used the runtime default.
+        LoadedFixture fixture = helper.loadFixture("maven-no-compliance-declared");
+
+        boolean hasComplianceWarning = fixture.service().getWarnings().stream()
+            .anyMatch(w -> LoadWarning.COMPLIANCE_LEVEL_UNKNOWN.equals(w.code()));
+        assertTrue(hasComplianceWarning,
+            "Expected COMPLIANCE_LEVEL_UNKNOWN when a Maven project declares no compiler " +
+            "level. Warnings: " + fixture.service().getWarnings());
+
+        // The fallback level itself should equal the runtime feature version so analysis
+        // can still parse modern syntax.
+        String expected = String.valueOf(Runtime.version().feature());
+        assertEquals(expected, fixture.classpath().compilerSource(),
+            "Expected runtime fallback when no compiler level is declared");
+    }
+
+    @Test
+    @DisplayName("Maven plugin <configuration> works with artifactId-before-groupId ordering")
+    void mavenComplianceFromPluginWithReversedIdentityOrder() throws Exception {
+        // Maven's POM schema doesn't require groupId-before-artifactId. The regex must
+        // accept either order. Mutate the copied fixture so artifactId comes first, then
+        // load and assert compliance still resolves.
+        Path projectRoot = helper.copyFixture("compliance-from-plugin-config");
+        Path pom = projectRoot.resolve("pom.xml");
+        String original = Files.readString(pom);
+        String reversed = original.replace(
+            "<groupId>org.apache.maven.plugins</groupId>\n" +
+                "                <artifactId>maven-compiler-plugin</artifactId>",
+            "<artifactId>maven-compiler-plugin</artifactId>\n" +
+                "                <groupId>org.apache.maven.plugins</groupId>");
+        Files.writeString(pom, reversed);
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertEquals("17", snapshot.compilerSource(),
+            "Expected COMPILER_SOURCE to resolve regardless of groupId/artifactId ordering");
+        assertEquals("17", snapshot.compilerCompliance(),
+            "Expected COMPILER_COMPLIANCE to resolve regardless of groupId/artifactId ordering");
     }
 }
