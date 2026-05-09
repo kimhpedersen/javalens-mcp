@@ -68,6 +68,7 @@ jobs:
     - name: Build and Test
       env:
         JAVALENS_TESTS_REQUIRE_TOOLS: "true"
+        JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
       run: ./mvnw clean verify
 
     - name: Upload test results
