@@ -122,10 +122,11 @@ class MultiModuleMavenTest {
         java.util.List<String> command = new java.util.ArrayList<>();
         command.add(mvnBinary);
         for (String g : goals) command.add(g);
-        Process p = new ProcessBuilder(command)
+        ProcessBuilder pb = new ProcessBuilder(command)
             .directory(projectRoot.toFile())
-            .redirectErrorStream(true)
-            .start();
+            .redirectErrorStream(true);
+        propagateJavaHome(pb);
+        Process p = pb.start();
         StringBuilder captured = new StringBuilder();
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
             String line;
@@ -149,6 +150,18 @@ class MultiModuleMavenTest {
      * a Maven Wrapper distribution under {@code ~/.m2/wrapper/dists}, which is present in
      * this repo because {@code ./mvnw} extracts mvn there on first build.
      */
+    private static void propagateJavaHome(ProcessBuilder pb) {
+        String javaHome = System.getProperty("java.home");
+        if (javaHome == null || javaHome.isBlank()) return;
+        java.util.Map<String, String> env = pb.environment();
+        env.put("JAVA_HOME", javaHome);
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        String pathKey = isWindows ? "Path" : "PATH";
+        String javaBin = javaHome + java.io.File.separator + "bin";
+        String existing = env.getOrDefault(pathKey, "");
+        env.put(pathKey, existing.isEmpty() ? javaBin : javaBin + java.io.File.pathSeparator + existing);
+    }
+
     private static String resolveMavenBinary() {
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
         String binaryName = isWindows ? "mvn.cmd" : "mvn";

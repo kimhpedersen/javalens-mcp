@@ -104,10 +104,11 @@ class CrossModuleNavigationToolTest {
         java.util.List<String> command = new java.util.ArrayList<>();
         command.add(mvn);
         for (String g : goals) command.add(g);
-        Process p = new ProcessBuilder(command)
+        ProcessBuilder pb = new ProcessBuilder(command)
             .directory(projectRoot.toFile())
-            .redirectErrorStream(true)
-            .start();
+            .redirectErrorStream(true);
+        propagateJavaHome(pb);
+        Process p = pb.start();
         StringBuilder captured = new StringBuilder();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
             String line;
@@ -123,6 +124,18 @@ class CrossModuleNavigationToolTest {
             throw new RuntimeException("mvn " + String.join(" ", goals)
                 + " failed with exit code " + p.exitValue() + "\n" + captured);
         }
+    }
+
+    private static void propagateJavaHome(ProcessBuilder pb) {
+        String javaHome = System.getProperty("java.home");
+        if (javaHome == null || javaHome.isBlank()) return;
+        java.util.Map<String, String> env = pb.environment();
+        env.put("JAVA_HOME", javaHome);
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        String pathKey = isWindows ? "Path" : "PATH";
+        String javaBin = javaHome + java.io.File.separator + "bin";
+        String existing = env.getOrDefault(pathKey, "");
+        env.put(pathKey, existing.isEmpty() ? javaBin : javaBin + java.io.File.pathSeparator + existing);
     }
 
     private static String resolveMavenBinary() {
