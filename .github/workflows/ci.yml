@@ -33,21 +33,28 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install maven
 
-    - name: Install Maven (Windows)
-      if: runner.os == 'Windows'
-      run: choco install maven --no-progress
+    # Windows: rely on Maven and Gradle that are pre-installed on the GitHub
+    # Actions windows-latest image. Installing via chocolatey on top side-loads
+    # an additional JDK and reorders PATH, which is what triggered the
+    # `lib/jvm.cfg` launcher failure when our test JVM spawned mvn/gradle.
 
     # apt's Gradle on ubuntu-latest is 4.x, too old for our init script.
-    # Use the vendor-supported action on Linux + macOS, and Windows chocolatey for parity.
     - name: Install Gradle (Linux + macOS)
       if: runner.os != 'Windows'
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.10.2'
 
-    - name: Install Gradle (Windows)
+    - name: Verify pre-installed tools (Windows)
       if: runner.os == 'Windows'
-      run: choco install gradle --no-progress
+      shell: pwsh
+      run: |
+        Write-Host "JAVA_HOME=$env:JAVA_HOME"
+        Write-Host "where java:"; (Get-Command java -All | Select-Object -ExpandProperty Source) -join "`n" | Write-Host
+        Write-Host "where mvn:"; (Get-Command mvn -All -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join "`n" | Write-Host
+        Write-Host "where gradle:"; (Get-Command gradle -All -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) -join "`n" | Write-Host
+        mvn -v
+        gradle -v
 
     - name: Install Bazel
       uses: bazel-contrib/setup-bazel@0.8.5
