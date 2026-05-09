@@ -1407,9 +1407,22 @@ public class ProjectImporter {
      * {@code java.exe} runs and the launcher can fail to open {@code lib/jvm.cfg}
      * even though the right JDK is installed.
      */
-    /** Package-private for {@code ProjectImporterEnvTest}. */
+    /**
+     * Propagate a known-good {@code JAVA_HOME} to the spawned child. Honors the
+     * {@code JAVALENS_TESTS_CHILD_JAVA_HOME} env var first — this lets CI point
+     * subprocesses at a different JDK from the one the test JVM is running, which
+     * sidesteps a Windows-specific issue where the parent JVM's open handle on
+     * {@code lib/jvm.cfg} prevents a child {@code java.exe} from reading the same
+     * file. When the override is unset, fall back to the running JVM's
+     * {@code java.home}, which is correct for production and local development.
+     *
+     * <p>Package-private for {@code ProjectImporterEnvTest}.
+     */
     void propagateJavaHome(ProcessBuilder pb) {
-        String javaHome = System.getProperty("java.home");
+        String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
+        String javaHome = (override != null && !override.isBlank())
+            ? override
+            : System.getProperty("java.home");
         if (javaHome == null || javaHome.isBlank()) return;
         java.util.Map<String, String> env = pb.environment();
         env.put("JAVA_HOME", javaHome);

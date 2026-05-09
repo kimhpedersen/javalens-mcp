@@ -60,6 +60,23 @@ jobs:
         $bin = "$env:RUNNER_TEMP\maven\apache-maven-$version\bin"
         Add-Content $env:GITHUB_PATH $bin
 
+    # Separate JDK for child mvn/gradle subprocesses on Windows. The Tycho-surefire test
+    # JVM holds the JDK's lib/jvm.cfg open in a way that causes ProcessBuilder-spawned
+    # java.exe (running from the SAME JDK) to fail with "could not open jvm.cfg" when it
+    # tries to read its own copy. Pointing child subprocesses at a *different* JDK
+    # installation breaks the conflict — each java.exe opens its own jvm.cfg.
+    - name: Install separate child-process JDK (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        $version = "21.0.5+11.0.LTS"
+        $jdkUrl = "https://aka.ms/download-jdk/microsoft-jdk-21.0.5-windows-x64.zip"
+        Invoke-WebRequest -Uri $jdkUrl -OutFile $env:RUNNER_TEMP\child-jdk.zip
+        Expand-Archive -Path $env:RUNNER_TEMP\child-jdk.zip -DestinationPath $env:RUNNER_TEMP\child-jdk
+        $jdkRoot = (Get-ChildItem -Directory $env:RUNNER_TEMP\child-jdk | Select-Object -First 1).FullName
+        echo "JAVALENS_TESTS_CHILD_JAVA_HOME=$jdkRoot" >> $env:GITHUB_ENV
+        echo "Installed child-process JDK at $jdkRoot"
+
     # Gradle: vendor-supported action on Linux/macOS adds the binary to PATH for
     # subsequent steps; the same parameter on Windows did not propagate to the
     # surefire JVM in practice (resolveGradleBinary saw no gradle.bat). Using the

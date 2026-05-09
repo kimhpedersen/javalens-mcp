@@ -203,7 +203,9 @@ class EndToEndIntegrationTest {
     }
 
     private static void propagateJavaHome(ProcessBuilder pb) {
-        String javaHome = System.getProperty("java.home");
+        String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
+        String javaHome = (override != null && !override.isBlank())
+            ? override : System.getProperty("java.home");
         if (javaHome == null || javaHome.isBlank()) return;
         java.util.Map<String, String> env = pb.environment();
         env.put("JAVA_HOME", javaHome);
