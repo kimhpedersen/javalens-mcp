@@ -119,20 +119,11 @@ class MultiModuleMavenTest {
 
     private static void runMaven(String mvnBinary, Path projectRoot, String... goals)
             throws IOException, InterruptedException {
-        java.util.List<String> command = new java.util.ArrayList<>();
-        command.add(mvnBinary);
-        for (String g : goals) command.add(g);
+        java.util.List<String> command = buildSubprocessCommand(mvnBinary, goals);
         ProcessBuilder pb = new ProcessBuilder(command)
             .directory(projectRoot.toFile())
             .redirectErrorStream(true);
         propagateJavaHome(pb);
-        // CI diagnostic: dump the JAVA_HOME and Path the child will see, so we can
-        // verify env propagation actually reached the spawned process.
-        System.err.println("[runMaven] pb.environment().JAVA_HOME=" + pb.environment().get("JAVA_HOME"));
-        System.err.println("[runMaven] pb.environment().Path[0..200]=" +
-            (pb.environment().getOrDefault("Path", "").length() > 200
-                ? pb.environment().get("Path").substring(0, 200) + "..."
-                : pb.environment().get("Path")));
         Process p = pb.start();
         StringBuilder captured = new StringBuilder();
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
@@ -157,6 +148,35 @@ class MultiModuleMavenTest {
      * a Maven Wrapper distribution under {@code ~/.m2/wrapper/dists}, which is present in
      * this repo because {@code ./mvnw} extracts mvn there on first build.
      */
+    /**
+     * On Windows, wrap the subprocess in {@code cmd /c "set JAVA_HOME=...&& <mvn>"} so
+     * the cmd shell that hosts mvn.cmd has JAVA_HOME set explicitly. Java's
+     * {@code ProcessBuilder.environment()} mutations don't reliably propagate through
+     * Windows cmd's env handling for .cmd batch scripts; the in-cmd {@code set} command
+     * sidesteps that by setting the variable inside the spawned cmd before mvn.cmd runs.
+     */
+    private static java.util.List<String> buildSubprocessCommand(String binary, String[] goals) {
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        java.util.List<String> command = new java.util.ArrayList<>();
+        if (isWindows) {
+            String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
+            String javaHome = (override != null && !override.isBlank())
+                ? override : System.getProperty("java.home");
+            StringBuilder sb = new StringBuilder();
+            sb.append("set \"JAVA_HOME=").append(javaHome).append("\" && ");
+            sb.append("set \"Path=").append(javaHome).append("\\bin;%Path%\" && ");
+            sb.append("\"").append(binary).append("\"");
+            for (String g : goals) sb.append(' ').append(g);
+            command.add("cmd");
+            command.add("/c");
+            command.add(sb.toString());
+        } else {
+            command.add(binary);
+            for (String g : goals) command.add(g);
+        }
+        return command;
+    }
+
     private static void propagateJavaHome(ProcessBuilder pb) {
         String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
         String javaHome = (override != null && !override.isBlank())
