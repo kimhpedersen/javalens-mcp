@@ -1,13 +1,15 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
-import org.eclipse.jdt.core.search.SearchMatch;
+import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -23,7 +25,8 @@ import java.util.function.Supplier;
 
 /**
  * Find implementations of an interface or extensions of a class.
- * Uses JDT SearchEngine IMPLEMENTORS search for fast indexed results.
+ * Uses ITypeHierarchy.getAllSubtypes so transitive implementors via sub-interface
+ * chains or multi-level extension are included.
  */
 public class FindImplementationsTool extends AbstractTool {
 
@@ -126,16 +129,22 @@ public class FindImplementationsTool extends AbstractTool {
                 }
             }
 
-            // Use SearchService for indexed implementor search
-            List<SearchMatch> matches = service.getSearchService()
-                .findImplementations(targetMethod != null ? targetMethod : targetType, maxResults);
+            // Use type hierarchy for full transitive implementor/subtype walk. The previous
+            // IMPLEMENTORS-based search returned only direct implementors, silently dropping
+            // subtypes reached via sub-interface chains or multi-level extension.
+            IType[] subtypes = service.getSearchService().getAllSubtypes(targetType);
 
-            // Convert matches to implementation info
             List<Map<String, Object>> implementations = new ArrayList<>();
-            for (SearchMatch match : matches) {
-                Map<String, Object> implInfo = createImplementationInfo(match, service);
-                if (implInfo != null) {
-                    implementations.add(implInfo);
+            for (IType subtype : subtypes) {
+                if (implementations.size() >= maxResults) break;
+                if (targetMethod != null) {
+                    IMethod overrider = findMatchingMethod(subtype, targetMethod);
+                    if (overrider == null) continue;
+                    Map<String, Object> implInfo = createMethodImplementationInfo(subtype, overrider, service);
+                    if (implInfo != null) implementations.add(implInfo);
+                } else {
+                    Map<String, Object> implInfo = createTypeImplementationInfo(subtype, service);
+                    if (implInfo != null) implementations.add(implInfo);
                 }
             }
 
@@ -172,65 +181,79 @@ public class FindImplementationsTool extends AbstractTool {
         }
     }
 
-    private Map<String, Object> createImplementationInfo(SearchMatch match, IJdtService service) {
+    private Map<String, Object> createTypeImplementationInfo(IType type, IJdtService service) {
         try {
-            Object element = match.getElement();
-            if (!(element instanceof IJavaElement javaElement)) {
-                return null;
-            }
-
             Map<String, Object> info = new LinkedHashMap<>();
-
-            // Get the type information
-            IType type = null;
-            if (javaElement instanceof IType t) {
-                type = t;
-            } else if (javaElement instanceof IMethod m) {
-                type = m.getDeclaringType();
-                info.put("method", m.getElementName());
-            }
-
-            if (type != null) {
-                info.put("name", type.getElementName());
-                info.put("qualifiedName", type.getFullyQualifiedName());
-
-                try {
-                    if (type.isInterface()) {
-                        info.put("kind", "Interface");
-                    } else if (type.isEnum()) {
-                        info.put("kind", "Enum");
-                    } else {
-                        info.put("kind", "Class");
-                    }
-                } catch (JavaModelException e) {
-                    info.put("kind", "Class");
-                }
-            } else {
-                info.put("name", javaElement.getElementName());
-            }
-
-            // File path
-            if (match.getResource() != null) {
-                IPath location = match.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
-            }
-
-            // Line and column
-            ICompilationUnit cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
-            if (cu != null) {
-                int implLine = service.getLineNumber(cu, match.getOffset());
-                int implColumn = service.getColumnNumber(cu, match.getOffset());
-                info.put("line", implLine);
-                info.put("column", implColumn);
-            }
-
+            info.put("name", type.getElementName());
+            info.put("qualifiedName", type.getFullyQualifiedName());
+            info.put("kind", kindOf(type));
+            populateLocation(type, info, service, type.getNameRange());
             return info;
-
         } catch (Exception e) {
-            log.debug("Error creating implementation info: {}", e.getMessage());
+            log.debug("Error creating type implementation info: {}", e.getMessage());
             return null;
         }
+    }
+
+    private Map<String, Object> createMethodImplementationInfo(IType type, IMethod method, IJdtService service) {
+        try {
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("name", type.getElementName());
+            info.put("qualifiedName", type.getFullyQualifiedName());
+            info.put("kind", kindOf(type));
+            info.put("method", method.getElementName());
+            populateLocation(method, info, service, method.getNameRange());
+            return info;
+        } catch (Exception e) {
+            log.debug("Error creating method implementation info: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String kindOf(IType type) {
+        try {
+            if (type.isInterface()) return "Interface";
+            if (type.isEnum()) return "Enum";
+            if (type.isRecord()) return "Record";
+        } catch (JavaModelException e) {
+            // fall through
+        }
+        return "Class";
+    }
+
+    private void populateLocation(IJavaElement element, Map<String, Object> info,
+                                   IJdtService service, ISourceRange nameRange) throws JavaModelException {
+        IResource resource = element.getResource();
+        if (resource != null) {
+            IPath location = resource.getLocation();
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
+            }
+        }
+        ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
+        if (cu != null && nameRange != null && nameRange.getOffset() >= 0) {
+            int line = service.getLineNumber(cu, nameRange.getOffset());
+            int column = service.getColumnNumber(cu, nameRange.getOffset());
+            info.put("line", line);
+            info.put("column", column);
+        }
+    }
+
+    private IMethod findMatchingMethod(IType type, IMethod target) throws JavaModelException {
+        String targetName = target.getElementName();
+        String[] targetParamTypes = target.getParameterTypes();
+        for (IMethod m : type.getMethods()) {
+            if (!m.getElementName().equals(targetName)) continue;
+            String[] mParamTypes = m.getParameterTypes();
+            if (mParamTypes.length != targetParamTypes.length) continue;
+            boolean match = true;
+            for (int i = 0; i < targetParamTypes.length; i++) {
+                String a = Signature.getSimpleName(Signature.toString(targetParamTypes[i]));
+                String b = Signature.getSimpleName(Signature.toString(mParamTypes[i]));
+                if (!a.equals(b)) { match = false; break; }
+            }
+            if (match) return m;
+        }
+        return null;
     }
 }
