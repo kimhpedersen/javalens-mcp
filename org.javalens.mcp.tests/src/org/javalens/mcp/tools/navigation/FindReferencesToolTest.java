@@ -3,6 +3,7 @@ package org.javalens.mcp.tools.navigation;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.SemanticAssertions;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindReferencesTool;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -176,5 +179,96 @@ class FindReferencesToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertNotNull(getReferences(data));
+    }
+
+    // ========== Semantic-grade tests (exact-content assertions) ==========
+
+    private String fixturePath(String relative) {
+        return projectPath.resolve(relative).toString();
+    }
+
+    private ObjectNode argsAt(String filePath, int line, int column) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        args.put("maxResults", 1000);
+        return args;
+    }
+
+    @Test
+    @DisplayName("references to Animal type appear in Dog, FieldHolder, and WidgetHelper files")
+    void animalType_referencesAppearInExpectedFiles() {
+        // Animal.java line 5 (0-based) is `public class Animal {`
+        ToolResponse r = tool.execute(argsAt(
+            fixturePath("src/main/java/com/example/Animal.java"), 5, 13));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+
+        assertEquals("Animal", data.get("symbol"));
+        assertEquals("Class", data.get("symbolKind"));
+
+        List<Map<String, Object>> references = getReferences(data);
+        Set<String> referencingFiles = references.stream()
+            .map(ref -> (String) ref.get("filePath"))
+            .map(p -> p == null ? "" : p.replace('\\', '/'))
+            .map(p -> p.substring(p.lastIndexOf('/') + 1))
+            .collect(Collectors.toSet());
+
+        // Animal is referenced by Dog (extends), FieldHolder (field/param/return),
+        // and WidgetHelper (param/return). Exact filenames must appear.
+        assertTrue(referencingFiles.contains("Animal.java"),
+            "Dog extends Animal inside Animal.java; got: " + referencingFiles);
+        assertTrue(referencingFiles.contains("FieldHolder.java"),
+            "FieldHolder uses Animal as field, ctor param, and return type; got: " + referencingFiles);
+        assertTrue(referencingFiles.contains("WidgetHelper.java"),
+            "WidgetHelper uses Animal as ctor param and return type; got: " + referencingFiles);
+    }
+
+    @Test
+    @DisplayName("references to FieldHolder.pet field appear in declaring file and cross-file")
+    void fieldHolderPet_referencesAcrossFiles() {
+        // FieldHolder.java line 4 (0-based) is `    Animal pet;` — field "pet" starts at column 11
+        ToolResponse r = tool.execute(argsAt(
+            fixturePath("src/main/java/com/example/FieldHolder.java"), 4, 11));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+
+        assertEquals("pet", data.get("symbol"));
+        assertEquals("Field", data.get("symbolKind"));
+        assertEquals("FieldHolder", data.get("containingType"));
+
+        List<Map<String, Object>> references = getReferences(data);
+        Set<String> referencingFiles = references.stream()
+            .map(ref -> (String) ref.get("filePath"))
+            .map(p -> p == null ? "" : p.replace('\\', '/'))
+            .map(p -> p.substring(p.lastIndexOf('/') + 1))
+            .collect(Collectors.toSet());
+
+        assertTrue(referencingFiles.contains("FieldHolder.java"),
+            "FieldHolder.pet referenced inside FieldHolder.java (constructors + getPet); got: "
+                + referencingFiles);
+        assertTrue(referencingFiles.contains("WidgetHelper.java"),
+            "FieldHolder.pet referenced in WidgetHelper.java (describe, swap, extract); got: "
+                + referencingFiles);
+    }
+
+    @Test
+    @DisplayName("references to a field local to a class (Calculator.lastResult) are confined to declaring file")
+    void calculatorLastResult_referencesConfinedToDeclaringFile() {
+        // Calculator.java line 6 (0-based) is `    private int lastResult;`
+        ToolResponse r = tool.execute(argsAt(calculatorPath, 6, 16));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+
+        assertEquals("lastResult", data.get("symbol"));
+
+        List<Map<String, Object>> references = getReferences(data);
+        Set<String> referencingFiles = references.stream()
+            .map(ref -> (String) ref.get("filePath"))
+            .map(p -> p == null ? "" : p.replace('\\', '/'))
+            .map(p -> p.substring(p.lastIndexOf('/') + 1))
+            .collect(Collectors.toSet());
+
+        // Calculator.lastResult is private; only referenced from Calculator.java
+        assertEquals(Set.of("Calculator.java"), referencingFiles,
+            "Private field lastResult must only appear in Calculator.java; got: " + referencingFiles);
     }
 }
