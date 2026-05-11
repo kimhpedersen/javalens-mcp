@@ -64,4 +64,24 @@ class FindTypeArgumentsToolTest {
         args.put("typeName", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator as generic type argument: at least 1 (SearchPatterns has List<Calculator> field + use)")
+    void calculator_findsTypeArgumentUsages() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // SearchPatterns declares `private List<Calculator> calculatorList;` and inside
+        // useGenerics has `List<Calculator> calcs = new ArrayList<>();`. JDT may report 1
+        // or 2 depending on how `new ArrayList<>()`'s diamond inference is counted.
+        int total = ((Number) getData(r).get("totalUsages")).intValue();
+        assertTrue(total >= 1,
+            "Expected at least 1 List<Calculator> usage; got: "
+                + total + " (" + getUsages(getData(r)) + ")");
+    }
 }

@@ -64,4 +64,24 @@ class FindCatchBlocksToolTest {
         args.put("exceptionType", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("IOException catch blocks: SearchPatterns.handleExceptions has two; ControlFlowPatterns has none directly catching IOException")
+    void ioException_findsExpectedCatchBlocks() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("exceptionType", "java.io.IOException");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // SearchPatterns.handleExceptions has two catch (IOException ...) blocks
+        // plus ControlFlowPatterns.multiCatch's `catch (NumberFormatException | IOException e)`.
+        // Total >= 3.
+        int total = ((Number) getData(r).get("totalCatchBlocks")).intValue();
+        assertTrue(total >= 3,
+            "Expected at least 3 IOException catch blocks; got: "
+                + total + " (" + getCatchBlocks(getData(r)) + ")");
+    }
 }

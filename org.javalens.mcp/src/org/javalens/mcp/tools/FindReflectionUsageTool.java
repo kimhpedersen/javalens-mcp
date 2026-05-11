@@ -24,20 +24,27 @@ public class FindReflectionUsageTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(FindReflectionUsageTool.class);
 
-    // Type -> method name -> JDT method signature parameter types
+    // (declaring type, method name). All overloads of each name are searched, so e.g.
+    // both Class.forName(String) and Class.forName(String, boolean, ClassLoader) are caught.
     private static final String[][] REFLECTION_METHODS = {
-        {"java.lang.Class", "forName", "Ljava/lang/String;"},
-        {"java.lang.Class", "getMethod", "Ljava/lang/String;[Ljava/lang/Class;"},
-        {"java.lang.Class", "getDeclaredMethod", "Ljava/lang/String;[Ljava/lang/Class;"},
-        {"java.lang.Class", "getField", "Ljava/lang/String;"},
-        {"java.lang.Class", "getDeclaredField", "Ljava/lang/String;"},
-        {"java.lang.Class", "getConstructor", "[Ljava/lang/Class;"},
-        {"java.lang.Class", "getDeclaredConstructor", "[Ljava/lang/Class;"},
-        {"java.lang.Class", "newInstance", ""},
-        {"java.lang.reflect.Method", "invoke", "Ljava/lang/Object;[Ljava/lang/Object;"},
-        {"java.lang.reflect.Field", "get", "Ljava/lang/Object;"},
-        {"java.lang.reflect.Field", "set", "Ljava/lang/Object;Ljava/lang/Object;"},
-        {"java.lang.reflect.Constructor", "newInstance", "[Ljava/lang/Object;"},
+        {"java.lang.Class", "forName"},
+        {"java.lang.Class", "getMethod"},
+        {"java.lang.Class", "getDeclaredMethod"},
+        {"java.lang.Class", "getMethods"},
+        {"java.lang.Class", "getDeclaredMethods"},
+        {"java.lang.Class", "getField"},
+        {"java.lang.Class", "getDeclaredField"},
+        {"java.lang.Class", "getFields"},
+        {"java.lang.Class", "getDeclaredFields"},
+        {"java.lang.Class", "getConstructor"},
+        {"java.lang.Class", "getDeclaredConstructor"},
+        {"java.lang.Class", "getConstructors"},
+        {"java.lang.Class", "getDeclaredConstructors"},
+        {"java.lang.Class", "newInstance"},
+        {"java.lang.reflect.Method", "invoke"},
+        {"java.lang.reflect.Field", "get"},
+        {"java.lang.reflect.Field", "set"},
+        {"java.lang.reflect.Constructor", "newInstance"},
     };
 
     public FindReflectionUsageTool(Supplier<IJdtService> serviceSupplier) {
@@ -99,37 +106,30 @@ public class FindReflectionUsageTool extends AbstractTool {
             for (String[] entry : REFLECTION_METHODS) {
                 String typeName = entry[0];
                 String methodName = entry[1];
-                String paramSig = entry[2];
                 String label = typeName.substring(typeName.lastIndexOf('.') + 1) + "." + methodName;
 
                 try {
                     IType type = service.findType(typeName);
                     if (type == null) continue;
 
-                    String[] paramTypes = paramSig.isEmpty() ? new String[0] : paramSig.split(";(?=[^\\[])");
-                    // Fix trailing empty entries
-                    List<String> cleanParams = new ArrayList<>();
-                    for (String p : paramTypes) {
-                        String trimmed = p.trim();
-                        if (!trimmed.isEmpty()) {
-                            if (!trimmed.endsWith(";")) trimmed += ";";
-                            cleanParams.add(trimmed);
+                    int forThisLabel = 0;
+                    // Iterate all overloads of methodName on this type. Searching references
+                    // for each IMethod handle gives us the union across overloads.
+                    for (IMethod method : type.getMethods()) {
+                        if (!methodName.equals(method.getElementName())) continue;
+                        if (!method.exists()) continue;
+
+                        List<SearchMatch> matches = service.getSearchService().findAllReferences(method, maxResults);
+                        List<Map<String, Object>> formatted = formatMatches(matches, service);
+                        for (Map<String, Object> match : formatted) {
+                            match.put("reflectionMethod", label);
+                            allCalls.add(match);
                         }
+                        forThisLabel += formatted.size();
                     }
 
-                    IMethod method = type.getMethod(methodName, cleanParams.toArray(new String[0]));
-                    if (method == null || !method.exists()) continue;
-
-                    List<SearchMatch> matches = service.getSearchService().findAllReferences(method, maxResults);
-                    List<Map<String, Object>> formatted = formatMatches(matches, service);
-
-                    for (Map<String, Object> match : formatted) {
-                        match.put("reflectionMethod", label);
-                        allCalls.add(match);
-                    }
-
-                    if (!formatted.isEmpty()) {
-                        summary.put(label, formatted.size());
+                    if (forThisLabel > 0) {
+                        summary.put(label, forThisLabel);
                     }
                 } catch (Exception e) {
                     log.debug("Could not scan for {}.{}: {}", typeName, methodName, e.getMessage());

@@ -91,4 +91,36 @@ class FindReflectionUsageToolTest {
 
         assertTrue(response.isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("reflection calls include Class.forName, getMethod, Method.invoke, getDeclaredField, Field.get from DiAndReflectionPatterns")
+    void findsSpecificReflectionApis() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", 100);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> calls = (List<Map<String, Object>>) getData(response).get("reflectionCalls");
+
+        java.util.Set<String> reflectionMethods = calls.stream()
+            .map(c -> (String) c.get("reflectionMethod"))
+            .filter(java.util.Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+
+        // DiAndReflectionPatterns has Class.forName, getDeclaredConstructor().newInstance(),
+        // getMethod, Method.invoke, getDeclaredField, Field.get (and setAccessible).
+        // Some of these (newInstance, setAccessible) may not be classified as core reflection
+        // by the tool; assert the most universally-detected APIs appear.
+        assertTrue(reflectionMethods.contains("Class.forName"),
+            "Expected Class.forName in detected reflection methods; got: " + reflectionMethods);
+        assertTrue(reflectionMethods.contains("Class.getMethod"),
+            "Expected Class.getMethod in detected reflection methods; got: " + reflectionMethods);
+        assertTrue(reflectionMethods.contains("Method.invoke"),
+            "Expected Method.invoke in detected reflection methods; got: " + reflectionMethods);
+        assertTrue(reflectionMethods.contains("Class.getDeclaredField"),
+            "Expected Class.getDeclaredField in detected reflection methods; got: " + reflectionMethods);
+    }
 }

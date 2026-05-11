@@ -80,4 +80,31 @@ class FindMethodReferencesToolTest {
         args.put("column", 5);
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator.add has no method-reference usages in fixtures (isolation)")
+    void calculatorAdd_hasNoMethodReferences() {
+        String calcPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        // Calculator.add() declared at line 14 (0-based 13). Position on "add" identifier.
+        args.put("line", 13);
+        args.put("column", 15);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        // No project code uses `Calculator::add` as a method reference. SearchPatterns
+        // uses other JDK method references (String::valueOf, ArrayList::new, etc.) but
+        // not Calculator::add.
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("methodReferences");
+        assertNotNull(refs);
+        assertEquals(0, refs.size(),
+            "Calculator.add is never used as a method reference; got: " + refs);
+    }
 }

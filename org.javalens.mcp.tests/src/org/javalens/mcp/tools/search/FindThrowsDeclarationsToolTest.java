@@ -64,4 +64,23 @@ class FindThrowsDeclarationsToolTest {
         args.put("exceptionType", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("IOException throws declarations: SearchPatterns.readFile, SearchPatterns.riskyOperation, ControlFlowPatterns.tryWithResources")
+    void ioException_findsExpectedDeclarations() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("exceptionType", "java.io.IOException");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // SearchPatterns.readFile throws IOException, riskyOperation throws IOException,
+        // ControlFlowPatterns.tryWithResources throws IOException. Expect at least 3 matches.
+        int total = ((Number) getData(r).get("totalDeclarations")).intValue();
+        assertTrue(total >= 3,
+            "Expected at least 3 IOException throws declarations; got: "
+                + total + " (" + getDeclarations(getData(r)) + ")");
+    }
 }
