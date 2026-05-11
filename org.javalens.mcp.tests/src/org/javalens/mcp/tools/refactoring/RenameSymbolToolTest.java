@@ -225,4 +225,48 @@ class RenameSymbolToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Semantic-grade tests (exact-content assertions) ==========
+
+    @Test
+    @DisplayName("rename FieldHolder.pet (custom-typed field): cross-file edits across FieldHolder + WidgetHelper")
+    void renameCustomTypedField_emitsAllEditsAcrossFiles() {
+        String fieldHolderPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/FieldHolder.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fieldHolderPath);
+        args.put("line", 4);    // `    Animal pet;` (0-based)
+        args.put("column", 11); // start of "pet"
+        args.put("newName", "companion");
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+
+        assertEquals("pet", data.get("oldName"));
+        assertEquals("companion", data.get("newName"));
+        assertEquals("Field", data.get("symbolKind"));
+
+        int totalEdits = ((Number) data.get("totalEdits")).intValue();
+        int filesAffected = ((Number) data.get("filesAffected")).intValue();
+
+        // Expected: 4 edits in FieldHolder (decl + 2 ctor inits + getPet return) + 4 edits
+        // in WidgetHelper (describe read + swap write + extract read + extract write) = 8
+        // across 2 files. Tool may or may not count the declaration itself as an edit; bound
+        // conservatively at >= 7 across 2 files.
+        assertEquals(2, filesAffected,
+            "FieldHolder.pet must be renamed across both declaring file and WidgetHelper");
+        assertTrue(totalEdits >= 7,
+            "Expected at least 7 edits for pet (decl + inits + accessors + cross-file uses); got: " + totalEdits);
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, java.util.List<?>> editsByFile =
+            (java.util.Map<String, java.util.List<?>>) data.get("editsByFile");
+        boolean hasFieldHolder = editsByFile.keySet().stream()
+            .anyMatch(k -> k.replace('\\', '/').endsWith("FieldHolder.java"));
+        boolean hasWidgetHelper = editsByFile.keySet().stream()
+            .anyMatch(k -> k.replace('\\', '/').endsWith("WidgetHelper.java"));
+        assertTrue(hasFieldHolder, "edits must include FieldHolder.java; got: " + editsByFile.keySet());
+        assertTrue(hasWidgetHelper, "edits must include WidgetHelper.java; got: " + editsByFile.keySet());
+    }
 }
