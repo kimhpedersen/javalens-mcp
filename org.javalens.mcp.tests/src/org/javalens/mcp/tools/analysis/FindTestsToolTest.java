@@ -74,4 +74,72 @@ class FindTestsToolTest {
     void returnsSuccessWithNoParameters() {
         assertTrue(tool.execute(objectMapper.createObjectNode()).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("SampleTest is found with its @Test-annotated methods (excluding @Disabled by default)")
+    void sampleTest_foundWithKnownTestMethods() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
+
+        Map<String, Object> sampleTest = testClasses.stream()
+            .filter(tc -> {
+                Object cn = tc.get("className");
+                return cn != null && cn.toString().endsWith("SampleTest");
+            })
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "SampleTest must be detected; got: " +
+                    testClasses.stream().map(tc -> tc.get("className")).toList()));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testMethods = (List<Map<String, Object>>) sampleTest.get("testMethods");
+        java.util.Set<String> methodNames = testMethods.stream()
+            .map(tm -> (String) tm.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        // SampleTest declares: testAddition, testSubtraction, testMultiplication,
+        // testDivision (disabled), anotherDisabledTest (disabled), testWithCustomDisplayName.
+        // Non-test helpers (helperMethod, privateHelper) must NOT appear.
+        assertTrue(methodNames.contains("testAddition"));
+        assertTrue(methodNames.contains("testSubtraction"));
+        assertTrue(methodNames.contains("testMultiplication"));
+        assertTrue(methodNames.contains("testWithCustomDisplayName"));
+        assertFalse(methodNames.contains("helperMethod"),
+            "helperMethod has no @Test annotation; must not appear");
+        assertFalse(methodNames.contains("privateHelper"),
+            "privateHelper is not a test; must not appear");
+    }
+
+    @Test
+    @DisplayName("includeDisabled=true surfaces @Disabled test methods")
+    void includeDisabled_surfacesDisabledMethods() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("includeDisabled", true);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
+        java.util.Set<String> allMethodNames = testClasses.stream()
+            .filter(tc -> {
+                Object cn = tc.get("className");
+                return cn != null && cn.toString().endsWith("SampleTest");
+            })
+            .flatMap(tc -> {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> methods = (List<Map<String, Object>>) tc.get("testMethods");
+                return methods.stream();
+            })
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(allMethodNames.contains("testDivision"),
+            "testDivision (@Disabled) must appear when includeDisabled=true; got: " + allMethodNames);
+    }
 }

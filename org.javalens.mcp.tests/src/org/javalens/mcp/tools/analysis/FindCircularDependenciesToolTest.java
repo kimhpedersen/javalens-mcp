@@ -67,4 +67,21 @@ class FindCircularDependenciesToolTest {
         assertEquals(false, getData(r).get("hasCycles"));
         assertEquals(0, getData(r).get("cycleCount"));
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("simple-maven has no package cycles (single com.example + com.example.service)")
+    void simpleMaven_hasNoPackageCycles() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        assertEquals(false, data.get("hasCycles"),
+            "simple-maven has com.example and com.example.service with one-way dependency; no cycles expected");
+        assertEquals(0, data.get("cycleCount"));
+        @SuppressWarnings("unchecked")
+        List<?> cycles = (List<?>) data.get("cycles");
+        assertEquals(0, cycles.size(), "cycles list must be exactly empty");
+    }
 }
