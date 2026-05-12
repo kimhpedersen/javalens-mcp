@@ -125,10 +125,6 @@ public class GetEnclosingElementTool extends AbstractTool {
                 }
             }
 
-            if (enclosingMethod != null) {
-                data.put("enclosingMethod", createMethodInfo(enclosingMethod, service));
-            }
-
             // Find enclosing type
             IType enclosingType = null;
             if (element != null) {
@@ -137,6 +133,27 @@ public class GetEnclosingElementTool extends AbstractTool {
                 } else {
                     enclosingType = (IType) element.getAncestor(IJavaElement.TYPE);
                 }
+            }
+
+            // Fallback: position resolved to a field/type reference inside a method body
+            // (e.g., `lastResult = a + b;` from add()'s body). The ancestor chain doesn't
+            // walk through methods for IField/IType, so locate the enclosing method by
+            // source range.
+            if (enclosingMethod == null && enclosingType != null) {
+                int offset = service.getOffset(cu, line, column);
+                for (IMethod m : enclosingType.getMethods()) {
+                    var range = m.getSourceRange();
+                    if (range != null
+                        && offset >= range.getOffset()
+                        && offset < range.getOffset() + range.getLength()) {
+                        enclosingMethod = m;
+                        break;
+                    }
+                }
+            }
+
+            if (enclosingMethod != null) {
+                data.put("enclosingMethod", createMethodInfo(enclosingMethod, service));
             }
 
             if (enclosingType != null) {

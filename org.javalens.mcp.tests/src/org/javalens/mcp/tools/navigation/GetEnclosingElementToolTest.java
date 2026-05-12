@@ -135,6 +135,31 @@ class GetEnclosingElementToolTest {
         assertEquals("com.example.service", data.get("enclosingPackage"));
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Inside Calculator.add body: enclosingMethod resolves to 'add'")
+    @SuppressWarnings("unchecked")
+    void insideAddBody_enclosingMethodIsAdd() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        // Calculator.add body line `lastResult = a + b;` is 1-based line 16 -> 0-based 15.
+        args.put("line", 15);
+        args.put("column", 10);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+
+        Map<String, Object> enclosingMethod = (Map<String, Object>) data.get("enclosingMethod");
+        assertNotNull(enclosingMethod,
+            "Position inside Calculator.add body must yield enclosingMethod; got data: " + data);
+        assertEquals("add", enclosingMethod.get("name"),
+            "Enclosing method must be 'add'; got: " + enclosingMethod);
+        assertEquals(false, enclosingMethod.get("isConstructor"),
+            "Calculator.add is not a constructor; got: " + enclosingMethod);
+    }
+
     // ========== Parameter Validation Tests ==========
 
     @Test
