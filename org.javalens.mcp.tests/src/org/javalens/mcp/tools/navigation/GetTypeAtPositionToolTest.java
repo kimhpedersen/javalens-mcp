@@ -71,9 +71,10 @@ class GetTypeAtPositionToolTest {
         assertNotNull(modifiers);
         assertTrue(modifiers.contains("public"));
 
-        // Member counts
-        assertNotNull(data.get("methodCount"));
-        assertTrue((Integer) data.get("methodCount") >= 4);
+        // Member counts — Calculator declares exactly 4 methods (add, subtract,
+        // multiply, getLastResult), 1 field (lastResult), no nested types. Using == not
+        // >= so a regression that double-counts or under-counts is caught.
+        assertEquals(4, data.get("methodCount"));
         assertEquals(1, data.get("fieldCount"));
         assertEquals(0, data.get("nestedTypeCount"));
 
