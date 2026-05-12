@@ -123,4 +123,58 @@ class FindLargeClassesToolTest {
         int totalScanned = (int) data.get("totalClassesScanned");
         assertTrue(totalScanned > 0, "Should scan at least one class");
     }
+
+    // ========== Semantic-grade tests (LargeClass boundary fixture) ==========
+
+    @Test
+    @DisplayName("default thresholds: LargeClass appears (21 methods > 20, 11 fields > 10); Calculator does not")
+    void defaultThresholds_largeClassFlagged_calculatorNot() {
+        ObjectNode args = objectMapper.createObjectNode();
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("largeClasses");
+        java.util.Set<String> names = classes.stream()
+            .map(c -> (String) c.get("typeName"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(names.contains("LargeClass"),
+            "LargeClass has 21 methods and 11 fields; exceeds default thresholds (20/10). Got: " + names);
+        assertFalse(names.contains("Calculator"),
+            "Calculator has few methods/fields; must not be flagged. Got: " + names);
+    }
+
+    @Test
+    @DisplayName("maxMethods=22 (above LargeClass count): LargeClass still flagged by fields (11 > default 10)")
+    void boundary_methodsAboveLargeClass_stillFlaggedByFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxMethods", 22);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("largeClasses");
+        boolean hasLargeClass = classes.stream().anyMatch(c -> "LargeClass".equals(c.get("typeName")));
+        assertTrue(hasLargeClass,
+            "Even with maxMethods=22, LargeClass's 11 fields exceed default maxFields=10");
+    }
+
+    @Test
+    @DisplayName("maxMethods=22 and maxFields=12 (above LargeClass counts): LargeClass not flagged by counts")
+    void boundary_aboveBothMethodAndFieldCounts_largeClassNotFlaggedByCounts() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxMethods", 22);
+        args.put("maxFields", 12);
+        args.put("maxLines", 10000);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("largeClasses");
+        boolean hasLargeClass = classes.stream().anyMatch(c -> "LargeClass".equals(c.get("typeName")));
+        assertFalse(hasLargeClass,
+            "With all thresholds above LargeClass's metrics, it must not appear; got: " +
+                classes.stream().map(c -> c.get("typeName")).toList());
+    }
 }
