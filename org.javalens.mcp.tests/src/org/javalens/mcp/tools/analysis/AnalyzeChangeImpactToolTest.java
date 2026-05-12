@@ -117,4 +117,32 @@ class AnalyzeChangeImpactToolTest {
         // Either success with no references or symbolNotFound is acceptable
         assertNotNull(response);
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator.add impact at depth=1: UserService.java is among affected files")
+    void calculatorAdd_depth1_includesUserService() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        // Calculator.add() is on 0-based line 13 (column 15 for "add")
+        args.put("line", 13);
+        args.put("column", 15);
+        args.put("depth", 1);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> affectedFiles = (List<Map<String, Object>>) data.get("affectedFiles");
+        boolean hasUserService = affectedFiles.stream()
+            .map(m -> (String) m.get("file"))
+            .filter(java.util.Objects::nonNull)
+            .map(s -> s.replace('\\', '/'))
+            .anyMatch(s -> s.endsWith("UserService.java"));
+        assertTrue(hasUserService,
+            "UserService.calculateTotal calls Calculator.add — must appear in depth-1 affected files; got: "
+                + affectedFiles);
+    }
 }
