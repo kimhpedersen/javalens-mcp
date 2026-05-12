@@ -128,12 +128,13 @@ public class GetQuickFixesTool extends AbstractTool {
             );
 
             if (ast == null) {
-                return ToolResponse.success(Map.of(
-                    "filePath", service.getPathUtils().formatPath(path),
-                    "line", line,
-                    "problemCount", 0,
-                    "fixes", List.of()
-                ));
+                Map<String, Object> empty = new LinkedHashMap<>();
+                empty.put("filePath", service.getPathUtils().formatPath(path));
+                empty.put("line", line);
+                empty.put("problemCount", 0);
+                empty.put("problems", List.of());
+                empty.put("fixes", List.of());
+                return ToolResponse.success(empty);
             }
 
             IProblem[] problems = ast.getProblems();

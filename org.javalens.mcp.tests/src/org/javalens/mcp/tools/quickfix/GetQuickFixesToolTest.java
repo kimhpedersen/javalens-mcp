@@ -49,25 +49,28 @@ class GetQuickFixesToolTest {
     }
 
     @Test
-    @DisplayName("returns complete response structure with fixes list")
-    void returnsCompleteResponseStructure() {
+    @DisplayName("Calculator line 5 (class declaration, no problems): problemCount=0 and fixes is empty")
+    void cleanLine_problemAndFixesAreExactlyEmpty() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", 5);
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify response structure
-        assertNotNull(data.get("filePath"));
         assertEquals(5, data.get("line"));
-        assertNotNull(data.get("fixes"));
-
-        // Verify fixes is a list
+        // Calculator.java compiles cleanly and line 5 is the class declaration; the tool
+        // must report exactly zero problems and zero fixes — not just "non-null".
+        assertEquals(0, ((Number) data.get("problemCount")).intValue(),
+            "Calculator line 5 has no problems; got: " + data.get("problemCount"));
+        @SuppressWarnings("unchecked")
+        List<?> problems = (List<?>) data.get("problems");
+        assertEquals(0, problems.size(),
+            "problems list must be exactly empty when problemCount=0; got: " + problems);
         List<Map<String, Object>> fixes = getFixes(data);
-        assertNotNull(fixes);
+        assertEquals(0, fixes.size(),
+            "fixes list must be exactly empty when no problems are at the line; got: " + fixes);
     }
 
     @Test
@@ -122,24 +125,21 @@ class GetQuickFixesToolTest {
         assertNotNull(response.getError());
     }
 
-    @Test
-    @DisplayName("returns fixes with fixId and label when problems exist")
-    void returnsFixesWithStructure() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", projectPath.resolve("src/main/java/com/example/BugPatterns.java").toString());
-        args.put("line", 0);
-
-        ToolResponse response = tool.execute(args);
-
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-        List<Map<String, Object>> fixes = getFixes(data);
-
-        // If there are fixes, verify they have required structure
-        if (!fixes.isEmpty()) {
-            Map<String, Object> fix = fixes.get(0);
-            assertNotNull(fix.get("fixId"));
-            assertNotNull(fix.get("label"));
-        }
-    }
+    // ========== Coverage gap (deferred) ==========
+    //
+    // The tool's getDescription promises fixes for four IProblem kinds:
+    // UndefinedType, UnusedImport, UnhandledException, ImportNotFound. None of those
+    // can be triggered against the existing fixtures with default JDT settings:
+    //
+    // - UndefinedType / UndefinedName / ImportNotFound / UnhandledException are compile
+    //   errors; a file containing them would break javac and the Maven build.
+    // - UnusedImport: empirically, our JDT setup leaves this at "ignore", so reconcile
+    //   does not surface it as an IProblem (verified — problemCount stays 0 on
+    //   RefactoringTarget's known-unused imports).
+    //
+    // Exercising the fix-generation path therefore requires either (a) configuring the
+    // test project's JDT compiler options to flag unused-imports as warnings, or
+    // (b) using ICompilationUnit working-copy editing to inject in-memory problems that
+    // never reach javac. Both are scoped as their own follow-up — they're tool/test
+    // infrastructure changes, not coverage-writing.
 }
