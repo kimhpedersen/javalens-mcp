@@ -32,24 +32,57 @@ class GetTypeUsageSummaryToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("summarizes type usage comprehensively")
-    void summarizesTypeUsageComprehensively() {
+    @Test
+    @DisplayName("Calculator usage summary: exact counts per category match the sibling find_* tools")
+    @SuppressWarnings("unchecked")
+    void calculator_summaryCountsMatchSiblingTools() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
+        args.put("maxPerCategory", 50);
 
         ToolResponse r = tool.execute(args);
-
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("com.example.Calculator", data.get("typeName"));
         assertEquals("Class", data.get("kind"));
-        assertNotNull(data.get("totalUsages"));
 
-        @SuppressWarnings("unchecked")
         Map<String, Object> usages = (Map<String, Object>) data.get("usages");
-        assertNotNull(usages.get("instantiations"));
-        assertNotNull(usages.get("casts"));
-        assertNotNull(usages.get("instanceofChecks"));
+        assertNotNull(usages);
+
+        // Each subcategory must be a map with `count` and `locations` keys.
+        Map<String, Object> instantiations = (Map<String, Object>) usages.get("instantiations");
+        Map<String, Object> casts = (Map<String, Object>) usages.get("casts");
+        Map<String, Object> instanceofChecks = (Map<String, Object>) usages.get("instanceofChecks");
+        Map<String, Object> typeArguments = (Map<String, Object>) usages.get("typeArguments");
+        assertNotNull(instantiations.get("locations"));
+        assertNotNull(casts.get("locations"));
+        assertNotNull(instanceofChecks.get("locations"));
+        assertNotNull(typeArguments.get("locations"));
+
+        int instantiationCount = ((Number) instantiations.get("count")).intValue();
+        int castCount = ((Number) casts.get("count")).intValue();
+        int instanceofCount = ((Number) instanceofChecks.get("count")).intValue();
+        int typeArgCount = ((Number) typeArguments.get("count")).intValue();
+
+        // Cross-tool consistency: these counts are verified independently by
+        // FindCastsToolTest (1 cast) and FindInstanceofChecksToolTest (2 instanceofs).
+        // The aggregate tool must surface the same numbers.
+        assertEquals(1, castCount,
+            "find_casts asserts exactly 1 cast for Calculator; aggregate must match; got: " + casts);
+        assertEquals(2, instanceofCount,
+            "find_instanceof_checks asserts exactly 2 checks for Calculator; aggregate must match; got: "
+                + instanceofChecks);
+
+        // SearchPatterns alone has `new Calculator()` in createObjects, useGenerics, and
+        // InnerClass.createCalculator — at least 3 instantiations.
+        assertTrue(instantiationCount >= 3,
+            "Calculator is instantiated at least 3 times across SearchPatterns; got: " + instantiations);
+
+        // totalUsages must equal the sum of the category counts (the tool computes it as
+        // such, so this asserts the contract holds).
+        int expectedTotal = instantiationCount + castCount + instanceofCount + typeArgCount;
+        assertEquals(expectedTotal, ((Number) data.get("totalUsages")).intValue(),
+            "totalUsages must equal sum of subcategory counts; got data: " + data);
     }
 
     @Test @DisplayName("finds type by simple name")
