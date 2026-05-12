@@ -118,4 +118,49 @@ class AnalyzeControlFlowToolTest {
         // Should handle gracefully — either error or success with no method
         assertNotNull(response);
     }
+
+    // ========== Semantic-grade tests (ControlFlowPatterns fixture) ==========
+
+    @Test
+    @DisplayName("ControlFlowPatterns.multipleReturns has exactly 4 returns and 0 throws")
+    void multipleReturns_exactCounts() {
+        String cfp = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ControlFlowPatterns.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", cfp);
+        // multipleReturns method declaration at 1-based line 92 → 0-based line 91.
+        // Position on method name at column 15.
+        args.put("line", 91);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("multipleReturns", data.get("method"));
+        @SuppressWarnings("unchecked")
+        List<?> returns = (List<?>) data.get("returnPoints");
+        assertEquals(4, returns.size(),
+            "multipleReturns has 4 return statements; got: " + returns);
+        @SuppressWarnings("unchecked")
+        List<?> throwsP = (List<?>) data.get("throwPoints");
+        assertEquals(0, throwsP.size(),
+            "multipleReturns has no throws; got: " + throwsP);
+    }
+
+    @Test
+    @DisplayName("ControlFlowPatterns.throwMultiple has 3 throw points")
+    void throwMultiple_exactCount() {
+        String cfp = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ControlFlowPatterns.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", cfp);
+        // throwMultiple method declaration at 1-based line 105 → 0-based line 104
+        args.put("line", 104);
+        args.put("column", 16);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<?> throwsP = (List<?>) getData(r).get("throwPoints");
+        assertEquals(3, throwsP.size(),
+            "throwMultiple has 3 throw statements; got: " + throwsP);
+    }
 }
