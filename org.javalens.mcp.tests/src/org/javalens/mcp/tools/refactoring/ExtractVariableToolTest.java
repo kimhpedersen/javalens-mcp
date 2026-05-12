@@ -166,4 +166,30 @@ class ExtractVariableToolTest {
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("extract emits one edit that declares the variable with chosen name")
+    void extract_declarationEditContainsVariableName() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 31);
+        args.put("startColumn", 21);
+        args.put("endLine", 31);
+        args.put("endColumn", 44);
+        args.put("variableName", "calculated");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = getEdits(getData(r));
+
+        // At least one edit must introduce a declaration mentioning the variable name.
+        boolean anyDeclEdit = edits.stream()
+            .map(e -> (String) e.get("newText"))
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(text -> text.contains("calculated"));
+        assertTrue(anyDeclEdit,
+            "At least one edit's newText must reference the new variable name; got: " + edits);
+    }
 }

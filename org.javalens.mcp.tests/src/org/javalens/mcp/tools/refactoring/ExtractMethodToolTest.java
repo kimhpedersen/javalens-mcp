@@ -150,4 +150,28 @@ class ExtractMethodToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("extracted method body contains code text from selected range")
+    void extractedMethodBody_containsSelectedCodeText() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 44);
+        args.put("startColumn", 8);
+        args.put("endLine", 47);
+        args.put("endColumn", 9);
+        args.put("methodName", "calculateSum");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String declaration = (String) getData(r).get("newMethodCode");
+
+        // The selection includes a `sum +=` loop body; the extracted method must contain it.
+        assertTrue(declaration.contains("sum +="),
+            "Extracted method body must include the original `sum +=` accumulator; got:\n" + declaration);
+        assertTrue(declaration.contains("calculateSum"),
+            "Method declaration must contain its new name; got:\n" + declaration);
+    }
 }
