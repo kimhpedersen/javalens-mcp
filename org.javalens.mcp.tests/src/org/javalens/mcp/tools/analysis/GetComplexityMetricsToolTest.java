@@ -96,4 +96,41 @@ class GetComplexityMetricsToolTest {
         emptyPath.put("filePath", "");
         assertFalse(tool.execute(emptyPath).isSuccess());
     }
+
+    // ========== Semantic-grade tests (CC boundaries from ComplexityBoundaries) ==========
+
+    @Test
+    @DisplayName("ComplexityBoundaries: cc01=1, cc05=5, cc06=6, cc10=10, cc11=11 cyclomatic complexity")
+    void complexityBoundaries_cyclomaticAtKnownValues() {
+        String boundariesPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ComplexityBoundaries.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", boundariesPath);
+        args.put("includeDetails", true);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) getData(r).get("methods");
+        Map<String, Integer> ccByName = new java.util.HashMap<>();
+        for (Map<String, Object> m : methods) {
+            String name = (String) m.get("name");
+            Object cc = m.get("cyclomaticComplexity");
+            if (cc instanceof Number n) {
+                ccByName.put(name, n.intValue());
+            }
+        }
+
+        assertEquals(1, (int) ccByName.getOrDefault("cc01", -1),
+            "cc01 (no decisions) must have CC=1; got: " + ccByName);
+        assertEquals(5, (int) ccByName.getOrDefault("cc05", -1),
+            "cc05 (4 if statements) must have CC=5; got: " + ccByName);
+        assertEquals(6, (int) ccByName.getOrDefault("cc06", -1),
+            "cc06 (5 if statements) must have CC=6; got: " + ccByName);
+        assertEquals(10, (int) ccByName.getOrDefault("cc10", -1),
+            "cc10 (9 if statements) must have CC=10; got: " + ccByName);
+        assertEquals(11, (int) ccByName.getOrDefault("cc11", -1),
+            "cc11 (10 if statements) must have CC=11; got: " + ccByName);
+    }
 }
