@@ -103,6 +103,42 @@ class InlineVariableToolTest {
         assertFalse(response.isSuccess());
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("inline trimmed: usageCount=2, initializer is input.trim(), edits include the call")
+    void inline_trimmed_exactUsageAndInitializer() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        // `String trimmed = input.trim();` is 1-based line 27 -> 0-based 26; "trimmed" name at column 15.
+        args.put("line", 26);
+        args.put("column", 15);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("trimmed", data.get("variableName"));
+
+        // Initializer text must literally be the trim() call.
+        String init = (String) data.get("initializerText");
+        assertNotNull(init);
+        assertTrue(init.contains("input.trim()"),
+            "initializerText must be `input.trim()`; got: " + init);
+
+        // `trimmed` is read twice: println(trimmed), println(trimmed.length()).
+        assertEquals(2, ((Number) data.get("usageCount")).intValue(),
+            "trimmed has exactly 2 usages; got: " + data.get("usageCount"));
+
+        // At least one replacement edit must contain `input.trim()` text (inlined value).
+        List<Map<String, Object>> edits = getEdits(data);
+        boolean anyHasInline = edits.stream()
+            .map(e -> (String) e.get("newText"))
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(t -> t.contains("input.trim()"));
+        assertTrue(anyHasInline,
+            "At least one edit must replace a usage with `input.trim()`; got: " + edits);
+    }
+
     // ========== Required Parameter Tests ==========
 
     @Test

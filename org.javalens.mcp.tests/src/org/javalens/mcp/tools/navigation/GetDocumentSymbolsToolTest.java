@@ -171,6 +171,32 @@ class GetDocumentSymbolsToolTest {
         assertTrue(totalSymbols <= 3);
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator has exactly 4 methods + 1 field as direct children")
+    void calculator_exactChildrenCount() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+        List<Map<String, Object>> symbols = getSymbols(data);
+        Map<String, Object> calc = symbols.stream()
+            .filter(s -> "Calculator".equals(s.get("name")))
+            .findFirst()
+            .orElseThrow();
+
+        List<Map<String, Object>> children = getChildren(calc);
+        long methods = children.stream().filter(c -> "Method".equals(c.get("kind"))).count();
+        long fields = children.stream().filter(c -> "Field".equals(c.get("kind"))).count();
+        assertEquals(4L, methods,
+            "Calculator declares exactly 4 methods (add, subtract, multiply, getLastResult); got: " + children);
+        assertEquals(1L, fields,
+            "Calculator declares exactly 1 field (lastResult); got: " + children);
+    }
+
     // ========== Parameter Validation Tests ==========
 
     @Test

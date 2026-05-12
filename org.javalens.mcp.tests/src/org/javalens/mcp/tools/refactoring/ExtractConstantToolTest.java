@@ -84,6 +84,32 @@ class ExtractConstantToolTest {
         assertTrue(hasStaticFinal);
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("extract emits a declaration edit naming the constant and referencing the value")
+    void extract_declarationEditNamesConstantAndHoldsValue() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 35);
+        args.put("startColumn", 24);
+        args.put("endLine", 35);
+        args.put("endColumn", 33);
+        args.put("constantName", "DEFAULT_PREFIX");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = getEdits(getData(r));
+
+        // At least one edit's newText must declare DEFAULT_PREFIX with the literal "PREFIX_".
+        boolean declMentionsName = edits.stream()
+            .map(e -> (String) e.get("newText"))
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(t -> t.contains("DEFAULT_PREFIX") && t.contains("PREFIX_"));
+        assertTrue(declMentionsName,
+            "At least one edit must declare DEFAULT_PREFIX initialized to \"PREFIX_\"; got: " + edits);
+    }
+
     // ========== Required Parameter Tests ==========
 
     @Test

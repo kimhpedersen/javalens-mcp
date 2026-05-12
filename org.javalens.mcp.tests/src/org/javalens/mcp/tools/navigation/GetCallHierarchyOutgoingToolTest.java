@@ -86,4 +86,31 @@ class GetCallHierarchyOutgoingToolTest {
 
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("RefactoringTarget.printMessages: callees include formatMessage")
+    void printMessages_calleesIncludeFormatMessage() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        // printMessages declaration at 1-based line 79 -> 0-based 78; method name "printMessages" at column 17.
+        args.put("line", 78);
+        args.put("column", 17);
+        args.put("maxResults", 50);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("printMessages", data.get("method"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> callees = (List<Map<String, Object>>) data.get("callees");
+        java.util.Set<String> calleeNames = callees.stream()
+            .map(c -> (String) c.get("method"))
+            .filter(java.util.Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+        assertTrue(calleeNames.contains("formatMessage"),
+            "printMessages calls formatMessage twice — must appear in callees; got: " + calleeNames);
+    }
 }

@@ -117,4 +117,37 @@ class AnalyzeMethodToolTest {
         notMethod.put("column", 0);
         assertFalse(tool.execute(notMethod).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator.add aggregate: callers include UserService and SearchPatterns files")
+    void calculatorAdd_callersIncludeKnownInvokers() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("maxCallers", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> callers = (Map<String, Object>) getData(r).get("callers");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> list = (List<Map<String, Object>>) callers.get("list");
+
+        // AnalyzeMethodTool emits the per-caller file as `file` (not `filePath`).
+        java.util.Set<String> callerFiles = list.stream()
+            .map(c -> (String) c.get("file"))
+            .filter(java.util.Objects::nonNull)
+            .map(s -> s.replace('\\', '/'))
+            .map(s -> s.substring(s.lastIndexOf('/') + 1))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(callerFiles.contains("UserService.java"),
+            "UserService.calculateTotal calls Calculator.add — analyze_method aggregate must surface it; got: " + callerFiles);
+        assertTrue(callerFiles.contains("SearchPatterns.java"),
+            "SearchPatterns.createObjects calls Calculator.add — analyze_method aggregate must surface it; got: " + callerFiles);
+    }
 }

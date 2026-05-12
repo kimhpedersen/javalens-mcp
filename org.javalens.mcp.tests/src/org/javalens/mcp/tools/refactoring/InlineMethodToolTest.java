@@ -75,6 +75,29 @@ class InlineMethodToolTest {
         assertTrue(newText.contains("x") || newText.contains("*"));
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("inlining doubleValue at processValue: edit text contains body `x * 2`")
+    void inline_doubleValue_emitsExpectedExpression() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 64);   // `int doubled = doubleValue(x);`
+        args.put("column", 22);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edits = (List<Map<String, Object>>) getData(r).get("edits");
+        assertFalse(edits.isEmpty());
+
+        String newText = (String) edits.get(0).get("newText");
+        // doubleValue body is `return value * 2;` — with arg `x` substituted: `x * 2`.
+        assertTrue(newText.contains("x"), "Inlined text must reference the call argument `x`; got: " + newText);
+        assertTrue(newText.contains("*"), "Inlined text must contain the `*` operator from body; got: " + newText);
+        assertTrue(newText.contains("2"), "Inlined text must contain literal `2` from body; got: " + newText);
+    }
+
     // ========== Required Parameter Tests ==========
 
     @Test

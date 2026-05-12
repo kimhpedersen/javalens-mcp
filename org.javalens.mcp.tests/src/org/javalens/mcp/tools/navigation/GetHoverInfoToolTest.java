@@ -120,6 +120,27 @@ class GetHoverInfoToolTest {
         assertTrue(sig.contains("lastResult"));
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator.add hover: docComment is non-null and mentions 'sum'")
+    void addHover_docCommentPresent() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+        // Calculator.add has Javadoc "@return the sum" — hover must surface it.
+        String docComment = (String) data.get("docComment");
+        assertNotNull(docComment,
+            "Calculator.add has a Javadoc comment; hover docComment must be non-null");
+        assertTrue(docComment.contains("sum"),
+            "Javadoc text says `@return the sum`; docComment must contain `sum`; got: " + docComment);
+    }
+
     // ========== Parameter Validation Tests ==========
 
     @Test

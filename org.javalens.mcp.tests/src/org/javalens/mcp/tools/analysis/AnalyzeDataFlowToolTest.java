@@ -123,6 +123,23 @@ class AnalyzeDataFlowToolTest {
         assertTrue(returnCount > 0, "Should detect return statements");
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("dataFlowExample: returnStatements == 1 (exact)")
+    void dataFlowExample_exactReturnCount() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", patternsPath);
+        args.put("line", 76);
+        args.put("column", 15);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // Method body holds exactly one `return z;` statement.
+        assertEquals(1, ((Number) getData(r).get("returnStatements")).intValue(),
+            "dataFlowExample has exactly 1 return; got: " + getData(r).get("returnStatements"));
+    }
+
     // ========== Error Handling Tests ==========
 
     @Test
