@@ -100,4 +100,45 @@ class GetTypeMembersToolTest {
 
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator: exact method set (add, subtract, multiply, getLastResult)")
+    void calculator_exactDeclaredMethodSet() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) getData(r).get("methods");
+        java.util.Set<String> names = methods.stream()
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertEquals(java.util.Set.of("add", "subtract", "multiply", "getLastResult"),
+            names,
+            "Calculator declares exactly these four methods (constructors not included); got: " + names);
+    }
+
+    @Test
+    @DisplayName("FilledCircle declares draw and fill (both overrides) but excludes inherited Object methods")
+    void filledCircle_declaredMethodsOnly() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.FilledCircle");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) getData(r).get("methods");
+        java.util.Set<String> names = methods.stream()
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(names.contains("draw"));
+        assertTrue(names.contains("fill"));
+        assertFalse(names.contains("toString"),
+            "Without includeInherited, Object methods like toString must not appear; got: " + names);
+    }
 }
