@@ -125,21 +125,47 @@ class GetQuickFixesToolTest {
         assertNotNull(response.getError());
     }
 
-    // ========== Coverage gap (deferred) ==========
-    //
-    // The tool's getDescription promises fixes for four IProblem kinds:
-    // UndefinedType, UnusedImport, UnhandledException, ImportNotFound. None of those
-    // can be triggered against the existing fixtures with default JDT settings:
-    //
-    // - UndefinedType / UndefinedName / ImportNotFound / UnhandledException are compile
-    //   errors; a file containing them would break javac and the Maven build.
-    // - UnusedImport: empirically, our JDT setup leaves this at "ignore", so reconcile
-    //   does not surface it as an IProblem (verified — problemCount stays 0 on
-    //   RefactoringTarget's known-unused imports).
-    //
-    // Exercising the fix-generation path therefore requires either (a) configuring the
-    // test project's JDT compiler options to flag unused-imports as warnings, or
-    // (b) using ICompilationUnit working-copy editing to inject in-memory problems that
-    // never reach javac. Both are scoped as their own follow-up — they're tool/test
-    // infrastructure changes, not coverage-writing.
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("RefactoringTarget line 3 (unused `import java.util.ArrayList;`): offers a remove_import fix")
+    void unusedImport_offersRemoveImportFix() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString());
+        // RefactoringTarget.java 1-based line 4 `import java.util.ArrayList;` -> 0-based 3.
+        // ProjectImporter enables COMPILER_PB_UNUSED_IMPORT=WARNING so JDT surfaces this
+        // as an IProblem and the tool's documented UnusedImport -> remove_import fix path
+        // is reachable.
+        args.put("line", 3);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+
+        int problemCount = ((Number) data.get("problemCount")).intValue();
+        assertTrue(problemCount > 0,
+            "RefactoringTarget line 3 is an unused import; with the unused-import "
+                + "compiler option enabled JDT must report at least one IProblem. Data: " + data);
+
+        List<Map<String, Object>> fixes = getFixes(data);
+        boolean hasRemoveImport = fixes.stream()
+            .map(f -> (String) f.get("fixId"))
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(id -> id.startsWith("remove_import:"));
+        assertTrue(hasRemoveImport,
+            "get_quick_fixes promises a remove_import fix for UnusedImport problems; got fixes: "
+                + fixes);
+
+        // The remove_import fix must carry the IMPORT category and a label.
+        Map<String, Object> removeImportFix = fixes.stream()
+            .filter(f -> {
+                String id = (String) f.get("fixId");
+                return id != null && id.startsWith("remove_import:");
+            })
+            .findFirst()
+            .orElseThrow();
+        assertNotNull(removeImportFix.get("label"));
+        assertEquals("IMPORT", removeImportFix.get("category"),
+            "remove_import fixes must be categorized as IMPORT; got: " + removeImportFix);
+    }
 }

@@ -363,6 +363,11 @@ public class ProjectImporter {
         javaProject.setOption(JavaCore.COMPILER_SOURCE, level);
         javaProject.setOption(JavaCore.COMPILER_COMPLIANCE, level);
         javaProject.setOption(JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, level);
+        // Enable unused-import as a warning so the JDT reconcile surfaces it as an
+        // IProblem. The get_quick_fixes tool's documented "UnusedImport → remove_import"
+        // fix path depends on this — without the option set, JDT defaults to "ignore"
+        // and the fix is silently never offered.
+        javaProject.setOption(JavaCore.COMPILER_PB_UNUSED_IMPORT, JavaCore.WARNING);
         log.info("Applied Java source level {} from build metadata", level);
     }
 
