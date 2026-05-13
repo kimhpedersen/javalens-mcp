@@ -165,13 +165,27 @@ public class GetDiagnosticsTool extends AbstractTool {
         int warningCount = 0;
 
         try {
-            // Reconcile to get AST with problems
-            CompilationUnit ast = cu.reconcile(
-                AST.getJLSLatest(),
-                ICompilationUnit.FORCE_PROBLEM_DETECTION,
-                null,
-                null
-            );
+            // cu.reconcile(... FORCE_PROBLEM_DETECTION ...) only surfaces problems if the
+            // CU is in working-copy mode; otherwise it returns null and every IProblem
+            // (errors and warnings) is silently invisible to this tool.
+            boolean wasWorkingCopy = cu.isWorkingCopy();
+            if (!wasWorkingCopy) {
+                cu.becomeWorkingCopy(null);
+            }
+
+            CompilationUnit ast;
+            try {
+                ast = cu.reconcile(
+                    AST.getJLSLatest(),
+                    ICompilationUnit.FORCE_PROBLEM_DETECTION,
+                    null,
+                    null
+                );
+            } finally {
+                if (!wasWorkingCopy) {
+                    cu.discardWorkingCopy();
+                }
+            }
 
             if (ast == null) {
                 log.debug("No AST returned for {}", path);

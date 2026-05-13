@@ -262,13 +262,25 @@ public class AnalyzeFileTool extends AbstractTool {
         List<Map<String, Object>> warnings = new ArrayList<>();
 
         try {
-            // Reconcile to get problems
-            CompilationUnit ast = (CompilationUnit) cu.reconcile(
-                AST.getJLSLatest(),
-                ICompilationUnit.FORCE_PROBLEM_DETECTION,
-                null,
-                null
-            );
+            // FORCE_PROBLEM_DETECTION requires the CU to be in working-copy mode.
+            boolean wasWorkingCopy = cu.isWorkingCopy();
+            if (!wasWorkingCopy) {
+                cu.becomeWorkingCopy(null);
+            }
+
+            CompilationUnit ast;
+            try {
+                ast = (CompilationUnit) cu.reconcile(
+                    AST.getJLSLatest(),
+                    ICompilationUnit.FORCE_PROBLEM_DETECTION,
+                    null,
+                    null
+                );
+            } finally {
+                if (!wasWorkingCopy) {
+                    cu.discardWorkingCopy();
+                }
+            }
 
             if (ast != null) {
                 for (IProblem problem : ast.getProblems()) {

@@ -368,12 +368,25 @@ public class AnalyzeTypeTool extends AbstractTool {
         int warningCount = 0;
 
         try {
-            CompilationUnit ast = (CompilationUnit) cu.reconcile(
-                AST.getJLSLatest(),
-                ICompilationUnit.FORCE_PROBLEM_DETECTION,
-                null,
-                null
-            );
+            // FORCE_PROBLEM_DETECTION requires the CU to be in working-copy mode.
+            boolean wasWorkingCopy = cu.isWorkingCopy();
+            if (!wasWorkingCopy) {
+                cu.becomeWorkingCopy(null);
+            }
+
+            CompilationUnit ast;
+            try {
+                ast = (CompilationUnit) cu.reconcile(
+                    AST.getJLSLatest(),
+                    ICompilationUnit.FORCE_PROBLEM_DETECTION,
+                    null,
+                    null
+                );
+            } finally {
+                if (!wasWorkingCopy) {
+                    cu.discardWorkingCopy();
+                }
+            }
 
             if (ast != null) {
                 for (IProblem problem : ast.getProblems()) {
