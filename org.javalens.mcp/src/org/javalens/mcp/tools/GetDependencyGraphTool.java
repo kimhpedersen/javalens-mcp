@@ -390,9 +390,10 @@ public class GetDependencyGraphTool extends AbstractTool {
     }
 
     private String getTypeKind(IType type) throws Exception {
+        // Annotation types report isInterface()=true; check isAnnotation first.
+        if (type.isAnnotation()) return "annotation";
         if (type.isInterface()) return "interface";
         if (type.isEnum()) return "enum";
-        if (type.isAnnotation()) return "annotation";
         if (type.isRecord()) return "record";
         return "class";
     }

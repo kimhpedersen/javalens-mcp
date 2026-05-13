@@ -276,9 +276,10 @@ public class RenameSymbolTool extends AbstractTool {
     private String getElementKind(IJavaElement element) {
         if (element instanceof IType type) {
             try {
+                // Annotation types report isInterface()=true; check first.
+                if (type.isAnnotation()) return "Annotation";
                 if (type.isInterface()) return "Interface";
                 if (type.isEnum()) return "Enum";
-                if (type.isAnnotation()) return "Annotation";
                 if (type.isRecord()) return "Record";
             } catch (JavaModelException e) {
                 log.debug("Error checking type kind: {}", e.getMessage());

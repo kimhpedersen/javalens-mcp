@@ -171,9 +171,10 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
 
     private String getTypeKind(IType type) {
         try {
+            // Annotation types report isInterface()=true; check isAnnotation first.
+            if (type.isAnnotation()) return "Annotation";
             if (type.isInterface()) return "Interface";
             if (type.isEnum()) return "Enum";
-            if (type.isAnnotation()) return "Annotation";
             if (type.isRecord()) return "Record";
             return "Class";
         } catch (Exception e) {

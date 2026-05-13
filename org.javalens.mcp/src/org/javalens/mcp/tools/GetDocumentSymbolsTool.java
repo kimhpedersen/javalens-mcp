@@ -143,12 +143,13 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             Map<String, Object> symbol = new LinkedHashMap<>();
             symbol.put("name", type.getElementName());
 
-            if (type.isInterface()) {
+            // Annotation types report isInterface()=true, so check isAnnotation first.
+            if (type.isAnnotation()) {
+                symbol.put("kind", "Annotation");
+            } else if (type.isInterface()) {
                 symbol.put("kind", "Interface");
             } else if (type.isEnum()) {
                 symbol.put("kind", "Enum");
-            } else if (type.isAnnotation()) {
-                symbol.put("kind", "Annotation");
             } else if (type.isRecord()) {
                 symbol.put("kind", "Record");
             } else {

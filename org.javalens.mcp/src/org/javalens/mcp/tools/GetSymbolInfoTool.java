@@ -172,12 +172,13 @@ public class GetSymbolInfoTool extends AbstractTool {
     private void addTypeInfo(Map<String, Object> info, IType type, IJdtService service) throws JavaModelException {
         info.put("qualifiedName", type.getFullyQualifiedName());
 
-        if (type.isInterface()) {
+        // Annotation types report isInterface()=true, so check isAnnotation first.
+        if (type.isAnnotation()) {
+            info.put("typeKind", "annotation");
+        } else if (type.isInterface()) {
             info.put("typeKind", "interface");
         } else if (type.isEnum()) {
             info.put("typeKind", "enum");
-        } else if (type.isAnnotation()) {
-            info.put("typeKind", "annotation");
         } else if (type.isRecord()) {
             info.put("typeKind", "record");
         } else {

@@ -128,12 +128,14 @@ public class GetTypeAtPositionTool extends AbstractTool {
         info.put("name", type.getElementName());
         info.put("qualifiedName", type.getFullyQualifiedName());
 
-        if (type.isInterface()) {
+        // Order matters: annotation types report isInterface()=true in JDT (@interface
+        // IS an interface with extra metadata), so isAnnotation must be checked first.
+        if (type.isAnnotation()) {
+            info.put("kind", "Annotation");
+        } else if (type.isInterface()) {
             info.put("kind", "Interface");
         } else if (type.isEnum()) {
             info.put("kind", "Enum");
-        } else if (type.isAnnotation()) {
-            info.put("kind", "Annotation");
         } else if (type.isRecord()) {
             info.put("kind", "Record");
         } else {

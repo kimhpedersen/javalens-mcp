@@ -174,13 +174,13 @@ public class AnalyzeFileTool extends AbstractTool {
         info.put("name", type.getElementName());
         info.put("qualifiedName", type.getFullyQualifiedName());
 
-        // Kind
-        if (type.isInterface()) {
+        // Kind — annotation types report isInterface()=true, so check isAnnotation first.
+        if (type.isAnnotation()) {
+            info.put("kind", "Annotation");
+        } else if (type.isInterface()) {
             info.put("kind", "Interface");
         } else if (type.isEnum()) {
             info.put("kind", "Enum");
-        } else if (type.isAnnotation()) {
-            info.put("kind", "Annotation");
         } else if (type.isRecord()) {
             info.put("kind", "Record");
         } else {

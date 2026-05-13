@@ -97,12 +97,15 @@ class GetProjectStructureToolTest {
             rootPaths.add(path);
         }
 
-        boolean hasMain = rootPaths.stream().anyMatch(p -> p.endsWith("src/main/java"));
-        boolean hasTest = rootPaths.stream().anyMatch(p -> p.endsWith("src/test/java"));
+        // TestProjectHelper imports source folders as linked folders named
+        // "src-{index}-{path-with-dashes}", so simple-maven's src/main/java becomes
+        // ".../src-N-src-main-java" and src/test/java becomes ".../src-N-src-test-java".
+        boolean hasMain = rootPaths.stream().anyMatch(p -> p.endsWith("src-main-java"));
+        boolean hasTest = rootPaths.stream().anyMatch(p -> p.endsWith("src-test-java"));
         assertTrue(hasMain,
-            "src/main/java must appear as a source root; got: " + rootPaths);
+            "src/main/java source folder must appear; got: " + rootPaths);
         assertTrue(hasTest,
-            "src/test/java must appear as a source root; got: " + rootPaths);
+            "src/test/java source folder must appear; got: " + rootPaths);
     }
 
     @Test
@@ -119,7 +122,7 @@ class GetProjectStructureToolTest {
         List<Map<String, Object>> sourceRoots =
             (List<Map<String, Object>>) getData(r).get("sourceRoots");
         Map<String, Object> mainRoot = sourceRoots.stream()
-            .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src/main/java"))
+            .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src-main-java"))
             .findFirst()
             .orElseThrow();
         List<Map<String, Object>> packages = (List<Map<String, Object>>) mainRoot.get("packages");
@@ -147,7 +150,7 @@ class GetProjectStructureToolTest {
         List<Map<String, Object>> sourceRoots =
             (List<Map<String, Object>>) getData(r).get("sourceRoots");
         Map<String, Object> mainRoot = sourceRoots.stream()
-            .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src/main/java"))
+            .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src-main-java"))
             .findFirst()
             .orElseThrow();
         List<Map<String, Object>> packages = (List<Map<String, Object>>) mainRoot.get("packages");
@@ -216,7 +219,7 @@ class GetProjectStructureToolTest {
         List<Map<String, Object>> sourceRoots =
             (List<Map<String, Object>>) getData(r2).get("sourceRoots");
         Map<String, Object> mainRoot = sourceRoots.stream()
-            .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src/main/java"))
+            .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src-main-java"))
             .findFirst()
             .orElseThrow();
         List<Map<String, Object>> packages = (List<Map<String, Object>>) mainRoot.get("packages");

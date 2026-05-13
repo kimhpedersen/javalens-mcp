@@ -106,12 +106,14 @@ class GetClasspathInfoToolTest {
                 "Every classpath entry must carry a path; got: " + entry);
             paths.add(((String) entry.get("path")).replace('\\', '/'));
         }
-        boolean hasMain = paths.stream().anyMatch(p -> p.endsWith("/src/main/java"));
-        boolean hasTest = paths.stream().anyMatch(p -> p.endsWith("/src/test/java"));
+        // TestProjectHelper imports source folders as linked folders named
+        // "src-{index}-{path-with-dashes}"; src/main/java → src-N-src-main-java.
+        boolean hasMain = paths.stream().anyMatch(p -> p.endsWith("src-main-java"));
+        boolean hasTest = paths.stream().anyMatch(p -> p.endsWith("src-test-java"));
         assertTrue(hasMain,
-            "src/main/java must appear among source folders; got paths: " + paths);
+            "src/main/java source folder must appear; got paths: " + paths);
         assertTrue(hasTest,
-            "src/test/java must appear among source folders; got paths: " + paths);
+            "src/test/java source folder must appear; got paths: " + paths);
     }
 
     @Test
@@ -196,11 +198,10 @@ class GetClasspathInfoToolTest {
         for (Map<String, Object> entry : sourceFolders) {
             paths.add(((String) entry.get("path")).replace('\\', '/'));
         }
-        // multi-module-maven has api/, impl/, web/ each with src/main/java. All three
-        // must appear as distinct source folder entries on the aggregated classpath.
-        boolean hasApi = paths.stream().anyMatch(p -> p.contains("/api/src/main/java"));
-        boolean hasImpl = paths.stream().anyMatch(p -> p.contains("/impl/src/main/java"));
-        boolean hasWeb = paths.stream().anyMatch(p -> p.contains("/web/src/main/java"));
+        // Linked folder naming: api/src/main/java → src-N-api-src-main-java, etc.
+        boolean hasApi = paths.stream().anyMatch(p -> p.contains("api-src-main-java"));
+        boolean hasImpl = paths.stream().anyMatch(p -> p.contains("impl-src-main-java"));
+        boolean hasWeb = paths.stream().anyMatch(p -> p.contains("web-src-main-java"));
         assertTrue(hasApi, "api module source folder missing; got: " + paths);
         assertTrue(hasImpl, "impl module source folder missing; got: " + paths);
         assertTrue(hasWeb, "web module source folder missing; got: " + paths);

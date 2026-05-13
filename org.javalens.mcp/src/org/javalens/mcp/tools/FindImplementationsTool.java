@@ -212,6 +212,8 @@ public class FindImplementationsTool extends AbstractTool {
 
     private String kindOf(IType type) {
         try {
+            // Annotation types report isInterface()=true, so check isAnnotation first.
+            if (type.isAnnotation()) return "Annotation";
             if (type.isInterface()) return "Interface";
             if (type.isEnum()) return "Enum";
             if (type.isRecord()) return "Record";

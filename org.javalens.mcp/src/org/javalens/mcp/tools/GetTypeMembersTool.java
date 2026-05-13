@@ -213,12 +213,13 @@ public class GetTypeMembersTool extends AbstractTool {
         info.put("qualifiedName", type.getFullyQualifiedName());
 
         try {
-            if (type.isInterface()) {
+            // Annotation types report isInterface()=true; check isAnnotation first.
+            if (type.isAnnotation()) {
+                info.put("kind", "Annotation");
+            } else if (type.isInterface()) {
                 info.put("kind", "Interface");
             } else if (type.isEnum()) {
                 info.put("kind", "Enum");
-            } else if (type.isAnnotation()) {
-                info.put("kind", "Annotation");
             } else if (type.isRecord()) {
                 info.put("kind", "Record");
             } else {

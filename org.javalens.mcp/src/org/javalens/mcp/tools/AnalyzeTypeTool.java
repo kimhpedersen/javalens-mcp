@@ -143,13 +143,13 @@ public class AnalyzeTypeTool extends AbstractTool {
         info.put("qualifiedName", type.getFullyQualifiedName());
         info.put("package", type.getPackageFragment().getElementName());
 
-        // Kind
-        if (type.isInterface()) {
+        // Kind — annotation types report isInterface()=true, so check isAnnotation first.
+        if (type.isAnnotation()) {
+            info.put("kind", "Annotation");
+        } else if (type.isInterface()) {
             info.put("kind", "Interface");
         } else if (type.isEnum()) {
             info.put("kind", "Enum");
-        } else if (type.isAnnotation()) {
-            info.put("kind", "Annotation");
         } else if (type.isRecord()) {
             info.put("kind", "Record");
         } else {
@@ -407,9 +407,10 @@ public class AnalyzeTypeTool extends AbstractTool {
 
     private String getTypeKind(IType type) {
         try {
+            // Order matters: annotations report isInterface()=true.
+            if (type.isAnnotation()) return "Annotation";
             if (type.isInterface()) return "Interface";
             if (type.isEnum()) return "Enum";
-            if (type.isAnnotation()) return "Annotation";
             if (type.isRecord()) return "Record";
             return "Class";
         } catch (Exception e) {

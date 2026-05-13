@@ -192,12 +192,14 @@ public class GetHoverInfoTool extends AbstractTool {
             if (Flags.isAbstract(flags) && !type.isInterface()) sig.append("abstract ");
             if (Flags.isFinal(flags)) sig.append("final ");
 
-            if (type.isInterface()) {
+            // Annotation types report isInterface()=true; check isAnnotation first so
+            // we emit "@interface" rather than "interface".
+            if (type.isAnnotation()) {
+                sig.append("@interface ");
+            } else if (type.isInterface()) {
                 sig.append("interface ");
             } else if (type.isEnum()) {
                 sig.append("enum ");
-            } else if (type.isAnnotation()) {
-                sig.append("@interface ");
             } else if (type.isRecord()) {
                 sig.append("record ");
             } else {
