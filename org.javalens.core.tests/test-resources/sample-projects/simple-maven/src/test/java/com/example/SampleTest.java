@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Sample test class for testing FindTestsTool.
@@ -61,6 +64,12 @@ public class SampleTest {
         assert true;
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = { 1, 2, 3 })
+    void testParameterized(int value) {
+        assert value > 0;
+    }
+
     /**
      * Not a test method - no @Test annotation.
      */
@@ -73,5 +82,21 @@ public class SampleTest {
      */
     private void privateHelper() {
         // This should not be detected as a test
+    }
+
+    /**
+     * Nested test group — JUnit 5 @Nested style. The tool's visitor descends into
+     * TypeDeclaration nodes, so this inner class is reported as its own test class.
+     */
+    @Nested
+    class NestedGroup {
+
+        @Test
+        void nestedTestOne() {
+        }
+
+        @Test
+        void nestedTestTwo() {
+        }
     }
 }

@@ -86,11 +86,10 @@ class FindTestsToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
 
+        // Use exact-equals match; multiple classes now end with "SampleTest"
+        // (Junit4SampleTest, TestngSampleTest) so endsWith would be ambiguous.
         Map<String, Object> sampleTest = testClasses.stream()
-            .filter(tc -> {
-                Object cn = tc.get("className");
-                return cn != null && cn.toString().endsWith("SampleTest");
-            })
+            .filter(tc -> "SampleTest".equals(tc.get("className")))
             .findFirst()
             .orElseThrow(() -> new AssertionError(
                 "SampleTest must be detected; got: " +
@@ -127,10 +126,7 @@ class FindTestsToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
         java.util.Set<String> allMethodNames = testClasses.stream()
-            .filter(tc -> {
-                Object cn = tc.get("className");
-                return cn != null && cn.toString().endsWith("SampleTest");
-            })
+            .filter(tc -> "SampleTest".equals(tc.get("className")))
             .flatMap(tc -> {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> methods = (List<Map<String, Object>>) tc.get("testMethods");
@@ -141,5 +137,115 @@ class FindTestsToolTest {
 
         assertTrue(allMethodNames.contains("testDivision"),
             "testDivision (@Disabled) must appear when includeDisabled=true; got: " + allMethodNames);
+    }
+
+    @Test
+    @DisplayName("@ParameterizedTest method on SampleTest is detected as a test")
+    void parameterizedTest_isDetected() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
+        Map<String, Object> sampleTest = testClasses.stream()
+            .filter(tc -> "SampleTest".equals(tc.get("className")))
+            .findFirst()
+            .orElseThrow();
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) sampleTest.get("testMethods");
+        java.util.Set<String> names = methods.stream()
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(names.contains("testParameterized"),
+            "testParameterized is annotated @ParameterizedTest and must be detected as a test; got: "
+                + names);
+    }
+
+    @Test
+    @DisplayName("@Nested inner class is reported as its own test class with both nested tests")
+    void nestedClass_isReportedAsSeparateTestClass() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
+        Map<String, Object> nested = testClasses.stream()
+            .filter(tc -> "NestedGroup".equals(tc.get("className")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "NestedGroup (an @Nested inner class with @Test methods) must appear as a test class; got: "
+                    + testClasses.stream().map(tc -> tc.get("className")).toList()));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) nested.get("testMethods");
+        java.util.Set<String> names = methods.stream()
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertEquals(java.util.Set.of("nestedTestOne", "nestedTestTwo"), names,
+            "NestedGroup declares exactly two @Test methods; got: " + names);
+    }
+
+    @Test
+    @DisplayName("Junit4SampleTest is detected with framework=JUnit4 via @Before/@After heuristic")
+    void junit4_classDetectedWithFrameworkAttribution() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
+        Map<String, Object> j4 = testClasses.stream()
+            .filter(tc -> "Junit4SampleTest".equals(tc.get("className")))
+            .findFirst()
+            .orElseThrow();
+
+        // Framework attribution falls through to the @Before/@After lifecycle heuristic
+        // because the simple-name annotation `@Test` (after `import org.junit.Test`) does
+        // not match the JUnit5 jupiter check.
+        assertEquals("JUnit4", j4.get("framework"),
+            "Junit4SampleTest uses @Before/@After — must be classified as JUnit4; got: " + j4);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) j4.get("testMethods");
+        java.util.Set<String> names = methods.stream()
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        // testIgnored is excluded by default (includeDisabled=false). testAddition and
+        // testSubtraction must be present.
+        assertTrue(names.contains("testAddition"));
+        assertTrue(names.contains("testSubtraction"));
+        assertFalse(names.contains("testIgnored"),
+            "Junit4 @Ignore tests are filtered by default; got: " + names);
+    }
+
+    @Test
+    @DisplayName("TestngSampleTest is detected with framework=TestNG via fully qualified annotation names")
+    void testng_classDetectedWithFrameworkAttribution() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
+        Map<String, Object> tng = testClasses.stream()
+            .filter(tc -> "TestngSampleTest".equals(tc.get("className")))
+            .findFirst()
+            .orElseThrow();
+
+        // Framework attribution matches "testng" in the annotation's fully qualified type
+        // name (e.g., `@org.testng.annotations.Test`).
+        assertEquals("TestNG", tng.get("framework"),
+            "TestngSampleTest uses @org.testng.annotations.* — must be classified as TestNG; got: " + tng);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) tng.get("testMethods");
+        java.util.Set<String> names = methods.stream()
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertEquals(java.util.Set.of("scenarioOne", "scenarioTwo"), names,
+            "TestngSampleTest declares scenarioOne and scenarioTwo; got: " + names);
     }
 }
