@@ -82,14 +82,21 @@ class FindReflectionUsageToolTest {
     }
 
     @Test
-    @DisplayName("should respect maxResults parameter")
+    @DisplayName("should respect maxResults parameter (size cap applied)")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("maxResults", 1);
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
+
+        // The cap must actually be applied — assert reflectionCalls size obeys it.
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> calls =
+            (List<Map<String, Object>>) getData(response).get("reflectionCalls");
+        assertNotNull(calls);
+        assertTrue(calls.size() <= 1,
+            "maxResults=1 must cap reflectionCalls to 1 entry; got: " + calls.size());
     }
 
     // ========== Semantic-grade tests ==========
