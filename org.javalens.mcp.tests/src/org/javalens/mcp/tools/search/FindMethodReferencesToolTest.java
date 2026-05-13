@@ -101,9 +101,9 @@ class FindMethodReferencesToolTest {
             .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", targetPath);
-        // 1-based line 8 `public static String formatId(int id) {` -> 0-based 7;
+        // 1-based line 9 `public static String formatId(int id) {` -> 0-based 8;
         // identifier "formatId" begins at column 25.
-        args.put("line", 7);
+        args.put("line", 8);
         args.put("column", 25);
         args.put("maxResults", 100);
 
