@@ -34,4 +34,34 @@ public class TypeKindsFixture {
             return "inner";
         }
     }
+
+    /** Static method for modifier coverage. */
+    public static String staticHelper(String prefix) {
+        return prefix + ":static";
+    }
+
+    /** Synchronized method for modifier coverage. */
+    public synchronized String synchronizedHelper(String input) {
+        return input;
+    }
+
+    /** Generic method with its own type parameter U. */
+    public <U> U convert(U value) {
+        return value;
+    }
+
+    /** Method declaring `throws java.io.IOException`. */
+    public String throwingHelper(String path) throws java.io.IOException {
+        if (path == null) {
+            throw new java.io.IOException("null");
+        }
+        return path;
+    }
+
+    /** Interface with a default method for default-modifier coverage. */
+    public interface DefaultMethodHolder {
+        default String greet() {
+            return "hello";
+        }
+    }
 }

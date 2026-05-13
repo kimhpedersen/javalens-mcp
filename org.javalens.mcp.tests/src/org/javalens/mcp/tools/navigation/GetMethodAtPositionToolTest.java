@@ -160,4 +160,172 @@ class GetMethodAtPositionToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAt(String fp, int line, int column) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fp);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Static method (TypeKindsFixture.staticHelper) reports modifier 'static'")
+    @SuppressWarnings("unchecked")
+    void staticMethod_reportsStaticModifier() {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        // 1-based line 39 `public static String staticHelper(...)` -> 0-based 38;
+        // "staticHelper" starts at column 25.
+        ToolResponse r = tool.execute(argsAt(tkf, 38, 25));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("staticHelper", data.get("name"));
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("static"),
+            "static modifier must appear; got: " + modifiers);
+        assertTrue(modifiers.contains("public"),
+            "public modifier must appear; got: " + modifiers);
+    }
+
+    @Test
+    @DisplayName("Synchronized method reports modifier 'synchronized'")
+    @SuppressWarnings("unchecked")
+    void synchronizedMethod_reportsSynchronizedModifier() {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        // 1-based line 44 `public synchronized String synchronizedHelper(...)` -> 0-based 43;
+        // "synchronizedHelper" starts at column 31.
+        ToolResponse r = tool.execute(argsAt(tkf, 43, 31));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("synchronizedHelper", data.get("name"));
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("synchronized"),
+            "synchronized modifier must appear; got: " + modifiers);
+    }
+
+    @Test
+    @DisplayName("Generic method (convert<U>) reports typeParameters=[U]")
+    @SuppressWarnings("unchecked")
+    void genericMethod_reportsTypeParameters() {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        // 1-based line 49 `public <U> U convert(U value)` -> 0-based 48;
+        // "convert" starts at column 17.
+        ToolResponse r = tool.execute(argsAt(tkf, 48, 17));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("convert", data.get("name"));
+        List<String> typeParams = (List<String>) data.get("typeParameters");
+        assertNotNull(typeParams,
+            "convert<U> must have typeParameters reported; got: " + data);
+        assertEquals(List.of("U"), typeParams);
+    }
+
+    @Test
+    @DisplayName("Method declaring throws clauses reports exceptions list")
+    @SuppressWarnings("unchecked")
+    void methodWithThrows_reportsExceptionsList() {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        // 1-based line 54 `public String throwingHelper(String path) throws java.io.IOException` ->
+        // 0-based 53; "throwingHelper" starts at column 18.
+        ToolResponse r = tool.execute(argsAt(tkf, 53, 18));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("throwingHelper", data.get("name"));
+        List<String> exceptions = (List<String>) data.get("exceptions");
+        assertNotNull(exceptions);
+        assertEquals(List.of("IOException"), exceptions,
+            "throws java.io.IOException should be reported (simple name); got: " + exceptions);
+    }
+
+    @Test
+    @DisplayName("Interface default method reports modifier 'default'")
+    @SuppressWarnings("unchecked")
+    void defaultInterfaceMethod_reportsDefaultModifier() {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        // 1-based line 63 `default String greet() {` in DefaultMethodHolder -> 0-based 62;
+        // "greet" starts at column 23.
+        ToolResponse r = tool.execute(argsAt(tkf, 62, 23));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("greet", data.get("name"));
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("default"),
+            "default modifier must appear for interface default method; got: " + modifiers);
+    }
+
+    @Test
+    @DisplayName("Private method (UnusedCode.unusedPrivateMethod) reports modifier 'private'")
+    @SuppressWarnings("unchecked")
+    void privateMethod_reportsPrivateModifier() throws Exception {
+        // UnusedCode.unusedPrivateMethod — find its line. The fixture is a known unused
+        // member; the file has the declaration.
+        String unusedPath = projectPath.resolve("src/main/java/com/example/UnusedCode.java").toString();
+        // Tool walks element ancestor chain to find IMethod, so as long as we land on the
+        // method's name range, the test passes regardless of exact column. We position on
+        // the first occurrence of "unusedPrivateMethod" line.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(unusedPath));
+        int idx = source.indexOf("unusedPrivateMethod");
+        assertTrue(idx > 0, "Fixture UnusedCode.java must declare unusedPrivateMethod");
+        int lineNum = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count(); // 0-based
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int col = idx - lineStart;
+
+        ToolResponse r = tool.execute(argsAt(unusedPath, lineNum, col));
+        assertTrue(r.isSuccess(),
+            "Position on unusedPrivateMethod must resolve; got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("unusedPrivateMethod", data.get("name"));
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("private"),
+            "private modifier must appear; got: " + modifiers);
+    }
+
+    @Test
+    @DisplayName("Method signature field is exact: name(type name, ...): returnType")
+    void signature_formattedExactly() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+        assertEquals("add(int a, int b): int", data.get("signature"),
+            "Signature must format as name(type name, ...): returnType; got: " + data.get("signature"));
+    }
+
+    @Test
+    @DisplayName("Position at a method call site (not declaration) resolves to the called method")
+    void methodCallSite_resolvesToCalledMethod() {
+        // SearchPatterns.createObjects calls Calculator.add(...). Position on the .add call.
+        String searchPath = projectPath.resolve("src/main/java/com/example/SearchPatterns.java").toString();
+        // SearchPatterns.java line 59 (1-based): `int result = calc.add(1, 2);` -> 0-based 58.
+        // "add" is after "calc.". Find by string search.
+        String content;
+        try {
+            content = java.nio.file.Files.readString(java.nio.file.Path.of(searchPath));
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+        int idx = content.indexOf("calc.add(1, 2)");
+        assertTrue(idx > 0, "SearchPatterns must contain `calc.add(1, 2)` call site");
+        int dot = content.indexOf(".add", idx);
+        int lineNum = (int) content.substring(0, dot + 1).chars().filter(c -> c == '\n').count();
+        int lineStart = content.lastIndexOf('\n', dot) + 1;
+        int col = (dot + 1) - lineStart; // position of 'a' of "add"
+
+        ToolResponse r = tool.execute(argsAt(searchPath, lineNum, col));
+        assertTrue(r.isSuccess(),
+            "Position at the call site must resolve to the invoked method; got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("add", data.get("name"),
+            "Resolved method must be `add`; got: " + data);
+        assertEquals("com.example.Calculator", data.get("declaringType"),
+            "Resolved method's declaringType must be Calculator; got: " + data);
+    }
 }
