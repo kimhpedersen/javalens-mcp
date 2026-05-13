@@ -133,4 +133,86 @@ class GetComplexityMetricsToolTest {
         assertEquals(11, (int) ccByName.getOrDefault("cc11", -1),
             "cc11 (10 if statements) must have CC=11; got: " + ccByName);
     }
+
+    @Test
+    @DisplayName("ComplexityBoundaries: cognitive complexity is 0/4/5/9/10 for cc01/cc05/cc06/cc10/cc11")
+    void complexityBoundaries_cognitiveAtKnownValues() {
+        String boundariesPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ComplexityBoundaries.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", boundariesPath);
+        args.put("includeDetails", true);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) getData(r).get("methods");
+        Map<String, Integer> cognitiveByName = new java.util.HashMap<>();
+        for (Map<String, Object> m : methods) {
+            String name = (String) m.get("name");
+            Object cog = m.get("cognitiveComplexity");
+            if (cog instanceof Number n) {
+                cognitiveByName.put(name, n.intValue());
+            }
+        }
+
+        // Cognitive complexity has no base, charges 1 per decision point plus nesting
+        // penalty. All if statements in these fixtures are at nesting level 0, so each
+        // adds exactly 1 + 0 = 1 to cognitive.
+        assertEquals(0, (int) cognitiveByName.getOrDefault("cc01", -1),
+            "cc01 has no decisions; cognitive=0. Got: " + cognitiveByName);
+        assertEquals(4, (int) cognitiveByName.getOrDefault("cc05", -1),
+            "cc05 has 4 top-level if statements; cognitive=4. Got: " + cognitiveByName);
+        assertEquals(5, (int) cognitiveByName.getOrDefault("cc06", -1),
+            "cc06 has 5 top-level if statements; cognitive=5. Got: " + cognitiveByName);
+        assertEquals(9, (int) cognitiveByName.getOrDefault("cc10", -1),
+            "cc10 has 9 top-level if statements; cognitive=9. Got: " + cognitiveByName);
+        assertEquals(10, (int) cognitiveByName.getOrDefault("cc11", -1),
+            "cc11 has 10 top-level if statements; cognitive=10. Got: " + cognitiveByName);
+    }
+
+    @Test
+    @DisplayName("ComplexityBoundaries: risk classification (low <=5, medium 6-10, high >10)")
+    void complexityBoundaries_riskClassification() {
+        String boundariesPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ComplexityBoundaries.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", boundariesPath);
+        args.put("includeDetails", true);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) data.get("methods");
+        Map<String, String> riskByName = new java.util.HashMap<>();
+        for (Map<String, Object> m : methods) {
+            riskByName.put((String) m.get("name"), (String) m.get("risk"));
+        }
+
+        // Verify boundary classification exactly per documented thresholds.
+        assertEquals("low", riskByName.get("cc01"),
+            "cc01 (CC=1) → low. Got: " + riskByName);
+        assertEquals("low", riskByName.get("cc05"),
+            "cc05 (CC=5) → low (boundary: <=5 is low). Got: " + riskByName);
+        assertEquals("medium", riskByName.get("cc06"),
+            "cc06 (CC=6) → medium (boundary: >5 is medium). Got: " + riskByName);
+        assertEquals("medium", riskByName.get("cc10"),
+            "cc10 (CC=10) → medium (boundary: <=10 is medium). Got: " + riskByName);
+        assertEquals("high", riskByName.get("cc11"),
+            "cc11 (CC=11) → high (boundary: >10 is high). Got: " + riskByName);
+
+        // riskAssessment summary must reflect these counts: 2 low (cc01, cc05), 2
+        // medium (cc06, cc10), 1 high (cc11).
+        @SuppressWarnings("unchecked")
+        Map<String, Object> risk = (Map<String, Object>) data.get("riskAssessment");
+        assertEquals(2, ((Number) risk.get("lowRiskMethods")).intValue(),
+            "Expected 2 low-risk methods (cc01, cc05); got: " + risk);
+        assertEquals(2, ((Number) risk.get("mediumRiskMethods")).intValue(),
+            "Expected 2 medium-risk methods (cc06, cc10); got: " + risk);
+        assertEquals(1, ((Number) risk.get("highRiskMethods")).intValue(),
+            "Expected 1 high-risk method (cc11); got: " + risk);
+    }
 }
