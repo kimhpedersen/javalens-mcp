@@ -70,8 +70,26 @@ class ChangeMethodSignatureToolTest {
         assertTrue((int) data.get("totalEdits") > 1);  // Declaration + call sites
     }
 
+    /**
+     * Locate the declaration edit (isDeclaration=true) for the method being modified,
+     * across all files in editsByFile.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findDeclarationEdit(Map<String, Object> data) {
+        Map<String, List<Map<String, Object>>> byFile =
+            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
+        for (List<Map<String, Object>> edits : byFile.values()) {
+            for (Map<String, Object> edit : edits) {
+                if (Boolean.TRUE.equals(edit.get("isDeclaration"))) {
+                    return edit;
+                }
+            }
+        }
+        throw new AssertionError("No declaration edit found in editsByFile: " + byFile);
+    }
+
     @Test
-    @DisplayName("adds new parameter with default value")
+    @DisplayName("add parameter: declaration newSignature includes the new param; new param count is reported")
     void addsParameterWithDefaultValue() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
@@ -98,14 +116,22 @@ class ChangeMethodSignatureToolTest {
         args.set("newParameters", params);
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(data.get("editsByFile"));
+
+        assertEquals(2, ((Number) data.get("oldParameterCount")).intValue());
+        assertEquals(3, ((Number) data.get("newParameterCount")).intValue(),
+            "After adding `String prefix`, newParameterCount must be 3; got: " + data);
+
+        // The declaration edit must carry a newSignature that reflects the added param.
+        Map<String, Object> declEdit = findDeclarationEdit(data);
+        String newSig = (String) declEdit.get("newSignature");
+        assertEquals("String formatMessage(String message, int count, String prefix)", newSig,
+            "Declaration newSignature must include all three params in order; got: " + newSig);
     }
 
     @Test
-    @DisplayName("removes parameter from method signature")
+    @DisplayName("remove parameter: declaration newSignature drops `count`; newParameterCount=1")
     void removesParameter() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
@@ -122,12 +148,21 @@ class ChangeMethodSignatureToolTest {
         args.set("newParameters", params);
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+
+        assertEquals(2, ((Number) data.get("oldParameterCount")).intValue());
+        assertEquals(1, ((Number) data.get("newParameterCount")).intValue(),
+            "After removing `count`, newParameterCount must be 1; got: " + data);
+
+        Map<String, Object> declEdit = findDeclarationEdit(data);
+        String newSig = (String) declEdit.get("newSignature");
+        assertEquals("String formatMessage(String message)", newSig,
+            "Declaration newSignature must drop `count`; got: " + newSig);
     }
 
     @Test
-    @DisplayName("reorders parameters in method signature")
+    @DisplayName("reorder parameters: declaration newSignature has params in swapped order")
     void reordersParameters() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
@@ -149,12 +184,17 @@ class ChangeMethodSignatureToolTest {
         args.set("newParameters", params);
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+
+        Map<String, Object> declEdit = findDeclarationEdit(data);
+        String newSig = (String) declEdit.get("newSignature");
+        assertEquals("String formatMessage(int count, String message)", newSig,
+            "Declaration newSignature must reflect swapped order; got: " + newSig);
     }
 
     @Test
-    @DisplayName("changes method return type")
+    @DisplayName("change return type: declaration newSignature uses new return type")
     void changesReturnType() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
@@ -163,10 +203,17 @@ class ChangeMethodSignatureToolTest {
         args.put("newReturnType", "void");
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
+
+        assertEquals("String", data.get("oldReturnType"),
+            "Old return type must be reported; got: " + data);
         assertEquals("void", data.get("newReturnType"));
+
+        Map<String, Object> declEdit = findDeclarationEdit(data);
+        String newSig = (String) declEdit.get("newSignature");
+        assertEquals("void formatMessage(String message, int count)", newSig,
+            "Declaration newSignature must use new return type with original params; got: " + newSig);
     }
 
     // ========== Required Parameter Tests ==========
