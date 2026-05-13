@@ -46,7 +46,7 @@ class ConvertAnonymousToLambdaToolTest {
     // ========== Comprehensive Functionality Tests ==========
 
     @Test
-    @DisplayName("converts simple Runnable with complete response including edit details")
+    @DisplayName("converts Runnable: interfaceType=Runnable, methodName=run, single replace edit with ->")
     void convertsSimpleRunnableWithCompleteResponse() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", anonymousExamplesPath);
@@ -54,25 +54,33 @@ class ConvertAnonymousToLambdaToolTest {
         args.put("column", 28);
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify interface info
-        assertNotNull(data.get("interfaceType"));
-        assertNotNull(data.get("methodName"));
+        // Interface and SAM identity — the tool reports the implemented functional
+        // interface's simple name and the single abstract method's name. For Runnable,
+        // these are deterministic.
+        assertEquals("Runnable", data.get("interfaceType"),
+            "Anonymous `new Runnable() { ... }` must report interfaceType=Runnable; got: " + data);
+        assertEquals("run", data.get("methodName"),
+            "Runnable's single abstract method is `run`; got: " + data);
 
-        // Verify edit structure
-        assertNotNull(data.get("edits"));
+        // Exactly one edit (the replacement of the anonymous class with a lambda).
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("edits");
-        assertFalse(edits.isEmpty());
+        assertEquals(1, edits.size(),
+            "Conversion produces exactly one replace edit; got: " + edits);
         Map<String, Object> edit = edits.get(0);
+        assertEquals("replace", edit.get("type"));
         assertNotNull(edit.get("startLine"));
 
-        // Verify lambda syntax
+        // The replacement text must be a lambda — contains `->`.
         String newText = (String) edit.get("newText");
-        assertTrue(newText.contains("->"));
+        assertTrue(newText != null && newText.contains("->"),
+            "Replacement must be a lambda containing `->`; got: " + newText);
+        // And the data carries the exact lambda expression alongside.
+        assertEquals(newText, data.get("lambdaExpression"),
+            "data.lambdaExpression must mirror the edit's newText; got data: " + data);
     }
 
     @Test
