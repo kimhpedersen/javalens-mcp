@@ -215,7 +215,8 @@ class GetFieldAtPositionToolTest {
         assertEquals("RED", data.get("name"));
         assertEquals(Boolean.TRUE, data.get("isEnumConstant"),
             "Enum constant must have isEnumConstant=true; got: " + data);
-        assertEquals("com.example.TypeKindsFixture.Color", data.get("declaringType"),
+        // JDT reports nested type qualified names using `$` not `.`.
+        assertEquals("com.example.TypeKindsFixture$Color", data.get("declaringType"),
             "Declaring type must be the enum; got: " + data);
     }
 
