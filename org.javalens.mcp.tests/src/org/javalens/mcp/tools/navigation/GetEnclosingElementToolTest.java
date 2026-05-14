@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -192,5 +193,139 @@ class GetEnclosingElementToolTest {
         args4.put("line", 0);
         args4.put("column", 0);
         assertFalse(tool.execute(args4).isSuccess());
+    }
+
+    // ========== Behavior-matrix coverage ==========
+
+    /**
+     * Resolve a position to (line, column) by locating an identifier in the source file.
+     */
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) {
+            throw new AssertionError("Identifier `" + identifier + "` not found in " + filePath);
+        }
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Position on nested class (TypeKindsFixture.Inner) reports outerType+enclosingType")
+    @SuppressWarnings("unchecked")
+    void nestedClass_reportsOuterTypeAndEnclosingType() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        // Find the "Inner" identifier — it occurs in the comment, but the first
+        // matching identifier in the class body line is what we want. The first
+        // "Inner" is the nested class declaration.
+        // Search past the docs to find the actual class declaration.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tkf));
+        int idx = source.indexOf("class Inner");
+        assertTrue(idx > 0);
+        idx = source.indexOf("Inner", idx); // skip past "class " to "Inner"
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on Inner class declaration must succeed; got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+
+        Map<String, Object> enclosingType = getEnclosingType(data);
+        assertEquals("Inner", enclosingType.get("name"),
+            "enclosingType.name must be the inner class itself; got: " + enclosingType);
+
+        Map<String, Object> outerType = (Map<String, Object>) data.get("outerType");
+        assertNotNull(outerType,
+            "Nested class must report outerType; got: " + data);
+        assertEquals("TypeKindsFixture", outerType.get("name"),
+            "outerType.name must be the enclosing class; got: " + outerType);
+        assertEquals("com.example.TypeKindsFixture", outerType.get("qualifiedName"));
+    }
+
+    @Test
+    @DisplayName("Inside method body, enclosingMethod carries signature, modifiers, isConstructor=false")
+    @SuppressWarnings("unchecked")
+    void enclosingMethod_carriesFullShape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 15);   // inside add() body
+        args.put("column", 10);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> enclosingMethod = (Map<String, Object>) getData(r).get("enclosingMethod");
+        assertNotNull(enclosingMethod);
+
+        assertEquals("add", enclosingMethod.get("name"));
+        assertEquals(Boolean.FALSE, enclosingMethod.get("isConstructor"));
+        assertNotNull(enclosingMethod.get("signature"),
+            "enclosingMethod.signature must be present; got: " + enclosingMethod);
+        assertEquals("add(int, int): int", enclosingMethod.get("signature"),
+            "Signature includes simple types and return type; got: " + enclosingMethod);
+        List<String> modifiers = (List<String>) enclosingMethod.get("modifiers");
+        assertTrue(modifiers.contains("public"),
+            "public modifier must appear; got: " + modifiers);
+        assertNotNull(enclosingMethod.get("line"));
+    }
+
+    @Test
+    @DisplayName("Inside HelloWorld constructor body: enclosingMethod has isConstructor=true")
+    @SuppressWarnings("unchecked")
+    void insideConstructor_isConstructorTrue() throws Exception {
+        String helloPath = projectPath.resolve("src/main/java/com/example/HelloWorld.java").toString();
+        // Position inside HelloWorld constructor body. Find `this.greeting = ` line.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(helloPath));
+        int idx = source.indexOf("this.greeting");
+        if (idx > 0) {
+            int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+            int lineStart = source.lastIndexOf('\n', idx) + 1;
+            int column = idx - lineStart;
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("filePath", helloPath);
+            args.put("line", line);
+            args.put("column", column);
+
+            ToolResponse r = tool.execute(args);
+            assertTrue(r.isSuccess());
+            Map<String, Object> enclosingMethod = (Map<String, Object>) getData(r).get("enclosingMethod");
+            assertNotNull(enclosingMethod);
+            assertEquals("HelloWorld", enclosingMethod.get("name"));
+            assertEquals(Boolean.TRUE, enclosingMethod.get("isConstructor"),
+                "Inside a constructor, isConstructor must be true; got: " + enclosingMethod);
+        }
+    }
+
+    @Test
+    @DisplayName("Default package: enclosingPackage reports '(default package)'")
+    void defaultPackage_reportsParenthesizedLabel() throws Exception {
+        // Load default-package fixture and run the tool on its file.
+        JdtServiceImpl svc = helper.loadProject("default-package");
+        GetEnclosingElementTool localTool = new GetEnclosingElementTool(() -> svc);
+        java.nio.file.Path dp = helper.getFixturePath("default-package");
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", dp.resolve("src/main/java/NoPackage.java").toString());
+        args.put("line", 5);   // inside the class body
+        args.put("column", 4);
+
+        ToolResponse r = localTool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position inside default-package class must succeed; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        assertEquals("(default package)", getData(r).get("enclosingPackage"),
+            "Default package must be reported as '(default package)'; got: " + getData(r));
     }
 }
