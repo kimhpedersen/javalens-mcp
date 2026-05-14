@@ -299,4 +299,86 @@ class GetTypeHierarchyToolTest {
             SemanticAssertions.getList(data, "subtypes"), "qualifiedName");
         assertEquals(Set.of("com.example.Dog"), subNames);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Calculator superclasses include java.lang.Object marked external=true")
+    @SuppressWarnings("unchecked")
+    void superclasses_externalObjectFlaggedExternal() {
+        ToolResponse r = tool.execute(argsByName("com.example.Calculator"));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        List<Map<String, Object>> superclasses = SemanticAssertions.getList(data, "superclasses");
+
+        Map<String, Object> object = superclasses.stream()
+            .filter(s -> "java.lang.Object".equals(s.get("qualifiedName")))
+            .findFirst().orElseThrow();
+        // Object has no source in the project — must be marked external.
+        assertEquals(Boolean.TRUE, object.get("external"),
+            "java.lang.Object must be marked external=true (no source); got: " + object);
+    }
+
+    @Test
+    @DisplayName("Annotation Marker reports kind='Annotation' when queried")
+    void annotationMarker_kindIsAnnotation() {
+        ToolResponse r = tool.execute(argsByName("com.example.Marker"));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> type = (Map<String, Object>) data.get("type");
+        assertEquals("Annotation", type.get("kind"),
+            "Marker annotation must report kind='Annotation'; got: " + type);
+    }
+
+    @Test
+    @DisplayName("Enum Color (nested in TypeKindsFixture) reports kind='Enum'")
+    void enumColor_kindIsEnum() {
+        ToolResponse r = tool.execute(argsByName("com.example.TypeKindsFixture.Color"));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> type = (Map<String, Object>) data.get("type");
+        assertEquals("Enum", type.get("kind"));
+    }
+
+    @Test
+    @DisplayName("maxDepth limits subtypes list size and meta.truncated=true")
+    @SuppressWarnings("unchecked")
+    void maxDepth_limitsSubtypesAndSetsTruncated() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.IShape");
+        args.put("maxDepth", 2);
+
+        ToolResponse r = tool.execute(args);
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        List<Map<String, Object>> subtypes = SemanticAssertions.getList(data, "subtypes");
+        assertTrue(subtypes.size() <= 2,
+            "maxDepth=2 must cap subtypes list to 2 entries; got: " + subtypes.size());
+
+        // IShape has 7 subtypes; meta.truncated must be true because not all are returned.
+        int totalSubtypes = ((Number) data.get("totalSubtypes")).intValue();
+        assertEquals(7, totalSubtypes,
+            "totalSubtypes reports the true count regardless of cap; got: " + totalSubtypes);
+        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
+        assertNotNull(meta);
+        assertEquals(Boolean.TRUE, meta.isTruncated(),
+            "meta.truncated must be true when subtypes are capped");
+    }
+
+    @Test
+    @DisplayName("Position-based lookup falls back to typeName when position has no match")
+    void positionFallbackToTypeName() {
+        // Pass both: a bad position and a valid typeName. The tool should use typeName
+        // as a fallback when position lookup fails.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 99999);  // out of file range — position lookup fails
+        args.put("column", 99999);
+        args.put("typeName", "com.example.IShape");
+
+        ToolResponse r = tool.execute(args);
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> type = (Map<String, Object>) data.get("type");
+        assertEquals("com.example.IShape", type.get("qualifiedName"),
+            "When position fails, the tool must use the typeName fallback; got: " + data);
+    }
 }
