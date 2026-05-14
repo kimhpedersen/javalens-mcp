@@ -124,4 +124,96 @@ class GetSignatureHelpToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) {
+            throw new AssertionError("`" + identifier + "` not found in " + filePath);
+        }
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Overloaded greet (0/1/2 params) returns all three signatures with exact labels")
+    @SuppressWarnings("unchecked")
+    void overloadedMethod_returnsAllOverloadSignatures() throws Exception {
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "greet"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        List<Map<String, Object>> signatures = (List<Map<String, Object>>) data.get("signatures");
+        assertEquals(3, signatures.size(),
+            "TypeKindsFixture declares 3 overloads of greet (0, 1, 2 params); got: " + signatures);
+
+        java.util.Set<String> labels = signatures.stream()
+            .map(s -> (String) s.get("label"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of(
+                "greet(): String",
+                "greet(String name): String",
+                "greet(String name, int times): String"),
+            labels,
+            "All three overload labels must appear; got: " + labels);
+    }
+
+    @Test
+    @DisplayName("Method with no Javadoc omits documentation field on its signature")
+    @SuppressWarnings("unchecked")
+    void methodWithoutJavadoc_omitsDocumentation() throws Exception {
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "greet"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> signatures = (List<Map<String, Object>>) getData(r).get("signatures");
+        // None of the greet overloads have a /** */ Javadoc — none should carry a
+        // documentation field.
+        for (Map<String, Object> sig : signatures) {
+            assertNull(sig.get("documentation"),
+                "greet overload without Javadoc must omit documentation field; got: " + sig);
+        }
+    }
+
+    @Test
+    @DisplayName("Constructor at position: label has no `: ReturnType` suffix")
+    @SuppressWarnings("unchecked")
+    void constructorPosition_signatureHasNoReturnType() throws Exception {
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String helloPath = projectPath.resolve("src/main/java/com/example/HelloWorld.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(helloPath));
+        // Find the constructor declaration: pattern is `public HelloWorld(`.
+        int idx = source.indexOf("public HelloWorld(");
+        idx = source.indexOf("HelloWorld(", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helloPath);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> signatures = (List<Map<String, Object>>) getData(r).get("signatures");
+        assertFalse(signatures.isEmpty());
+        // Constructor labels are `name(params)` without `: ReturnType`.
+        for (Map<String, Object> sig : signatures) {
+            String label = (String) sig.get("label");
+            assertTrue(label.startsWith("HelloWorld("),
+                "Constructor label must start with class name; got: " + label);
+            assertFalse(label.contains("):"),
+                "Constructor label must NOT have `: ReturnType` suffix; got: " + label);
+        }
+    }
 }

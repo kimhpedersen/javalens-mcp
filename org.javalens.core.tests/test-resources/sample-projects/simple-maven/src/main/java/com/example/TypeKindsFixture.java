@@ -73,4 +73,22 @@ public class TypeKindsFixture {
 
     /** Volatile field for volatile-modifier coverage. */
     public volatile int volatileField;
+
+    // Overloaded `greet` methods for get_signature_help overload coverage.
+
+    public String greet() {
+        return "hi";
+    }
+
+    public String greet(String name) {
+        return "hi, " + name;
+    }
+
+    public String greet(String name, int times) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < times; i++) {
+            sb.append("hi, ").append(name).append('\n');
+        }
+        return sb.toString();
+    }
 }
