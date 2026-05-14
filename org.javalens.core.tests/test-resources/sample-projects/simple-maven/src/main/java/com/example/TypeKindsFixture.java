@@ -125,4 +125,18 @@ public class TypeKindsFixture {
 
     public void noJavadocMethod() {
     }
+
+    // Method used by a field initializer — exercises the "<initializer>" caller
+    // path of get_call_hierarchy_incoming.
+    public static String computeInitialLabel() {
+        return "initial";
+    }
+
+    private String labelFromInitializer = computeInitialLabel();
+
+    // Recursive method for self-call coverage in get_call_hierarchy_incoming.
+    public int recursiveCountdown(int n) {
+        if (n <= 0) return 0;
+        return 1 + recursiveCountdown(n - 1);
+    }
 }

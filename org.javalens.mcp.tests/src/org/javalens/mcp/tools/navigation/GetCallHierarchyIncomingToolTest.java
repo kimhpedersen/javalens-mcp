@@ -122,4 +122,96 @@ class GetCallHierarchyIncomingToolTest {
         assertTrue(callerFiles.contains("SearchPatterns.java"),
             "SearchPatterns.createObjects calls Calculator.add — must appear; got: " + callerFiles);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) throw new AssertionError("`" + identifier + "` not in " + filePath);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Caller info includes callerMethod, callerSignature, callerClass, context")
+    @SuppressWarnings("unchecked")
+    void callerInfo_carriesFullShape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> callers = (List<Map<String, Object>>) getData(r).get("callers");
+        assertFalse(callers.isEmpty());
+
+        Map<String, Object> caller = callers.get(0);
+        assertNotNull(caller.get("callerMethod"),
+            "Caller info must include callerMethod; got: " + caller);
+        assertNotNull(caller.get("callerSignature"));
+        assertNotNull(caller.get("callerClass"));
+        assertNotNull(caller.get("context"),
+            "Caller info must include the context line; got: " + caller);
+        assertNotNull(caller.get("line"));
+        assertNotNull(caller.get("column"));
+        assertNotNull(caller.get("filePath"));
+    }
+
+    @Test
+    @DisplayName("Method with no callers (UnusedCode.unusedPrivateMethod) returns empty callers list")
+    @SuppressWarnings("unchecked")
+    void methodWithNoCallers_emptyList() throws Exception {
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String unusedPath = projectPath.resolve("src/main/java/com/example/UnusedCode.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(unusedPath, "unusedPrivateMethod"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("unusedPrivateMethod", data.get("method"));
+        assertEquals(0, ((Number) data.get("totalCallers")).intValue(),
+            "Private method that is never called must have 0 callers; got: " + data);
+        List<?> callers = (List<?>) data.get("callers");
+        assertEquals(0, callers.size());
+    }
+
+    @Test
+    @DisplayName("Initializer call site reports callerMethod='<initializer>'")
+    @SuppressWarnings("unchecked")
+    void initializerCaller_isReportedAsAngleBracketsInitializer() throws Exception {
+        // TypeKindsFixture has a static `computeInitialLabel()` invoked from a field
+        // initializer (`labelFromInitializer = computeInitialLabel()`). The caller
+        // must be reported as "<initializer>".
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "computeInitialLabel"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> callers = (List<Map<String, Object>>) getData(r).get("callers");
+        boolean hasInit = callers.stream()
+            .anyMatch(c -> "<initializer>".equals(c.get("callerMethod")));
+        assertTrue(hasInit,
+            "Field-initializer caller must surface as `<initializer>`; got: " + callers);
+    }
+
+    @Test
+    @DisplayName("Recursive method shows itself among callers")
+    @SuppressWarnings("unchecked")
+    void recursiveMethod_includesSelfInCallers() throws Exception {
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "recursiveCountdown"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> callers = (List<Map<String, Object>>) getData(r).get("callers");
+        boolean hasSelf = callers.stream()
+            .anyMatch(c -> "recursiveCountdown".equals(c.get("callerMethod")));
+        assertTrue(hasSelf,
+            "Recursive method must list itself among callers; got: " + callers);
+    }
 }
