@@ -359,7 +359,7 @@ class GetTypeHierarchyToolTest {
             "totalSubtypes reports the true count regardless of cap; got: " + totalSubtypes);
         org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
         assertNotNull(meta);
-        assertEquals(Boolean.TRUE, meta.isTruncated(),
+        assertEquals(Boolean.TRUE, meta.getTruncated(),
             "meta.truncated must be true when subtypes are capped");
     }
 
