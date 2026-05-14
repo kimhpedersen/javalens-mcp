@@ -113,4 +113,88 @@ class GetCallHierarchyOutgoingToolTest {
         assertTrue(calleeNames.contains("formatMessage"),
             "printMessages calls formatMessage twice — must appear in callees; got: " + calleeNames);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) throw new AssertionError("`" + identifier + "` not in " + filePath);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("SearchPatterns.createObjects: callees include CONSTRUCTOR calls (new ArrayList, new HashMap, new Calculator)")
+    @SuppressWarnings("unchecked")
+    void createObjects_includesConstructorCalls() throws Exception {
+        String sp = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/SearchPatterns.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(sp, "createObjects"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> callees = (List<Map<String, Object>>) getData(r).get("callees");
+
+        // Find CONSTRUCTOR callType entries.
+        java.util.Set<String> constructorTargets = callees.stream()
+            .filter(c -> "CONSTRUCTOR".equals(c.get("callType")))
+            .map(c -> (String) c.get("method"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertFalse(constructorTargets.isEmpty(),
+            "createObjects has multiple `new` calls — at least one CONSTRUCTOR callee expected; got: " + callees);
+    }
+
+    @Test
+    @DisplayName("TypeKindsFixture.labelWithSuper: callees include SUPER_METHOD invocation of toString")
+    @SuppressWarnings("unchecked")
+    void labelWithSuper_includesSuperMethodCall() throws Exception {
+        String tkf = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "labelWithSuper"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> callees = (List<Map<String, Object>>) getData(r).get("callees");
+        boolean hasSuper = callees.stream()
+            .anyMatch(c -> "SUPER_METHOD".equals(c.get("callType")));
+        assertTrue(hasSuper,
+            "labelWithSuper calls super.toString() — SUPER_METHOD callType must appear; got: " + callees);
+    }
+
+    @Test
+    @DisplayName("Recursive method shows itself among callees")
+    @SuppressWarnings("unchecked")
+    void recursiveMethod_listsSelfAsCallee() throws Exception {
+        String tkf = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "recursiveCountdown"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> callees = (List<Map<String, Object>>) getData(r).get("callees");
+        boolean hasSelf = callees.stream()
+            .anyMatch(c -> "recursiveCountdown".equals(c.get("method")));
+        assertTrue(hasSelf,
+            "Recursive method must list itself as callee; got: " + callees);
+    }
+
+    @Test
+    @DisplayName("Method with no callees (Calculator.getLastResult — just returns a field) has empty callees")
+    void methodWithNoCallees_emptyList() {
+        String calc = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Calculator.java").toString();
+        // Calculator.getLastResult() body is just `return lastResult;` — no method calls.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calc);
+        // 1-based line 46 `public int getLastResult()` -> 0-based 45. Column 15 on "getLastResult".
+        args.put("line", 45);
+        args.put("column", 15);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(0, ((Number) data.get("totalCallees")).intValue(),
+            "Calculator.getLastResult has no method/constructor calls; got: " + data);
+    }
 }

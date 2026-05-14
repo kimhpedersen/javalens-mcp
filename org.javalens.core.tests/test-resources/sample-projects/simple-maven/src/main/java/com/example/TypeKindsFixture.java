@@ -139,4 +139,12 @@ public class TypeKindsFixture {
         if (n <= 0) return 0;
         return 1 + recursiveCountdown(n - 1);
     }
+
+    /**
+     * Method that calls super.toString() — exercises SUPER_METHOD callType in
+     * get_call_hierarchy_outgoing.
+     */
+    public String labelWithSuper() {
+        return super.toString() + ":fixture";
+    }
 }
