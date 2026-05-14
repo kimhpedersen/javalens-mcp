@@ -173,6 +173,137 @@ class GetDocumentSymbolsToolTest {
 
     // ========== Semantic-grade tests ==========
 
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Static final field is reported with kind='Constant' (RefactoringTarget.MAX_SIZE)")
+    @SuppressWarnings("unchecked")
+    void staticFinalField_kindIsConstant() {
+        String rt = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", rt);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> symbols = getSymbols(getData(r));
+        Map<String, Object> rtSymbol = symbols.stream()
+            .filter(s -> "RefactoringTarget".equals(s.get("name")))
+            .findFirst().orElseThrow();
+        Map<String, Object> maxSize = getChildren(rtSymbol).stream()
+            .filter(c -> "MAX_SIZE".equals(c.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("Constant", maxSize.get("kind"),
+            "static final field must be reported with kind='Constant'; got: " + maxSize);
+    }
+
+    @Test
+    @DisplayName("Enum constant is reported with kind='EnumConstant'")
+    @SuppressWarnings("unchecked")
+    void enumConstant_kindIsEnumConstant() {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> symbols = getSymbols(getData(r));
+        Map<String, Object> tkfSymbol = symbols.stream()
+            .filter(s -> "TypeKindsFixture".equals(s.get("name")))
+            .findFirst().orElseThrow();
+        // Find Color nested type
+        Map<String, Object> colorEnum = getChildren(tkfSymbol).stream()
+            .filter(c -> "Color".equals(c.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("Enum", colorEnum.get("kind"),
+            "Color enum nested type must be reported with kind='Enum'; got: " + colorEnum);
+
+        // RED/GREEN/BLUE are enum constants inside Color.
+        Map<String, Object> red = getChildren(colorEnum).stream()
+            .filter(c -> "RED".equals(c.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("EnumConstant", red.get("kind"),
+            "Enum constant RED must report kind='EnumConstant'; got: " + red);
+    }
+
+    @Test
+    @DisplayName("Type kinds Annotation/Record reported correctly when nested in IShape.java? — use TypeKindsFixture")
+    @SuppressWarnings("unchecked")
+    void typeKinds_reportedCorrectlyForNonClassTypes() {
+        // Verify Annotation, Record, Interface kinds on dedicated fixtures.
+        // Marker.java's top-level @interface.
+        String marker = projectPath.resolve("src/main/java/com/example/Marker.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", marker);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> markerSym = getSymbols(getData(r)).stream()
+            .filter(s -> "Marker".equals(s.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("Annotation", markerSym.get("kind"));
+
+        // Point.java record.
+        String point = projectPath.resolve("src/main/java/com/example/Point.java").toString();
+        args = objectMapper.createObjectNode();
+        args.put("filePath", point);
+        r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> pointSym = getSymbols(getData(r)).stream()
+            .filter(s -> "Point".equals(s.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("Record", pointSym.get("kind"));
+
+        // IShape.java interface.
+        String iShape = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
+        args = objectMapper.createObjectNode();
+        args.put("filePath", iShape);
+        r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> iShapeSym = getSymbols(getData(r)).stream()
+            .filter(s -> "IShape".equals(s.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("Interface", iShapeSym.get("kind"));
+    }
+
+    @Test
+    @DisplayName("Method signature for Calculator.add: `add(int a, int b): int`")
+    @SuppressWarnings("unchecked")
+    void methodSignature_isExactlyFormatted() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> calcSymbol = getSymbols(getData(r)).stream()
+            .filter(s -> "Calculator".equals(s.get("name")))
+            .findFirst().orElseThrow();
+        Map<String, Object> addMethod = getChildren(calcSymbol).stream()
+            .filter(c -> "add".equals(c.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("add(int a, int b): int", addMethod.get("signature"),
+            "Method signature must include params with names and return type; got: " + addMethod);
+    }
+
+    @Test
+    @DisplayName("Nested type appears as child of its enclosing type's children")
+    @SuppressWarnings("unchecked")
+    void nestedType_appearsAsChild() {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> tkfSymbol = getSymbols(getData(r)).stream()
+            .filter(s -> "TypeKindsFixture".equals(s.get("name")))
+            .findFirst().orElseThrow();
+        List<Map<String, Object>> children = getChildren(tkfSymbol);
+        java.util.Set<String> childNames = children.stream()
+            .map(c -> (String) c.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+        // Nested classes Color, GenericContainer, Inner, DefaultMethodHolder, BoundedBox.
+        assertTrue(childNames.contains("Color"));
+        assertTrue(childNames.contains("GenericContainer"));
+        assertTrue(childNames.contains("Inner"));
+        assertTrue(childNames.contains("BoundedBox"));
+        assertTrue(childNames.contains("DefaultMethodHolder"));
+    }
+
     @Test
     @DisplayName("Calculator has exactly 4 methods + 1 field as direct children")
     void calculator_exactChildrenCount() {
