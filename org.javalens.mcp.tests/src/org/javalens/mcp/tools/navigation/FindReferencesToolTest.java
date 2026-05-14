@@ -271,4 +271,97 @@ class FindReferencesToolTest {
         assertEquals(Set.of("Calculator.java"), referencingFiles,
             "Private field lastResult must only appear in Calculator.java; got: " + referencingFiles);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Reference info: context line present, line + column populated")
+    @SuppressWarnings("unchecked")
+    void referenceInfo_includesContextAndLocation() {
+        // Calculator.add — known cross-file references.
+        ToolResponse r = tool.execute(argsAt(calculatorPath, 14, 15));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        List<Map<String, Object>> refs = getReferences(data);
+        assertFalse(refs.isEmpty());
+        Map<String, Object> ref = refs.get(0);
+        assertNotNull(ref.get("context"),
+            "Reference info must include the context line; got: " + ref);
+        assertNotNull(ref.get("line"));
+        assertNotNull(ref.get("column"));
+    }
+
+    @Test
+    @DisplayName("referenceKind=METHOD_INVOCATION for method references")
+    @SuppressWarnings("unchecked")
+    void referenceKind_methodInvocation() {
+        ToolResponse r = tool.execute(argsAt(calculatorPath, 14, 15));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        List<Map<String, Object>> refs = getReferences(data);
+        for (Map<String, Object> ref : refs) {
+            assertEquals("METHOD_INVOCATION", ref.get("referenceKind"),
+                "Every Calculator.add reference must have referenceKind=METHOD_INVOCATION; got: " + ref);
+        }
+    }
+
+    @Test
+    @DisplayName("referenceKind=TYPE_REFERENCE for type references")
+    @SuppressWarnings("unchecked")
+    void referenceKind_typeReference() {
+        // Calculator type position — references are type uses across files.
+        ToolResponse r = tool.execute(argsAt(calculatorPath, 5, 13));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        List<Map<String, Object>> refs = getReferences(data);
+        for (Map<String, Object> ref : refs) {
+            assertEquals("TYPE_REFERENCE", ref.get("referenceKind"),
+                "Every Calculator type reference must have referenceKind=TYPE_REFERENCE; got: " + ref);
+        }
+    }
+
+    @Test
+    @DisplayName("referenceKind=FIELD_ACCESS for field references")
+    @SuppressWarnings("unchecked")
+    void referenceKind_fieldAccess() {
+        // Calculator.lastResult field — only used inside Calculator.java.
+        ToolResponse r = tool.execute(argsAt(calculatorPath, 6, 16));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        List<Map<String, Object>> refs = getReferences(data);
+        for (Map<String, Object> ref : refs) {
+            assertEquals("FIELD_ACCESS", ref.get("referenceKind"),
+                "Every lastResult reference must have referenceKind=FIELD_ACCESS; got: " + ref);
+        }
+    }
+
+    @Test
+    @DisplayName("Constructor position resolves and finds constructor references")
+    @SuppressWarnings("unchecked")
+    void constructorPosition_findsConstructorReferences() throws Exception {
+        String ctPath = projectPath.resolve("src/main/java/com/example/ConstructorTarget.java").toString();
+        // ConstructorTarget(String name, int count) — 2-arg constructor declaration.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(ctPath));
+        int idx = source.indexOf("public ConstructorTarget(String name, int count)");
+        idx = source.indexOf("ConstructorTarget(", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", ctPath);
+        args.put("line", line);
+        args.put("column", column);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on constructor name must resolve; got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = (Map<String, Object>) r.getData();
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("references");
+        Set<String> filenames = refs.stream()
+            .map(rr -> (String) rr.get("filePath"))
+            .map(p -> p == null ? "" : p.replace('\\', '/'))
+            .map(p -> p.substring(p.lastIndexOf('/') + 1))
+            .collect(Collectors.toSet());
+        assertTrue(filenames.contains("ConstructorCaller.java"),
+            "ConstructorCaller uses the 2-arg ConstructorTarget constructor — must appear; got: "
+                + filenames);
+    }
 }
