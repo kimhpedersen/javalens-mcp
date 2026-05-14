@@ -146,4 +146,92 @@ class InlineMethodToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode doubleValueArgs() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 64);
+        args.put("column", 22);
+        return args;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> editsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("edits");
+    }
+
+    @Test
+    @DisplayName("methodClass is RefactoringTarget (the declaring type of doubleValue)")
+    void methodClass_reported() {
+        ToolResponse r = tool.execute(doubleValueArgs());
+        assertTrue(r.isSuccess());
+        assertEquals("RefactoringTarget", getData(r).get("methodClass"));
+    }
+
+    @Test
+    @DisplayName("parameterCount=1 for doubleValue(int value)")
+    void parameterCount_reported() {
+        ToolResponse r = tool.execute(doubleValueArgs());
+        assertTrue(r.isSuccess());
+        assertEquals(1, ((Number) getData(r).get("parameterCount")).intValue());
+    }
+
+    @Test
+    @DisplayName("isExpressionContext=true when call is part of a larger expression (assignment RHS)")
+    void isExpressionContext_trueForAssignmentRHS() {
+        // `int doubled = doubleValue(x);` — the call is the initializer of the variable
+        // declaration, an expression context.
+        ToolResponse r = tool.execute(doubleValueArgs());
+        assertTrue(r.isSuccess());
+        assertEquals(Boolean.TRUE, getData(r).get("isExpressionContext"));
+    }
+
+    @Test
+    @DisplayName("inlinedCode field equals the edit's newText")
+    void inlinedCode_matchesEditNewText() {
+        ToolResponse r = tool.execute(doubleValueArgs());
+        assertTrue(r.isSuccess());
+        String inlined = (String) getData(r).get("inlinedCode");
+        String editText = (String) editsOf(r).get(0).get("newText");
+        assertEquals(inlined, editText,
+            "inlinedCode top-level field must equal the produced edit's newText");
+    }
+
+    @Test
+    @DisplayName("Single replace edit carries start/end line/column, startOffset/endOffset, oldText, newText")
+    void replaceEdit_shape() {
+        ToolResponse r = tool.execute(doubleValueArgs());
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = editsOf(r);
+        assertEquals(1, edits.size(), "inline_method emits exactly one edit");
+        Map<String, Object> e = edits.get(0);
+        for (String key : List.of("type", "startLine", "startColumn", "endLine", "endColumn",
+                "startOffset", "endOffset", "oldText", "newText")) {
+            assertNotNull(e.get(key), key + " missing on inline edit: " + e);
+        }
+        assertEquals("replace", e.get("type"));
+    }
+
+    @Test
+    @DisplayName("Position on a non-existent file is rejected (file not found)")
+    void nonExistentFile_isRejected() {
+        ObjectNode args = doubleValueArgs();
+        args.put("filePath", "/nonexistent/Path.java");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+    }
+
+    @Test
+    @DisplayName("Position on whitespace (no method invocation) is rejected")
+    void positionOnWhitespace_isRejected() {
+        // Line 0 col 0 — package keyword, definitely not a method call.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 0);
+        args.put("column", 0);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+    }
 }
