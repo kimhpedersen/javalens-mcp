@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -173,5 +174,151 @@ class ExtractMethodToolTest {
             "Extracted method body must include the original `sum +=` accumulator; got:\n" + declaration);
         assertTrue(declaration.contains("calculateSum"),
             "Method declaration must contain its new name; got:\n" + declaration);
+    }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode calculateSumArgs() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 44);
+        args.put("startColumn", 8);
+        args.put("endLine", 47);
+        args.put("endColumn", 9);
+        args.put("methodName", "calculateSum");
+        return args;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> editsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("edits");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> paramsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("parameters");
+    }
+
+    @Test
+    @DisplayName("Detected parameters include `numbers` (declared before and used in selection)")
+    void parameters_includeNumbers() {
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> params = paramsOf(r);
+        boolean hasNumbers = params.stream()
+            .anyMatch(p -> "numbers".equals(p.get("name")));
+        assertTrue(hasNumbers,
+            "`numbers` is declared as method parameter before the selection and read inside it; "
+                + "must appear as an extracted-method parameter. got: " + params);
+    }
+
+    @Test
+    @DisplayName("returnType is `int` (sum is modified and used after the selection)")
+    void returnType_isIntForModifiedAndUsedAfter() {
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+        // `sum` is declared inside selection and read after via `return sum * 2;`.
+        // The tool classifies this as a returned value.
+        assertEquals("int", getData(r).get("returnType"),
+            "returnType must be `int` when single modified variable (sum) is used after selection");
+    }
+
+    @Test
+    @DisplayName("methodCall assigns into the returned variable: `sum = calculateSum(numbers);`")
+    void methodCall_assignsReturnValue() {
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+        String call = (String) getData(r).get("methodCall");
+        assertNotNull(call);
+        assertTrue(call.startsWith("sum = "),
+            "methodCall must assign result back into the returned variable; got: " + call);
+        assertTrue(call.contains("calculateSum"),
+            "methodCall must reference the new method name; got: " + call);
+        assertTrue(call.contains("numbers"),
+            "methodCall must pass the parameter; got: " + call);
+    }
+
+    @Test
+    @DisplayName("Exactly two edits emitted: one insert (new method) + one replace (selection)")
+    void edits_haveInsertAndReplace() {
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = editsOf(r);
+        assertEquals(2, edits.size(),
+            "extract_method must emit exactly 2 edits: insert + replace; got: " + edits);
+        java.util.Set<String> types = new java.util.HashSet<>();
+        for (Map<String, Object> e : edits) {
+            types.add((String) e.get("type"));
+        }
+        assertEquals(java.util.Set.of("insert", "replace"), types,
+            "Edit types must be {insert, replace}; got: " + types);
+    }
+
+    @Test
+    @DisplayName("Insert edit carries newText + line + offset")
+    void insertEdit_shape() {
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+        Map<String, Object> insert = editsOf(r).stream()
+            .filter(e -> "insert".equals(e.get("type"))).findFirst().orElseThrow();
+        assertNotNull(insert.get("newText"));
+        assertNotNull(insert.get("line"));
+        assertNotNull(insert.get("offset"));
+        assertTrue(((String) insert.get("newText")).contains("calculateSum"));
+    }
+
+    @Test
+    @DisplayName("Replace edit carries startLine/Column, endLine/Column, startOffset/endOffset, oldText, newText")
+    void replaceEdit_shape() {
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+        Map<String, Object> replace = editsOf(r).stream()
+            .filter(e -> "replace".equals(e.get("type"))).findFirst().orElseThrow();
+        for (String key : List.of("startLine", "startColumn", "endLine", "endColumn",
+                "startOffset", "endOffset", "oldText", "newText")) {
+            assertNotNull(replace.get(key), key + " missing on replace edit: " + replace);
+        }
+        assertEquals(44, ((Number) replace.get("startLine")).intValue());
+        assertEquals(47, ((Number) replace.get("endLine")).intValue());
+    }
+
+    @Test
+    @DisplayName("Empty methodName rejected")
+    void rejectsEmptyMethodName() {
+        ObjectNode args = calculateSumArgs();
+        args.put("methodName", "");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+    }
+
+    @Test
+    @DisplayName("Selection outside any method body is rejected")
+    void rejectsSelectionOutsideMethod() {
+        // Position 0,0 is the package declaration — outside any method body.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 0);
+        args.put("startColumn", 0);
+        args.put("endLine", 0);
+        args.put("endColumn", 7);
+        args.put("methodName", "extracted");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Selection outside any method body must be rejected; got: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Inverted range (start >= end) is rejected")
+    void rejectsInvertedRange() {
+        ObjectNode args = calculateSumArgs();
+        // Swap endLine/endColumn with startLine/startColumn so start > end.
+        args.put("startLine", 47);
+        args.put("startColumn", 9);
+        args.put("endLine", 44);
+        args.put("endColumn", 8);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Inverted range must be rejected");
     }
 }
