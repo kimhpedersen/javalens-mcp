@@ -182,4 +182,203 @@ class GetHoverInfoToolTest {
 
         assertNotNull(response);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) {
+            throw new AssertionError("`" + identifier + "` not found in " + filePath);
+        }
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Interface hover: signature uses 'interface' keyword")
+    void interfaceHover_signatureUsesInterfaceKeyword() throws Exception {
+        String iShape = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(iShape, "IShape"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("IShape", data.get("name"));
+        String sig = (String) data.get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("interface IShape"),
+            "Interface signature must contain `interface IShape`; got: " + sig);
+        // Must NOT contain "@interface" (would only apply to annotation types).
+        assertFalse(sig.contains("@interface"),
+            "Non-annotation interface must not use @interface; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Annotation hover: signature uses '@interface' keyword")
+    void annotationHover_signatureUsesAtInterface() throws Exception {
+        String marker = projectPath.resolve("src/main/java/com/example/Marker.java").toString();
+        // Find `@interface Marker` declaration — but `Marker` is also in @Target list,
+        // so search for the class declaration specifically.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(marker));
+        int idx = source.indexOf("@interface Marker");
+        idx = source.indexOf("Marker", idx); // skip past "@interface " to "Marker"
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", marker);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("Marker", data.get("name"));
+        assertEquals("Type", data.get("kind"));
+        String sig = (String) data.get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("@interface Marker"),
+            "Annotation hover signature must contain `@interface Marker`; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Enum hover: signature uses 'enum' keyword")
+    void enumHover_signatureUsesEnumKeyword() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tkf));
+        int idx = source.indexOf("enum Color");
+        idx = source.indexOf("Color", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("enum Color"),
+            "Enum hover signature must contain `enum Color`; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Record hover: signature uses 'record' keyword")
+    void recordHover_signatureUsesRecordKeyword() throws Exception {
+        String point = projectPath.resolve("src/main/java/com/example/Point.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(point, "Point"));
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("record Point"),
+            "Record hover signature must contain `record Point`; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Method hover signature includes throws clause for SearchPatterns.readFile")
+    void methodWithThrows_signatureIncludesThrows() throws Exception {
+        String searchPath = projectPath.resolve("src/main/java/com/example/SearchPatterns.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(searchPath));
+        int idx = source.indexOf("void readFile");
+        idx = source.indexOf("readFile", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", searchPath);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("throws IOException"),
+            "Method declaring throws must surface in signature; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Static final field signature includes constant value `= 100`")
+    void staticFinalField_signatureIncludesConstant() throws Exception {
+        String refTarget = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(refTarget, "MAX_SIZE"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("MAX_SIZE", data.get("name"));
+        String sig = (String) data.get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("static") && sig.contains("final"),
+            "Static-final field signature must contain both modifiers; got: " + sig);
+        assertTrue(sig.contains("= 100"),
+            "Field with compile-time constant must surface `= 100` in signature; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Class with extends: Dog signature contains 'extends Animal'")
+    void classWithExtends_signatureContainsExtends() throws Exception {
+        String animal = projectPath.resolve("src/main/java/com/example/Animal.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(animal));
+        int idx = source.indexOf("class Dog");
+        idx = source.indexOf("Dog", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", animal);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("extends Animal"),
+            "Dog extends Animal must appear in signature; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Class with implements: Rectangle signature contains 'implements IShape'")
+    void classWithImplements_signatureContainsImplements() throws Exception {
+        String rect = projectPath.resolve("src/main/java/com/example/Rectangle.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(rect, "class Rectangle"));
+        assertTrue(r.isSuccess());
+        // Position is on "class" — we want "Rectangle". Re-target.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(rect));
+        int idx = source.indexOf("class Rectangle");
+        idx = source.indexOf("Rectangle", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", rect);
+        args.put("line", line);
+        args.put("column", column);
+
+        r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("implements IShape"),
+            "Rectangle implements IShape must appear in signature; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Static method hover: signature includes 'static' modifier")
+    void staticMethod_signatureIncludesStaticModifier() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "staticHelper"));
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("static"),
+            "Method signature must include `static` modifier; got: " + sig);
+    }
 }
