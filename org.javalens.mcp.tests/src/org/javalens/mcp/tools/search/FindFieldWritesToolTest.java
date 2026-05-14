@@ -133,4 +133,207 @@ class FindFieldWritesToolTest {
             assertEquals("WRITE", w.get("accessType"));
         }
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> writesOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("writeLocations");
+    }
+
+    @Test
+    @DisplayName("requires column parameter")
+    void requiresColumnParam() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 13);
+        assertFalse(tool.execute(args).isSuccess(),
+            "Missing column must yield error");
+    }
+
+    @Test
+    @DisplayName("Calculator.lastResult has exactly 3 writes (one per arithmetic method)")
+    void calculatorLastResult_exactlyThreeWrites() {
+        String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        args.put("line", 6);   // 0-based: `    private int lastResult;`
+        args.put("column", 16); // on `lastResult` identifier
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("lastResult", data.get("field"));
+        assertEquals("Calculator", data.get("declaringType"));
+
+        List<Map<String, Object>> writes = writesOf(r);
+        assertEquals(3, writes.size(),
+            "Calculator.lastResult is assigned in add(), subtract(), multiply() — exactly 3 writes; got: " + writes);
+        for (Map<String, Object> w : writes) {
+            assertEquals("WRITE", w.get("accessType"), "Every entry must report accessType=WRITE: " + w);
+        }
+    }
+
+    @Test
+    @DisplayName("Reads of lastResult (return statements, getLastResult) are NOT reported as writes")
+    void calculatorLastResult_excludesReads() {
+        String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        args.put("line", 6);
+        args.put("column", 16);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // Writes are at 0-based lines 15, 26, 37 (1-based 16, 27, 38). The pure reads
+        // are at 0-based lines 16, 27, 38, 46 (`return lastResult;` and `return lastResult;`
+        // in getLastResult). None of those read lines may appear in writes.
+        java.util.Set<Integer> readOnlyLines = java.util.Set.of(16, 27, 38, 46);
+        for (Map<String, Object> w : writesOf(r)) {
+            int line = ((Number) w.get("line")).intValue();
+            assertFalse(readOnlyLines.contains(line),
+                "Read-only line " + line + " must not be reported as a write; got: " + w);
+        }
+    }
+
+    @Test
+    @DisplayName("Per-write entry includes filePath, line, column, context, accessType")
+    void writeEntries_includeFullLocation() {
+        String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        args.put("line", 6);
+        args.put("column", 16);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> writes = writesOf(r);
+        assertFalse(writes.isEmpty());
+        for (Map<String, Object> w : writes) {
+            assertNotNull(w.get("filePath"), "filePath missing: " + w);
+            assertNotNull(w.get("line"), "line missing: " + w);
+            assertNotNull(w.get("column"), "column missing: " + w);
+            assertNotNull(w.get("context"), "context missing: " + w);
+            assertEquals("WRITE", w.get("accessType"));
+        }
+    }
+
+    @Test
+    @DisplayName("fieldType signature is reported")
+    void fieldTypeSignature_present() {
+        String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        args.put("line", 6);
+        args.put("column", 16);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        // Calculator.lastResult is `int` — JDT type signature is "I".
+        assertEquals("I", data.get("fieldType"),
+            "Expected JDT signature 'I' for int field; got: " + data.get("fieldType"));
+    }
+
+    @Test
+    @DisplayName("FieldHolder.pet writes come from BOTH FieldHolder.java and WidgetHelper.java (cross-file)")
+    void fieldHolderPet_crossFileFileSet() {
+        String fieldHolderPath = projectPath.resolve("src/main/java/com/example/FieldHolder.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fieldHolderPath);
+        args.put("line", 4);
+        args.put("column", 11);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        java.util.Set<String> files = new java.util.HashSet<>();
+        for (Map<String, Object> w : writesOf(r)) {
+            String fp = ((String) w.get("filePath")).replace('\\', '/');
+            if (fp.endsWith("FieldHolder.java")) files.add("FieldHolder.java");
+            else if (fp.endsWith("WidgetHelper.java")) files.add("WidgetHelper.java");
+        }
+        assertEquals(java.util.Set.of("FieldHolder.java", "WidgetHelper.java"), files,
+            "Pet writes must span FieldHolder.java and WidgetHelper.java; got: " + files);
+    }
+
+    @Test
+    @DisplayName("Position on a field REFERENCE (not declaration) finds the same writes")
+    void positionOnFieldReference_findsWrites() {
+        // Position cursor on `pet` in `holder.pet = newPet;` (WidgetHelper.swap).
+        String widgetPath = projectPath.resolve("src/main/java/com/example/WidgetHelper.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", widgetPath);
+        args.put("line", 9);    // 0-based: `        holder.pet = newPet;`
+        args.put("column", 15); // on `pet` after `holder.`
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on field reference must resolve to the field; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        assertEquals("pet", getData(r).get("field"));
+        // Same 4 writes as positioning on the declaration.
+        assertTrue(writesOf(r).size() >= 4,
+            "Same field writes expected when positioning on a reference; got: " + writesOf(r));
+    }
+
+    @Test
+    @DisplayName("Local variable position → invalidParameter with kind=Variable")
+    void positionOnLocalVariable_returnsErrorWithKind() {
+        // WidgetHelper.extract line 13 (0-based): `        Animal current = holder.pet;`
+        String widgetPath = projectPath.resolve("src/main/java/com/example/WidgetHelper.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", widgetPath);
+        args.put("line", 13);
+        args.put("column", 15); // on `current`
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(), "Local variable position must error");
+        // Error message should mention non-field. Don't be over-strict on wording — just
+        // verify the error explicitly mentions the kind reported by getElementKind.
+        String msg = r.getError() != null ? r.getError().getMessage() : "";
+        assertTrue(msg.toLowerCase().contains("not a field") || msg.contains("Variable"),
+            "Error must explain non-field kind; got: " + msg);
+    }
+
+    @Test
+    @DisplayName("maxResults exactly caps results and meta.truncated=true")
+    void maxResults_capsExactly() {
+        String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        args.put("line", 6);
+        args.put("column", 16);
+        args.put("maxResults", 2);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> writes = writesOf(r);
+        // 3 total writes, capped to 2.
+        assertEquals(2, writes.size(), "maxResults=2 must cap to 2 writes; got: " + writes.size());
+        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
+        assertNotNull(meta);
+        assertEquals(Boolean.TRUE, meta.getTruncated(),
+            "meta.truncated must be true when writes are capped below the true count");
+    }
+
+    @Test
+    @DisplayName("totalWriteLocations == writeLocations.size()")
+    void totalWriteLocations_equalsListSize() {
+        String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        args.put("line", 6);
+        args.put("column", 16);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int total = ((Number) data.get("totalWriteLocations")).intValue();
+        assertEquals(total, writesOf(r).size());
+    }
 }
