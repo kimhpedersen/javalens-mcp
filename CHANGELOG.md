@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.1 - 2026-05-15
+
+### Tool output fixes
+
+Tools that previously returned wrong or empty answers in 1.3.0 now return correct answers. If your workflow relied on any of these, the output will change.
+
+- **Annotation types** (`@interface`) are now classified as `Annotation` instead of `Interface`. Affects `analyze_type`, `analyze_file`, `find_implementations`, `get_hover_info`, `get_type_at_position`, `get_document_symbols`, `get_type_hierarchy`, `get_type_members`, `get_enclosing_element`, `get_symbol_info`, `go_to_definition`, `rename_symbol`, `search_symbols`, `get_type_usage_summary`, `get_dependency_graph`, `find_references` — every tool that reports a type kind.
+- **Record types** now report `kind: Record` instead of `Class`.
+- **`find_references.referenceKind`** classifies by the reference's actual role (`TYPE_REFERENCE` / `FIELD_ACCESS` / `METHOD_INVOCATION`) instead of by the enclosing element. A type usage inside a field declaration is no longer `FIELD_ACCESS`; a field read inside a method body is no longer `METHOD_INVOCATION`.
+- **`search_symbols`** `?` single-char wildcard now works as documented. `?Shape` matches `IShape`. Previously returned empty.
+- **`find_implementations`** returns transitive implementors (subinterface chains and multi-level class hierarchies), not just direct ones. Also now finds annotation-type users.
+- **`extract_interface`** no longer pulls `Object` methods (`toString`/`hashCode`/`equals`) into the extracted interface by default.
+- **`change_method_signature`** updates constructor call sites, not just method invocations.
+- **`organize_imports`** correctly identifies unused imports. In 1.3.0 every import was reported as used because the import declaration itself was being counted as a reference to its own type.
+- **`get_diagnostics`**, **`analyze_type`**, **`analyze_file`**, **`get_quick_fixes`** reliably surface compilation errors and warnings. These tools silently returned empty results in 1.3.0 for many files.
+- **`get_quick_fixes`** offers "Remove unused import" fixes for files with unused imports.
+- **`get_diagnostics`** `maxResults` cap is now actually applied (was a no-op).
+- **`find_reflection_usage`** `maxResults` is now per reflection-API category as documented (was per method overload, returning more than asked).
+- **`get_enclosing_element`** more reliably resolves the enclosing method at the requested position.
+
+### Search engine
+
+- Fine-grain reference searches — `find_annotation_usages`, `find_casts`, `find_instanceof_checks`, `find_throws_declarations`, `find_catch_blocks`, `find_type_arguments`, `find_type_instantiations` — now find references to **nested types** like `Outer.Inner` (previously returned nothing).
+- Fine-grain searches for common JDK types no longer stall scanning the JDK index.
+- Fine-grain search results no longer include JDK-internal entries with broken file paths.
+
 ## 1.3.0 - 2026-05-08
 
 ### Build system support — major overhaul
