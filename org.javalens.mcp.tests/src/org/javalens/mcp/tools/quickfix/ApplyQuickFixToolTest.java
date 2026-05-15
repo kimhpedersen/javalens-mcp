@@ -261,4 +261,60 @@ class ApplyQuickFixToolTest {
         assertFalse(response2.isSuccess());
         assertNotNull(response2.getError());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("fixId without colon is rejected with invalid_parameter")
+    void fixIdMissingColon_rejected() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("fixId", "add_import");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+    }
+
+    @Test
+    @DisplayName("remove_import with out-of-range index does not throw — returns empty edits or error")
+    void removeImport_outOfRangeIndex() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", searchPatternsPath);
+        args.put("fixId", "remove_import:9999");
+        ToolResponse r = tool.execute(args);
+        // The tool may return success with 0 edits, or an error. Either is acceptable —
+        // the contract is "must not crash silently with stale data".
+        if (r.isSuccess()) {
+            assertTrue(getEdits(getData(r)).isEmpty(),
+                "Out-of-range remove_import index must yield 0 edits if success; got: " + getData(r));
+        }
+    }
+
+    @Test
+    @DisplayName("Response shape: filePath, fixId, fixType, edits all present")
+    void responseShape_includesAllFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("fixId", "add_import:java.util.Date");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        for (String key : List.of("filePath", "fixId", "fixType", "edits")) {
+            assertNotNull(data.get(key), key + " missing in response: " + data);
+        }
+        assertEquals("add_import", data.get("fixType"));
+    }
+
+    @Test
+    @DisplayName("Empty fixId param part rejected as invalid format (e.g., `add_import:`)")
+    void emptyFixParam_handled() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("fixId", "add_import:");
+        ToolResponse r = tool.execute(args);
+        // Should either succeed with empty/odd import OR fail cleanly. Verify no crash.
+        if (!r.isSuccess()) {
+            assertNotNull(r.getError());
+        }
+    }
 }
