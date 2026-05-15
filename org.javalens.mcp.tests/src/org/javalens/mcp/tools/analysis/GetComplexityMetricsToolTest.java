@@ -215,4 +215,78 @@ class GetComplexityMetricsToolTest {
         assertEquals(1, ((Number) risk.get("highRiskMethods")).intValue(),
             "Expected 1 high-risk method (cc11); got: " + risk);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("file block has path, physicalLOC, blankLines, commentLines, codeLOC")
+    void fileBlock_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> file = (Map<String, Object>) getData(r).get("file");
+        for (String key : List.of("path", "physicalLOC", "blankLines", "commentLines", "codeLOC")) {
+            assertNotNull(file.get(key), key + " missing on file block: " + file);
+        }
+        int physical = ((Number) file.get("physicalLOC")).intValue();
+        int blank = ((Number) file.get("blankLines")).intValue();
+        int comment = ((Number) file.get("commentLines")).intValue();
+        int code = ((Number) file.get("codeLOC")).intValue();
+        assertEquals(physical, blank + comment + code,
+            "physicalLOC = blankLines + commentLines + codeLOC; got " + file);
+    }
+
+    @Test
+    @DisplayName("summary has totalCyclomaticComplexity, totalCognitiveComplexity, methodCount, averageMethodCC, maxMethodCC")
+    void summary_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) getData(r).get("summary");
+        for (String key : List.of("totalCyclomaticComplexity", "totalCognitiveComplexity",
+                "methodCount", "averageMethodCC", "maxMethodCC")) {
+            assertNotNull(summary.get(key), key + " missing on summary: " + summary);
+        }
+    }
+
+    @Test
+    @DisplayName("Per-method entry has name, cyclomaticComplexity, cognitiveComplexity, risk, line")
+    void methodEntry_shape() {
+        String boundariesPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ComplexityBoundaries.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", boundariesPath);
+        args.put("includeDetails", true);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) getData(r).get("methods");
+        for (Map<String, Object> m : methods) {
+            for (String key : List.of("name", "cyclomaticComplexity", "cognitiveComplexity", "risk", "line")) {
+                assertNotNull(m.get(key), key + " missing on method entry: " + m);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("methodCount in summary equals methods.size() when includeDetails=true")
+    void methodCount_matchesListSize() {
+        String boundariesPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ComplexityBoundaries.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", boundariesPath);
+        args.put("includeDetails", true);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) data.get("methods");
+        assertEquals(((Number) summary.get("methodCount")).intValue(), methods.size());
+    }
 }
