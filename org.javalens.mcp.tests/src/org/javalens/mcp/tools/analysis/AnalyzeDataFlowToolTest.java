@@ -166,4 +166,92 @@ class AnalyzeDataFlowToolTest {
 
         assertNotNull(response);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> varsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("variables");
+    }
+
+    @Test
+    @DisplayName("parameterCount reported: dataFlowExample(int input) → 1")
+    void parameterCount_reported() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", patternsPath);
+        args.put("line", 76);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals(1, ((Number) getData(r).get("parameterCount")).intValue(),
+            "dataFlowExample has 1 parameter `input`; got: " + getData(r).get("parameterCount"));
+    }
+
+    @Test
+    @DisplayName("Each variable entry includes name, type, kind, declared, read, written, readCount, writeCount")
+    void variableEntry_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", patternsPath);
+        args.put("line", 76);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> v : varsOf(r)) {
+            for (String key : List.of("name", "type", "kind", "declared", "read", "written", "readCount", "writeCount")) {
+                assertNotNull(v.get(key), key + " missing on variable: " + v);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Local variable y is declared, read+written")
+    void localVariable_y_readWrite() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", patternsPath);
+        args.put("line", 76);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> y = varsOf(r).stream()
+            .filter(v -> "y".equals(v.get("name"))).findFirst().orElseThrow();
+        assertEquals("local", y.get("kind"));
+        assertEquals(Boolean.TRUE, y.get("declared"));
+        // y has initializer (=0) which counts as a write, and y is used in z = x + y.
+        assertTrue(((Number) y.get("writeCount")).intValue() >= 1);
+        assertTrue(((Number) y.get("readCount")).intValue() >= 1);
+    }
+
+    @Test
+    @DisplayName("Local variable z is declared and written, used in return")
+    void localVariable_z_writeOnly() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", patternsPath);
+        args.put("line", 76);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> z = varsOf(r).stream()
+            .filter(v -> "z".equals(v.get("name"))).findFirst().orElseThrow();
+        assertEquals("local", z.get("kind"));
+        assertEquals(Boolean.TRUE, z.get("declared"));
+        assertTrue(((Number) z.get("writeCount")).intValue() >= 2,
+            "z is written twice (initial assignment then conditional `z = z + input`); got writes=" + z.get("writeCount"));
+    }
+
+    @Test
+    @DisplayName("Variables list includes input (parameter) and locals x, y, z")
+    void variables_setIncludesAllExpected() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", patternsPath);
+        args.put("line", 76);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (Map<String, Object> v : varsOf(r)) names.add((String) v.get("name"));
+        for (String expected : List.of("input", "x", "y", "z")) {
+            assertTrue(names.contains(expected),
+                "Variables must include " + expected + "; got: " + names);
+        }
+    }
 }
