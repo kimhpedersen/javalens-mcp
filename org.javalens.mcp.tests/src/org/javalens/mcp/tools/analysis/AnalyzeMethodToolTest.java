@@ -150,4 +150,90 @@ class AnalyzeMethodToolTest {
         assertTrue(callerFiles.contains("SearchPatterns.java"),
             "SearchPatterns.createObjects calls Calculator.add — analyze_method aggregate must surface it; got: " + callerFiles);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Method info has name, signature, declaringType, returnType, modifiers")
+    @SuppressWarnings("unchecked")
+    void method_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> method = getMethod(getData(r));
+        for (String key : List.of("name", "signature", "declaringType", "returnType", "modifiers")) {
+            assertNotNull(method.get(key), key + " missing on method: " + method);
+        }
+    }
+
+    @Test
+    @DisplayName("Calculator.add has 2 parameters: int a, int b")
+    void calculatorAdd_parameters() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> params = (List<Map<String, Object>>) getData(r).get("parameters");
+        assertEquals(2, params.size(),
+            "Calculator.add(int a, int b) has 2 parameters; got: " + params);
+        for (Map<String, Object> p : params) {
+            assertNotNull(p.get("name"));
+            assertNotNull(p.get("type"));
+        }
+    }
+
+    @Test
+    @DisplayName("callers block has list + count; count equals list.size()")
+    void callersBlock_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("maxCallers", 100);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> callers = (Map<String, Object>) getData(r).get("callers");
+        @SuppressWarnings("unchecked")
+        List<?> list = (List<?>) callers.get("list");
+        assertNotNull(list);
+        Object count = callers.get("count");
+        if (count != null) {
+            assertEquals(((Number) count).intValue(), list.size(),
+                "callers.count must equal callers.list.size(); got: " + callers);
+        }
+    }
+
+    @Test
+    @DisplayName("callees block present; entries reference target methods")
+    void calleesBlock_present() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> callees = (Map<String, Object>) getData(r).get("callees");
+        assertNotNull(callees);
+        assertNotNull(callees.get("list"));
+    }
+
+    @Test
+    @DisplayName("overrides block present (may be empty for top-level methods)")
+    void overridesBlock_present() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertNotNull(getData(r).get("overrides"));
+    }
 }
