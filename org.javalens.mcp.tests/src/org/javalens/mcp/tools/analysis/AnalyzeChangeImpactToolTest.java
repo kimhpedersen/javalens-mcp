@@ -145,4 +145,63 @@ class AnalyzeChangeImpactToolTest {
             "UserService.calculateTotal calls Calculator.add — must appear in depth-1 affected files; got: "
                 + affectedFiles);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Top-level response carries symbol, symbolType, depth, affectedFiles, callSites")
+    void responseShape_carriesAllFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        for (String key : List.of("symbol", "symbolType", "depth", "affectedFiles", "callSites")) {
+            assertNotNull(data.get(key), key + " missing on response: " + data.keySet());
+        }
+    }
+
+    @Test
+    @DisplayName("Each callSite carries the depth at which it was discovered")
+    void callSite_carriesDepth() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> callSites = (List<Map<String, Object>>) getData(r).get("callSites");
+        for (Map<String, Object> cs : callSites) {
+            assertNotNull(cs.get("depth"), "depth missing on callSite: " + cs);
+        }
+    }
+
+    @Test
+    @DisplayName("Default depth is 1")
+    void defaultDepth_isOne() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals(1, ((Number) getData(r).get("depth")).intValue(),
+            "Default depth must be 1; got: " + getData(r).get("depth"));
+    }
+
+    @Test
+    @DisplayName("Calculator.add symbol identity reported")
+    void symbol_reported() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("add", data.get("symbol"));
+    }
 }
