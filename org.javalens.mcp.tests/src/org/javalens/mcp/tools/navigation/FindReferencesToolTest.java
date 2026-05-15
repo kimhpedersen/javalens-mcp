@@ -308,10 +308,14 @@ class FindReferencesToolTest {
     @SuppressWarnings("unchecked")
     void referenceKind_typeReference() {
         // Calculator type position — references are type uses across files.
+        // Javadoc @see / {@link} references are correctly classified as JAVADOC by the
+        // tool (match.isInsideDocComment() short-circuit); exclude them when asserting
+        // the source-code classification.
         ToolResponse r = tool.execute(argsAt(calculatorPath, 5, 13));
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
         List<Map<String, Object>> refs = getReferences(data);
         for (Map<String, Object> ref : refs) {
+            if ("JAVADOC".equals(ref.get("referenceKind"))) continue;
             assertEquals("TYPE_REFERENCE", ref.get("referenceKind"),
                 "Every Calculator type reference must have referenceKind=TYPE_REFERENCE; got: " + ref);
         }
@@ -322,10 +326,13 @@ class FindReferencesToolTest {
     @SuppressWarnings("unchecked")
     void referenceKind_fieldAccess() {
         // Calculator.lastResult field — only used inside Calculator.java.
+        // Javadoc references would also be classified as JAVADOC by the tool — skip
+        // those when asserting the source-code classification.
         ToolResponse r = tool.execute(argsAt(calculatorPath, 6, 16));
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
         List<Map<String, Object>> refs = getReferences(data);
         for (Map<String, Object> ref : refs) {
+            if ("JAVADOC".equals(ref.get("referenceKind"))) continue;
             assertEquals("FIELD_ACCESS", ref.get("referenceKind"),
                 "Every lastResult reference must have referenceKind=FIELD_ACCESS; got: " + ref);
         }

@@ -195,21 +195,33 @@ public class FindReferencesTool extends AbstractTool {
     }
 
     private String getReferenceKind(SearchMatch match) {
-        // Use match accuracy and flags to determine reference kind
         if (match.isInsideDocComment()) {
             return "JAVADOC";
         }
 
-        // Try to infer from the element
-        Object element = match.getElement();
-        if (element instanceof IMethod) {
+        // Classify by the SearchMatch subclass, which encodes the reference role.
+        // match.getElement() is the *enclosing* IMember (the method or field that
+        // contains the reference) — using it would misclassify a type reference
+        // inside a field declaration as FIELD_ACCESS, or a field read inside a
+        // method body as METHOD_INVOCATION.
+        if (match instanceof org.eclipse.jdt.core.search.MethodReferenceMatch) {
             return "METHOD_INVOCATION";
-        } else if (element instanceof IField) {
+        }
+        if (match instanceof org.eclipse.jdt.core.search.FieldReferenceMatch) {
             return "FIELD_ACCESS";
-        } else if (element instanceof IType) {
+        }
+        if (match instanceof org.eclipse.jdt.core.search.TypeReferenceMatch) {
             return "TYPE_REFERENCE";
         }
-
+        if (match instanceof org.eclipse.jdt.core.search.LocalVariableReferenceMatch) {
+            return "VARIABLE_ACCESS";
+        }
+        if (match instanceof org.eclipse.jdt.core.search.PackageReferenceMatch) {
+            return "PACKAGE_REFERENCE";
+        }
+        if (match instanceof org.eclipse.jdt.core.search.TypeParameterReferenceMatch) {
+            return "TYPE_PARAMETER_REFERENCE";
+        }
         return "REFERENCE";
     }
 
