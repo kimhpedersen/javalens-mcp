@@ -165,4 +165,91 @@ class SuggestImportsToolTest {
         List<Map<String, Object>> candidates = getCandidates(data);
         assertEquals(0, candidates.size());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Candidates sorted by relevance descending")
+    void candidates_sortedByRelevanceDescending() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "List");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> cands = getCandidates(getData(r));
+        for (int i = 1; i < cands.size(); i++) {
+            int prev = ((Number) cands.get(i - 1).get("relevance")).intValue();
+            int curr = ((Number) cands.get(i).get("relevance")).intValue();
+            assertTrue(prev >= curr,
+                "Candidates must be sorted by relevance descending; got prev=" + prev + " curr=" + curr);
+        }
+    }
+
+    @Test
+    @DisplayName("totalCandidates == candidates.size()")
+    void totalCandidates_equalsListSize() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "List");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int total = ((Number) data.get("totalCandidates")).intValue();
+        assertEquals(total, getCandidates(data).size());
+    }
+
+    @Test
+    @DisplayName("java.util.List relevance > java.awt.List relevance")
+    void relevance_ranking_javaUtilOverJavaAwt() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "List");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> cands = getCandidates(getData(r));
+        int utilRel = -1, awtRel = -1;
+        for (Map<String, Object> c : cands) {
+            String fqn = (String) c.get("fullyQualifiedName");
+            int rel = ((Number) c.get("relevance")).intValue();
+            if ("java.util.List".equals(fqn)) utilRel = rel;
+            else if ("java.awt.List".equals(fqn)) awtRel = rel;
+        }
+        if (utilRel >= 0 && awtRel >= 0) {
+            assertTrue(utilRel > awtRel,
+                "java.util.List must rank higher than java.awt.List; got util=" + utilRel + " awt=" + awtRel);
+        }
+    }
+
+    @Test
+    @DisplayName("Project-local Calculator has fixId=add_import:com.example.Calculator")
+    void projectType_fixIdShape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "Calculator");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> calc = getCandidates(getData(r)).stream()
+            .filter(c -> "com.example.Calculator".equals(c.get("fullyQualifiedName")))
+            .findFirst().orElseThrow();
+        assertEquals("add_import:com.example.Calculator", calc.get("fixId"));
+        assertEquals("com.example", calc.get("packageName"));
+        assertEquals("Calculator", calc.get("simpleName"));
+    }
+
+    @Test
+    @DisplayName("isInterface/isClass/isEnum flags are correct for known types")
+    void kindFlags_correct() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "List");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> jUtilList = getCandidates(getData(r)).stream()
+            .filter(c -> "java.util.List".equals(c.get("fullyQualifiedName")))
+            .findFirst().orElseThrow();
+        assertEquals(Boolean.TRUE, jUtilList.get("isInterface"),
+            "java.util.List is an interface");
+        assertEquals(Boolean.FALSE, jUtilList.get("isClass"));
+        assertEquals(Boolean.FALSE, jUtilList.get("isEnum"));
+    }
 }
