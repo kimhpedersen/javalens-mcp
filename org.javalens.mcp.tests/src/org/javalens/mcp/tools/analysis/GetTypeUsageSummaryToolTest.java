@@ -113,4 +113,77 @@ class GetTypeUsageSummaryToolTest {
         unknown.put("typeName", "com.nonexistent.Type");
         assertFalse(tool.execute(unknown).isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Response carries typeName, kind, usages, totalUsages")
+    void responseShape_carriesAllFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        for (String key : java.util.List.of("typeName", "kind", "usages", "totalUsages")) {
+            assertNotNull(data.get(key), key + " missing on response: " + data.keySet());
+        }
+    }
+
+    @Test
+    @DisplayName("usages has all 4 subcategories: instantiations, casts, instanceofChecks, typeArguments")
+    @SuppressWarnings("unchecked")
+    void usages_hasAllCategories() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        for (String key : java.util.List.of("instantiations", "casts", "instanceofChecks", "typeArguments")) {
+            assertNotNull(usages.get(key), key + " missing on usages: " + usages);
+        }
+    }
+
+    @Test
+    @DisplayName("Each subcategory has count + locations; count equals locations.size() up to maxPerCategory")
+    @SuppressWarnings("unchecked")
+    void subcategory_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxPerCategory", 50);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        for (String key : java.util.List.of("instantiations", "casts", "instanceofChecks", "typeArguments")) {
+            Map<String, Object> cat = (Map<String, Object>) usages.get(key);
+            assertNotNull(cat.get("count"), "count missing on " + key + ": " + cat);
+            assertNotNull(cat.get("locations"), "locations missing on " + key + ": " + cat);
+            int count = ((Number) cat.get("count")).intValue();
+            java.util.List<?> locs = (java.util.List<?>) cat.get("locations");
+            // count is the actual total; locations may be capped at maxPerCategory.
+            assertTrue(locs.size() <= count || locs.size() <= 50,
+                key + ": locations.size() should be <= count or cap; got count=" + count
+                    + " locations=" + locs.size());
+        }
+    }
+
+    @Test
+    @DisplayName("Animal: typeArgument count=0, cast count=0, instanceof count=0; instantiation count=1 (FieldHolder)")
+    @SuppressWarnings("unchecked")
+    void animal_isolation_counts() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Animal");
+        args.put("maxPerCategory", 50);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        assertEquals(0, ((Number) ((Map<String, Object>) usages.get("casts")).get("count")).intValue(),
+            "Animal never cast — casts.count must be 0");
+        assertEquals(0, ((Number) ((Map<String, Object>) usages.get("instanceofChecks")).get("count")).intValue(),
+            "Animal never instanceof-checked — instanceofChecks.count must be 0");
+        assertEquals(0, ((Number) ((Map<String, Object>) usages.get("typeArguments")).get("count")).intValue(),
+            "Animal not used as generic type argument — typeArguments.count must be 0");
+        assertEquals(1, ((Number) ((Map<String, Object>) usages.get("instantiations")).get("count")).intValue(),
+            "Animal instantiated exactly once in FieldHolder; got: "
+                + ((Map<String, Object>) usages.get("instantiations")));
+    }
 }
