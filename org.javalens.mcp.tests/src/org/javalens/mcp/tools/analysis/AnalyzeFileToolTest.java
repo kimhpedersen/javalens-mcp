@@ -99,4 +99,96 @@ class AnalyzeFileToolTest {
         emptyPath.put("filePath", "");
         assertFalse(tool.execute(emptyPath).isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> typesOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("types");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> importsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("imports");
+    }
+
+    @Test
+    @DisplayName("File block carries path, package, lineCount")
+    void fileBlock_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> file = (Map<String, Object>) getData(r).get("file");
+        for (String key : List.of("path", "package", "lineCount")) {
+            assertNotNull(file.get(key), key + " missing on file block: " + file);
+        }
+    }
+
+    @Test
+    @DisplayName("Imports: each entry has name, static, onDemand; importCount equals list size")
+    void imports_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", userServicePath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        for (Map<String, Object> imp : importsOf(r)) {
+            for (String key : List.of("name", "static", "onDemand")) {
+                assertNotNull(imp.get(key), key + " missing on import: " + imp);
+            }
+        }
+        int count = ((Number) data.get("importCount")).intValue();
+        assertEquals(count, importsOf(r).size());
+    }
+
+    @Test
+    @DisplayName("Types: each entry has name, qualifiedName, kind, modifiers, line")
+    void types_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> t : typesOf(r)) {
+            for (String key : List.of("name", "qualifiedName", "kind", "modifiers", "line")) {
+                assertNotNull(t.get(key), key + " missing on type: " + t);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("typeCount equals types.size()")
+    void typeCount_equalsListSize() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int count = ((Number) data.get("typeCount")).intValue();
+        assertEquals(count, typesOf(r).size());
+    }
+
+    @Test
+    @DisplayName("Calculator qualifiedName is com.example.Calculator")
+    void calculator_qualifiedName() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("com.example.Calculator", typesOf(r).get(0).get("qualifiedName"));
+    }
+
+    @Test
+    @DisplayName("includeMembers=true populates methods/fields lists on type entries")
+    void includeMembers_populatesLists() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("includeMembers", true);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> type = typesOf(r).get(0);
+        assertNotNull(type.get("methods"), "methods list missing when includeMembers=true");
+        assertNotNull(type.get("fields"), "fields list missing when includeMembers=true");
+    }
 }
