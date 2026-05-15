@@ -89,4 +89,99 @@ class ValidateSyntaxToolTest {
         args.put("filePath", "/nonexistent/File.java");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> errorsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("errors");
+    }
+
+    @Test
+    @DisplayName("File-path validation: fileName reports the CU element name")
+    void filePath_reportsFileNameFromCu() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("Calculator.java", getData(r).get("fileName"));
+    }
+
+    @Test
+    @DisplayName("Inline validation: fileName defaults to Untitled.java when no fileName parameter is provided")
+    void inline_defaultsFileName() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("content", "public class X {}");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("Untitled.java", getData(r).get("fileName"));
+    }
+
+    @Test
+    @DisplayName("Inline validation: fileName parameter overrides default")
+    void inline_explicitFileName() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("content", "public class MyClass {}");
+        args.put("fileName", "MyClass.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("MyClass.java", getData(r).get("fileName"));
+    }
+
+    @Test
+    @DisplayName("Each syntax-error entry has line, column, startOffset, endOffset, message, problemId")
+    void errorEntry_includesFullShape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("content", "public class T { int x = ; }");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> errors = errorsOf(r);
+        assertFalse(errors.isEmpty(), "Syntax error must be reported for `int x = ;`");
+        for (Map<String, Object> e : errors) {
+            for (String key : List.of("line", "column", "startOffset", "endOffset", "message", "problemId")) {
+                assertNotNull(e.get(key), key + " missing on error: " + e);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("errorCount equals errors.size()")
+    void errorCount_equalsListSize() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("content", "public class T { int x = ;");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int count = ((Number) data.get("errorCount")).intValue();
+        assertEquals(count, errorsOf(r).size());
+    }
+
+    @Test
+    @DisplayName("Valid file returns valid=true, errorCount=0, errors=[]")
+    void validFile_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(Boolean.TRUE, data.get("valid"));
+        assertEquals(0, ((Number) data.get("errorCount")).intValue());
+        assertTrue(errorsOf(r).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Warnings (e.g., unused-import) are NOT counted as syntax errors")
+    void warnings_notReportedBySyntaxValidator() {
+        // RefactoringTarget.java has 4 unused-import WARNINGS but no syntax errors.
+        String refactoringPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/RefactoringTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(Boolean.TRUE, data.get("valid"),
+            "validate_syntax must report valid=true when there are only warnings; got: " + data);
+        assertEquals(0, ((Number) data.get("errorCount")).intValue());
+    }
 }
