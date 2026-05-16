@@ -319,7 +319,7 @@ class FindImplementationsToolTest {
     }
 
     @Test
-    @DisplayName("Each implementation entry has a kind ('Class'/'Interface'/'Record'/'Enum'/'Annotation')")
+    @DisplayName("Each implementation entry has a kind ('class'/'interface'/'record'/'enum'/'annotation')")
     @SuppressWarnings("unchecked")
     void implementationEntries_carryKindField() {
         ToolResponse r = tool.execute(argsAt(
@@ -331,14 +331,14 @@ class FindImplementationsToolTest {
         Map<String, Object> rectangle = impls.stream()
             .filter(i -> "com.example.Rectangle".equals(i.get("qualifiedName")))
             .findFirst().orElseThrow();
-        assertEquals("Class", rectangle.get("kind"),
-            "Rectangle is a class — kind must be 'Class'; got: " + rectangle);
+        assertEquals("class", rectangle.get("kind"),
+            "Rectangle is a class — kind must be 'class'; got: " + rectangle);
 
         Map<String, Object> iFillable = impls.stream()
             .filter(i -> "com.example.IFillable".equals(i.get("qualifiedName")))
             .findFirst().orElseThrow();
-        assertEquals("Interface", iFillable.get("kind"),
-            "IFillable is an interface — kind must be 'Interface'; got: " + iFillable);
+        assertEquals("interface", iFillable.get("kind"),
+            "IFillable is an interface — kind must be 'interface'; got: " + iFillable);
     }
 
     @Test

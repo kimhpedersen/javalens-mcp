@@ -60,7 +60,7 @@ class GoToDefinitionToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("Calculator", data.get("symbol"));
-        assertEquals("Class", data.get("kind"));
+        assertEquals("class", data.get("kind"));
         assertEquals("com.example", data.get("package"));
 
         Map<String, Object> location = (Map<String, Object>) data.get("location");
@@ -194,7 +194,7 @@ class GoToDefinitionToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("IShape", data.get("symbol"));
-        assertEquals("Interface", data.get("kind"));
+        assertEquals("interface", data.get("kind"));
         assertEquals("com.example", data.get("package"));
     }
 
@@ -211,7 +211,7 @@ class GoToDefinitionToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Vehicle", data.get("symbol"));
-        assertEquals("Interface", data.get("kind"));
+        assertEquals("interface", data.get("kind"));
     }
 
     @Test
@@ -227,7 +227,7 @@ class GoToDefinitionToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Point", data.get("symbol"));
-        assertEquals("Record", data.get("kind"));
+        assertEquals("record", data.get("kind"));
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -265,8 +265,8 @@ class GoToDefinitionToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Marker", data.get("symbol"));
-        assertEquals("Annotation", data.get("kind"),
-            "Annotation type must report kind='Annotation' (not 'Interface'); got: " + data);
+        assertEquals("annotation", data.get("kind"),
+            "Annotation type must report kind='annotation' (not 'interface'); got: " + data);
     }
 
     @Test
@@ -287,7 +287,7 @@ class GoToDefinitionToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertEquals("Color", getData(r).get("symbol"));
-        assertEquals("Enum", getData(r).get("kind"));
+        assertEquals("enum", getData(r).get("kind"));
     }
 
     @Test

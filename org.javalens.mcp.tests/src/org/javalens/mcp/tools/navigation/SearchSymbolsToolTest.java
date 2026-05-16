@@ -53,7 +53,7 @@ class SearchSymbolsToolTest {
     void classSearch_returnsAllFields() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("query", "Calculator");
-        args.put("kind", "Class");
+        args.put("kind", "class");
 
         ToolResponse response = tool.execute(args);
 
@@ -237,7 +237,7 @@ class SearchSymbolsToolTest {
         // Use a project-specific query so JDK interfaces don't swamp the result set.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("query", "IShape");
-        args.put("kind", "Interface");
+        args.put("kind", "interface");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -248,8 +248,8 @@ class SearchSymbolsToolTest {
         assertTrue(results.stream().anyMatch(rr -> "IShape".equals(rr.get("name"))),
             "Project's IShape must appear; got: " + results);
         for (Map<String, Object> result : results) {
-            assertEquals("Interface", result.get("kind"),
-                "Every kind=Interface result must have kind='Interface'; offending: " + result);
+            assertEquals("interface", result.get("kind"),
+                "Every kind=Interface result must have kind='interface'; offending: " + result);
         }
     }
 
@@ -277,7 +277,7 @@ class SearchSymbolsToolTest {
     void typeResult_includesQualifiedNameAndPackage() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("query", "Calculator");
-        args.put("kind", "Class");
+        args.put("kind", "class");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         Map<String, Object> calc = getResults(getData(r)).stream()

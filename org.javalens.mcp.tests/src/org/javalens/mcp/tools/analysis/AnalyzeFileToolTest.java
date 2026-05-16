@@ -61,7 +61,7 @@ class AnalyzeFileToolTest {
         List<Map<String, Object>> types = (List<Map<String, Object>>) data.get("types");
         assertFalse(types.isEmpty());
         assertEquals("Calculator", types.get(0).get("name"));
-        assertEquals("Class", types.get(0).get("kind"));
+        assertEquals("class", types.get(0).get("kind"));
 
         // Diagnostics included by default
         assertNotNull(data.get("diagnostics"));

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -87,7 +88,7 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("typeName", type.getFullyQualifiedName());
-            data.put("kind", getTypeKind(type));
+            data.put("kind", TypeKindResolver.kindOf(type));
 
             Map<String, Object> summary = new LinkedHashMap<>();
             int totalUsages = 0;
@@ -166,19 +167,6 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
         } catch (Exception e) {
             log.error("Error getting type usage summary: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
-        }
-    }
-
-    private String getTypeKind(IType type) {
-        try {
-            // Annotation types report isInterface()=true; check isAnnotation first.
-            if (type.isAnnotation()) return "Annotation";
-            if (type.isInterface()) return "Interface";
-            if (type.isEnum()) return "Enum";
-            if (type.isRecord()) return "Record";
-            return "Class";
-        } catch (Exception e) {
-            return "Unknown";
         }
     }
 

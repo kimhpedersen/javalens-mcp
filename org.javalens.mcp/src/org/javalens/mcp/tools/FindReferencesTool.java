@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -227,20 +228,9 @@ public class FindReferencesTool extends AbstractTool {
 
     private String getElementKind(IJavaElement element) {
         return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> {
-                if (element instanceof IType type) {
-                    try {
-                        // Annotation types report isInterface()=true; check first.
-                        if (type.isAnnotation()) yield "Annotation";
-                        if (type.isInterface()) yield "Interface";
-                        if (type.isEnum()) yield "Enum";
-                        if (type.isRecord()) yield "Record";
-                    } catch (JavaModelException e) {
-                        // Fall through
-                    }
-                }
-                yield "Class";
-            }
+            case IJavaElement.TYPE -> element instanceof IType type
+                ? TypeKindResolver.kindOf(type)
+                : "class";
             case IJavaElement.METHOD -> "Method";
             case IJavaElement.FIELD -> "Field";
             case IJavaElement.LOCAL_VARIABLE -> "Variable";

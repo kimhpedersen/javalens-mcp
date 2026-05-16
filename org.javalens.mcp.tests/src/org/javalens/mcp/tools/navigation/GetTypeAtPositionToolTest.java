@@ -64,7 +64,7 @@ class GetTypeAtPositionToolTest {
         // Basic info
         assertEquals("Calculator", data.get("name"));
         assertEquals("com.example.Calculator", data.get("qualifiedName"));
-        assertEquals("Class", data.get("kind"));
+        assertEquals("class", data.get("kind"));
 
         // Modifiers
         List<String> modifiers = (List<String>) data.get("modifiers");
@@ -172,19 +172,19 @@ class GetTypeAtPositionToolTest {
     }
 
     @Test
-    @DisplayName("Interface (IShape) returns kind='Interface'")
+    @DisplayName("Interface (IShape) returns kind='interface'")
     void interface_returnsKindInterface() {
         String path = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
         ToolResponse r = tool.execute(argsAt(path, 2, 17));
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("IShape", data.get("name"));
-        assertEquals("Interface", data.get("kind"));
+        assertEquals("interface", data.get("kind"));
         assertEquals("com.example.IShape", data.get("qualifiedName"));
     }
 
     @Test
-    @DisplayName("Enum (TypeKindsFixture.Color) returns kind='Enum'")
+    @DisplayName("Enum (TypeKindsFixture.Color) returns kind='enum'")
     void enum_returnsKindEnum() {
         String path = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
         // 1-based line 12 `public enum Color { ... }` -> 0-based 11; "Color" at col 16.
@@ -192,11 +192,11 @@ class GetTypeAtPositionToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Color", data.get("name"));
-        assertEquals("Enum", data.get("kind"));
+        assertEquals("enum", data.get("kind"));
     }
 
     @Test
-    @DisplayName("Annotation (Marker) returns kind='Annotation'")
+    @DisplayName("Annotation (Marker) returns kind='annotation'")
     void annotation_returnsKindAnnotation() {
         String path = projectPath.resolve("src/main/java/com/example/Marker.java").toString();
         // 1-based line 12 `public @interface Marker {` -> 0-based 11; "Marker" at col 18.
@@ -204,18 +204,18 @@ class GetTypeAtPositionToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Marker", data.get("name"));
-        assertEquals("Annotation", data.get("kind"));
+        assertEquals("annotation", data.get("kind"));
     }
 
     @Test
-    @DisplayName("Record (Point) returns kind='Record'")
+    @DisplayName("Record (Point) returns kind='record'")
     void record_returnsKindRecord() {
         String path = projectPath.resolve("src/main/java/com/example/Point.java").toString();
         ToolResponse r = tool.execute(argsAt(path, 2, 14));
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Point", data.get("name"));
-        assertEquals("Record", data.get("kind"));
+        assertEquals("record", data.get("kind"));
     }
 
     @Test
@@ -281,7 +281,7 @@ class GetTypeAtPositionToolTest {
     }
 
     @Test
-    @DisplayName("Sealed interface (Vehicle) carries sealed modifier and kind=Interface")
+    @DisplayName("Sealed interface (Vehicle) carries sealed modifier and kind='interface'")
     @SuppressWarnings("unchecked")
     void sealedInterface_reportsCorrectKindAndModifiers() {
         String path = projectPath.resolve("src/main/java/com/example/Vehicle.java").toString();
@@ -289,7 +289,7 @@ class GetTypeAtPositionToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Vehicle", data.get("name"));
-        assertEquals("Interface", data.get("kind"));
+        assertEquals("interface", data.get("kind"));
         List<String> modifiers = (List<String>) data.get("modifiers");
         assertNotNull(modifiers);
         assertTrue(modifiers.contains("public"),

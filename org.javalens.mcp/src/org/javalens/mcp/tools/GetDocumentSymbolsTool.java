@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -143,18 +144,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             Map<String, Object> symbol = new LinkedHashMap<>();
             symbol.put("name", type.getElementName());
 
-            // Annotation types report isInterface()=true, so check isAnnotation first.
-            if (type.isAnnotation()) {
-                symbol.put("kind", "Annotation");
-            } else if (type.isInterface()) {
-                symbol.put("kind", "Interface");
-            } else if (type.isEnum()) {
-                symbol.put("kind", "Enum");
-            } else if (type.isRecord()) {
-                symbol.put("kind", "Record");
-            } else {
-                symbol.put("kind", "Class");
-            }
+            symbol.put("kind", TypeKindResolver.kindOf(type));
 
             symbol.put("modifiers", getModifiers(flags));
 

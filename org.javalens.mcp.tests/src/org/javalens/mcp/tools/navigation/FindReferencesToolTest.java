@@ -68,7 +68,7 @@ class FindReferencesToolTest {
 
         // Symbol info
         assertEquals("Calculator", data.get("symbol"));
-        assertEquals("Class", data.get("symbolKind"));
+        assertEquals("class", data.get("symbolKind"));
         assertNotNull(data.get("totalReferences"));
 
         // References list with location details
@@ -205,7 +205,7 @@ class FindReferencesToolTest {
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
 
         assertEquals("Animal", data.get("symbol"));
-        assertEquals("Class", data.get("symbolKind"));
+        assertEquals("class", data.get("symbolKind"));
 
         List<Map<String, Object>> references = getReferences(data);
         Set<String> referencingFiles = references.stream()

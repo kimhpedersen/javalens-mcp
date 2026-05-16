@@ -75,7 +75,7 @@ class GetEnclosingElementToolTest {
         assertNotNull(enclosingType);
         assertEquals("Calculator", enclosingType.get("name"));
         assertEquals("com.example.Calculator", enclosingType.get("qualifiedName"));
-        assertEquals("Class", enclosingType.get("kind"));
+        assertEquals("class", enclosingType.get("kind"));
 
         // Element info if present
         Map<String, Object> element = (Map<String, Object>) data.get("element");

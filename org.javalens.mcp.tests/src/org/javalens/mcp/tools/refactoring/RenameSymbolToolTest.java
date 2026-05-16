@@ -318,7 +318,7 @@ class RenameSymbolToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Calculator", data.get("oldName"));
-        assertEquals("Class", data.get("symbolKind"));
+        assertEquals("class", data.get("symbolKind"));
         assertNotNull(data.get("note"), "Class rename must include the file-rename note");
         assertTrue(((String) data.get("note")).toLowerCase().contains("file"),
             "Note must mention file rename; got: " + data.get("note"));

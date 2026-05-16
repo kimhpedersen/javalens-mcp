@@ -18,6 +18,7 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -275,16 +276,7 @@ public class RenameSymbolTool extends AbstractTool {
 
     private String getElementKind(IJavaElement element) {
         if (element instanceof IType type) {
-            try {
-                // Annotation types report isInterface()=true; check first.
-                if (type.isAnnotation()) return "Annotation";
-                if (type.isInterface()) return "Interface";
-                if (type.isEnum()) return "Enum";
-                if (type.isRecord()) return "Record";
-            } catch (JavaModelException e) {
-                log.debug("Error checking type kind: {}", e.getMessage());
-            }
-            return "Class";
+            return TypeKindResolver.kindOf(type);
         }
         if (element instanceof IMethod method) {
             try {

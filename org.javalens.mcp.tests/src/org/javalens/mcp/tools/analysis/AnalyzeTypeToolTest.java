@@ -48,7 +48,7 @@ class AnalyzeTypeToolTest {
         assertEquals("Calculator", type.get("name"));
         assertEquals("com.example.Calculator", type.get("qualifiedName"));
         assertEquals("com.example", type.get("package"));
-        assertEquals("Class", type.get("kind"));
+        assertEquals("class", type.get("kind"));
 
         // Members — exact counts. Calculator declares: no constructors (default), 4
         // methods (add, subtract, multiply, getLastResult), 1 field (lastResult), no
@@ -157,7 +157,7 @@ class AnalyzeTypeToolTest {
     }
 
     @Test
-    @DisplayName("Annotation type is reported with kind=Annotation")
+    @DisplayName("Annotation type is reported with kind='annotation'")
     @SuppressWarnings("unchecked")
     void annotationType_kindReported() {
         ObjectNode args = objectMapper.createObjectNode();
@@ -165,8 +165,8 @@ class AnalyzeTypeToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         Map<String, Object> type = (Map<String, Object>) getData(r).get("type");
-        assertEquals("Annotation", type.get("kind"),
-            "Marker is an annotation type — kind must be Annotation; got: " + type);
+        assertEquals("annotation", type.get("kind"),
+            "Marker is an annotation type — kind must be 'annotation'; got: " + type);
     }
 
     @Test

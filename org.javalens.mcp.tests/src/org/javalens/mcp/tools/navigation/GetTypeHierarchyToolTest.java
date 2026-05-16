@@ -85,7 +85,7 @@ class GetTypeHierarchyToolTest {
         assertNotNull(typeInfo);
         assertEquals("Calculator", typeInfo.get("name"));
         assertEquals("com.example.Calculator", typeInfo.get("qualifiedName"));
-        assertEquals("Class", typeInfo.get("kind"));
+        assertEquals("class", typeInfo.get("kind"));
         assertNotNull(typeInfo.get("line"));
         assertNotNull(typeInfo.get("filePath"));
 
@@ -281,7 +281,7 @@ class GetTypeHierarchyToolTest {
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
 
         Map<String, Object> typeInfo = getTypeInfo(data);
-        assertEquals("Record", typeInfo.get("kind"));
+        assertEquals("record", typeInfo.get("kind"));
 
         Set<String> ifaceNames = SemanticAssertions.fieldSet(
             SemanticAssertions.getList(data, "interfaces"), "qualifiedName");
@@ -318,28 +318,28 @@ class GetTypeHierarchyToolTest {
             .filter(s -> "java.lang.Object".equals(s.get("qualifiedName")))
             .findFirst().orElseThrow();
         assertEquals("Object", object.get("name"));
-        assertEquals("Class", object.get("kind"));
+        assertEquals("class", object.get("kind"));
     }
 
     @Test
-    @DisplayName("Annotation Marker reports kind='Annotation' when queried")
+    @DisplayName("Annotation Marker reports kind='annotation' when queried")
     void annotationMarker_kindIsAnnotation() {
         ToolResponse r = tool.execute(argsByName("com.example.Marker"));
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
         @SuppressWarnings("unchecked")
         Map<String, Object> type = (Map<String, Object>) data.get("type");
-        assertEquals("Annotation", type.get("kind"),
-            "Marker annotation must report kind='Annotation'; got: " + type);
+        assertEquals("annotation", type.get("kind"),
+            "Marker annotation must report kind='annotation'; got: " + type);
     }
 
     @Test
-    @DisplayName("Enum Color (nested in TypeKindsFixture) reports kind='Enum'")
+    @DisplayName("Enum Color (nested in TypeKindsFixture) reports kind='enum'")
     void enumColor_kindIsEnum() {
         ToolResponse r = tool.execute(argsByName("com.example.TypeKindsFixture.Color"));
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
         @SuppressWarnings("unchecked")
         Map<String, Object> type = (Map<String, Object>) data.get("type");
-        assertEquals("Enum", type.get("kind"));
+        assertEquals("enum", type.get("kind"));
     }
 
     @Test

@@ -44,7 +44,7 @@ class GetTypeUsageSummaryToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("com.example.Calculator", data.get("typeName"));
-        assertEquals("Class", data.get("kind"));
+        assertEquals("class", data.get("kind"));
 
         Map<String, Object> usages = (Map<String, Object>) data.get("usages");
         assertNotNull(usages);

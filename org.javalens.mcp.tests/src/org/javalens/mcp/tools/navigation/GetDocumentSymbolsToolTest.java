@@ -81,7 +81,7 @@ class GetDocumentSymbolsToolTest {
             .orElse(null);
 
         assertNotNull(calcSymbol);
-        assertEquals("Class", calcSymbol.get("kind"));
+        assertEquals("class", calcSymbol.get("kind"));
         assertNotNull(calcSymbol.get("line"));
 
         List<String> modifiers = (List<String>) calcSymbol.get("modifiers");
@@ -212,8 +212,8 @@ class GetDocumentSymbolsToolTest {
         Map<String, Object> colorEnum = getChildren(tkfSymbol).stream()
             .filter(c -> "Color".equals(c.get("name")))
             .findFirst().orElseThrow();
-        assertEquals("Enum", colorEnum.get("kind"),
-            "Color enum nested type must be reported with kind='Enum'; got: " + colorEnum);
+        assertEquals("enum", colorEnum.get("kind"),
+            "Color enum nested type must be reported with kind='enum'; got: " + colorEnum);
 
         // RED/GREEN/BLUE are enum constants inside Color.
         Map<String, Object> red = getChildren(colorEnum).stream()
@@ -237,7 +237,7 @@ class GetDocumentSymbolsToolTest {
         Map<String, Object> markerSym = getSymbols(getData(r)).stream()
             .filter(s -> "Marker".equals(s.get("name")))
             .findFirst().orElseThrow();
-        assertEquals("Annotation", markerSym.get("kind"));
+        assertEquals("annotation", markerSym.get("kind"));
 
         // Point.java record.
         String point = projectPath.resolve("src/main/java/com/example/Point.java").toString();
@@ -248,7 +248,7 @@ class GetDocumentSymbolsToolTest {
         Map<String, Object> pointSym = getSymbols(getData(r)).stream()
             .filter(s -> "Point".equals(s.get("name")))
             .findFirst().orElseThrow();
-        assertEquals("Record", pointSym.get("kind"));
+        assertEquals("record", pointSym.get("kind"));
 
         // IShape.java interface.
         String iShape = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
@@ -259,7 +259,7 @@ class GetDocumentSymbolsToolTest {
         Map<String, Object> iShapeSym = getSymbols(getData(r)).stream()
             .filter(s -> "IShape".equals(s.get("name")))
             .findFirst().orElseThrow();
-        assertEquals("Interface", iShapeSym.get("kind"));
+        assertEquals("interface", iShapeSym.get("kind"));
     }
 
     @Test

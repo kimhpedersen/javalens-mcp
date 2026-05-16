@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -236,18 +237,7 @@ public class GetEnclosingElementTool extends AbstractTool {
         info.put("name", type.getElementName());
         info.put("qualifiedName", type.getFullyQualifiedName());
 
-        // Annotation types report isInterface()=true, so check isAnnotation first.
-        if (type.isAnnotation()) {
-            info.put("kind", "Annotation");
-        } else if (type.isInterface()) {
-            info.put("kind", "Interface");
-        } else if (type.isEnum()) {
-            info.put("kind", "Enum");
-        } else if (type.isRecord()) {
-            info.put("kind", "Record");
-        } else {
-            info.put("kind", "Class");
-        }
+        info.put("kind", TypeKindResolver.kindOf(type));
 
         info.put("modifiers", getModifiers(type.getFlags()));
 

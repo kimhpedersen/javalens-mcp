@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -128,19 +129,7 @@ public class GetTypeAtPositionTool extends AbstractTool {
         info.put("name", type.getElementName());
         info.put("qualifiedName", type.getFullyQualifiedName());
 
-        // Order matters: annotation types report isInterface()=true in JDT (@interface
-        // IS an interface with extra metadata), so isAnnotation must be checked first.
-        if (type.isAnnotation()) {
-            info.put("kind", "Annotation");
-        } else if (type.isInterface()) {
-            info.put("kind", "Interface");
-        } else if (type.isEnum()) {
-            info.put("kind", "Enum");
-        } else if (type.isRecord()) {
-            info.put("kind", "Record");
-        } else {
-            info.put("kind", "Class");
-        }
+        info.put("kind", TypeKindResolver.kindOf(type));
 
         int flags = type.getFlags();
         info.put("modifiers", getModifiers(flags));

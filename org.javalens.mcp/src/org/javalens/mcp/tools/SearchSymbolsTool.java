@@ -12,6 +12,7 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -46,12 +47,12 @@ public class SearchSymbolsTool extends AbstractTool {
             Search for types, methods, fields by name pattern.
             Supports glob patterns: * (any chars), ? (single char)
 
-            USAGE: search_symbols(query="*Service", kind="Class")
+            USAGE: search_symbols(query="*Service", kind="class")
             OUTPUT: List of matching symbols with locations
 
             EXAMPLES:
             - search_symbols(query="Order*") - classes starting with Order
-            - search_symbols(query="*Repository", kind="Interface")
+            - search_symbols(query="*Repository", kind="interface")
             - search_symbols(query="get*", kind="Method")
 
             PAGINATION: Use offset parameter for large result sets
@@ -234,20 +235,9 @@ public class SearchSymbolsTool extends AbstractTool {
 
     private String getElementKind(IJavaElement element) {
         return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> {
-                if (element instanceof IType type) {
-                    try {
-                        // Annotation types report isInterface()=true; check first.
-                        if (type.isAnnotation()) yield "Annotation";
-                        if (type.isInterface()) yield "Interface";
-                        if (type.isEnum()) yield "Enum";
-                        if (type.isRecord()) yield "Record";
-                    } catch (JavaModelException e) {
-                        // Fall through
-                    }
-                }
-                yield "Class";
-            }
+            case IJavaElement.TYPE -> element instanceof IType type
+                ? TypeKindResolver.kindOf(type)
+                : "class";
             case IJavaElement.METHOD -> "Method";
             case IJavaElement.FIELD -> "Field";
             case IJavaElement.LOCAL_VARIABLE -> "Variable";

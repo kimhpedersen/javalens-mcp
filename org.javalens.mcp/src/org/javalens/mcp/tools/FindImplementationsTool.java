@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -186,7 +187,7 @@ public class FindImplementationsTool extends AbstractTool {
             Map<String, Object> info = new LinkedHashMap<>();
             info.put("name", type.getElementName());
             info.put("qualifiedName", type.getFullyQualifiedName());
-            info.put("kind", kindOf(type));
+            info.put("kind", TypeKindResolver.kindOf(type));
             populateLocation(type, info, service, type.getNameRange());
             return info;
         } catch (Exception e) {
@@ -200,7 +201,7 @@ public class FindImplementationsTool extends AbstractTool {
             Map<String, Object> info = new LinkedHashMap<>();
             info.put("name", type.getElementName());
             info.put("qualifiedName", type.getFullyQualifiedName());
-            info.put("kind", kindOf(type));
+            info.put("kind", TypeKindResolver.kindOf(type));
             info.put("method", method.getElementName());
             populateLocation(method, info, service, method.getNameRange());
             return info;
@@ -208,19 +209,6 @@ public class FindImplementationsTool extends AbstractTool {
             log.debug("Error creating method implementation info: {}", e.getMessage());
             return null;
         }
-    }
-
-    private String kindOf(IType type) {
-        try {
-            // Annotation types report isInterface()=true, so check isAnnotation first.
-            if (type.isAnnotation()) return "Annotation";
-            if (type.isInterface()) return "Interface";
-            if (type.isEnum()) return "Enum";
-            if (type.isRecord()) return "Record";
-        } catch (JavaModelException e) {
-            // fall through
-        }
-        return "Class";
     }
 
     private void populateLocation(IJavaElement element, Map<String, Object> info,

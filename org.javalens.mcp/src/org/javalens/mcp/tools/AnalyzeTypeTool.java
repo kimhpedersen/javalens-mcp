@@ -14,6 +14,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -143,18 +144,7 @@ public class AnalyzeTypeTool extends AbstractTool {
         info.put("qualifiedName", type.getFullyQualifiedName());
         info.put("package", type.getPackageFragment().getElementName());
 
-        // Kind — annotation types report isInterface()=true, so check isAnnotation first.
-        if (type.isAnnotation()) {
-            info.put("kind", "Annotation");
-        } else if (type.isInterface()) {
-            info.put("kind", "Interface");
-        } else if (type.isEnum()) {
-            info.put("kind", "Enum");
-        } else if (type.isRecord()) {
-            info.put("kind", "Record");
-        } else {
-            info.put("kind", "Class");
-        }
+        info.put("kind", TypeKindResolver.kindOf(type));
 
         info.put("modifiers", getModifiers(type.getFlags()));
 
@@ -202,7 +192,7 @@ public class AnalyzeTypeTool extends AbstractTool {
         for (IType nested : type.getTypes()) {
             Map<String, Object> nestedInfo = new LinkedHashMap<>();
             nestedInfo.put("name", nested.getElementName());
-            nestedInfo.put("kind", getTypeKind(nested));
+            nestedInfo.put("kind", TypeKindResolver.kindOf(nested));
             nestedInfo.put("modifiers", getModifiers(nested.getFlags()));
             nestedTypes.add(nestedInfo);
         }
@@ -403,19 +393,6 @@ public class AnalyzeTypeTool extends AbstractTool {
         result.put("hasProblems", errorCount > 0 || warningCount > 0);
 
         return result;
-    }
-
-    private String getTypeKind(IType type) {
-        try {
-            // Order matters: annotations report isInterface()=true.
-            if (type.isAnnotation()) return "Annotation";
-            if (type.isInterface()) return "Interface";
-            if (type.isEnum()) return "Enum";
-            if (type.isRecord()) return "Record";
-            return "Class";
-        } catch (Exception e) {
-            return "Unknown";
-        }
     }
 
     private List<String> getModifiers(int flags) {

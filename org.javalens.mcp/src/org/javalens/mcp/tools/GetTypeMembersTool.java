@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -212,22 +213,7 @@ public class GetTypeMembersTool extends AbstractTool {
         info.put("name", type.getElementName());
         info.put("qualifiedName", type.getFullyQualifiedName());
 
-        try {
-            // Annotation types report isInterface()=true; check isAnnotation first.
-            if (type.isAnnotation()) {
-                info.put("kind", "Annotation");
-            } else if (type.isInterface()) {
-                info.put("kind", "Interface");
-            } else if (type.isEnum()) {
-                info.put("kind", "Enum");
-            } else if (type.isRecord()) {
-                info.put("kind", "Record");
-            } else {
-                info.put("kind", "Class");
-            }
-        } catch (JavaModelException e) {
-            info.put("kind", "Class");
-        }
+        info.put("kind", TypeKindResolver.kindOf(type));
 
         try {
             ICompilationUnit cu = type.getCompilationUnit();
@@ -339,15 +325,7 @@ public class GetTypeMembersTool extends AbstractTool {
             info.put("name", type.getElementName());
             info.put("qualifiedName", type.getFullyQualifiedName());
 
-            if (type.isInterface()) {
-                info.put("kind", "Interface");
-            } else if (type.isEnum()) {
-                info.put("kind", "Enum");
-            } else if (type.isAnnotation()) {
-                info.put("kind", "Annotation");
-            } else {
-                info.put("kind", "Class");
-            }
+            info.put("kind", TypeKindResolver.kindOf(type));
 
             int flags = type.getFlags();
             info.put("modifiers", getModifiers(flags));

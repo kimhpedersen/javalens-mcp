@@ -47,7 +47,7 @@ class GetTypeMembersToolTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> typeInfo = (Map<String, Object>) data.get("type");
         assertEquals("Calculator", typeInfo.get("name"));
-        assertEquals("Class", typeInfo.get("kind"));
+        assertEquals("class", typeInfo.get("kind"));
 
         // Verify members
         assertNotNull(data.get("methods"));
@@ -292,6 +292,6 @@ class GetTypeMembersToolTest {
             .filter(t -> "InnerClass".equals(t.get("name")))
             .findFirst()
             .orElseThrow();
-        assertEquals("Class", inner.get("kind"));
+        assertEquals("class", inner.get("kind"));
     }
 }

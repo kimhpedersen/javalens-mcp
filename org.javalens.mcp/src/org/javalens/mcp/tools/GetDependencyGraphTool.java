@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -197,7 +198,7 @@ public class GetDependencyGraphTool extends AbstractTool {
         visited.add(typeName);
 
         nodes.add(typeName);
-        nodeKinds.put(typeName, getTypeKind(type));
+        nodeKinds.put(typeName, TypeKindResolver.kindOf(type));
 
         ICompilationUnit cu = type.getCompilationUnit();
         if (cu == null) return;
@@ -389,12 +390,4 @@ public class GetDependencyGraphTool extends AbstractTool {
         return pkg.isEmpty() ? baseName : pkg + "." + baseName;
     }
 
-    private String getTypeKind(IType type) throws Exception {
-        // Annotation types report isInterface()=true; check isAnnotation first.
-        if (type.isAnnotation()) return "annotation";
-        if (type.isInterface()) return "interface";
-        if (type.isEnum()) return "enum";
-        if (type.isRecord()) return "record";
-        return "class";
-    }
 }
