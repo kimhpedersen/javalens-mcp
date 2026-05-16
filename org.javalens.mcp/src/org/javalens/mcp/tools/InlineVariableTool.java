@@ -68,24 +68,11 @@ public class InlineVariableTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file"
-            ),
-            "line", Map.of(
-                "type", "integer",
-                "description", "Zero-based line number of variable declaration or usage"
-            ),
-            "column", Map.of(
-                "type", "integer",
-                "description", "Zero-based column number"
-            )
-        ));
-        schema.put("required", List.of("filePath", "line", "column"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .required("line", "integer", "Zero-based line number of variable declaration or usage")
+            .required("column", "integer", "Zero-based column number")
+            .build();
     }
 
     @Override

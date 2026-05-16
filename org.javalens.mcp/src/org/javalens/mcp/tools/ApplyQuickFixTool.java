@@ -67,24 +67,11 @@ public class ApplyQuickFixTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file"
-            ),
-            "fixId", Map.of(
-                "type", "string",
-                "description", "The fix ID from get_quick_fixes (e.g., 'add_import:java.util.List')"
-            ),
-            "line", Map.of(
-                "type", "integer",
-                "description", "Zero-based line number (required for some fixes like add_throws)"
-            )
-        ));
-        schema.put("required", List.of("filePath", "fixId"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .required("fixId", "string", "The fix ID from get_quick_fixes (e.g., 'add_import:java.util.List')")
+            .optional("line", "integer", "Zero-based line number (required for some fixes like add_throws)")
+            .build();
     }
 
     @Override

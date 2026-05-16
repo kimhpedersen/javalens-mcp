@@ -74,30 +74,11 @@ public class AnalyzeControlFlowTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> filePath = new LinkedHashMap<>();
-        filePath.put("type", "string");
-        filePath.put("description", "File containing the method");
-        properties.put("filePath", filePath);
-
-        Map<String, Object> line = new LinkedHashMap<>();
-        line.put("type", "integer");
-        line.put("description", "Zero-based line number within the method");
-        properties.put("line", line);
-
-        Map<String, Object> column = new LinkedHashMap<>();
-        column.put("type", "integer");
-        column.put("description", "Zero-based column number");
-        properties.put("column", column);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("filePath", "line", "column"));
-
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "File containing the method")
+            .required("line", "integer", "Zero-based line number within the method")
+            .required("column", "integer", "Zero-based column number")
+            .build();
     }
 
     @Override

@@ -55,30 +55,11 @@ public class FindLargeClassesTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> maxMethods = new LinkedHashMap<>();
-        maxMethods.put("type", "integer");
-        maxMethods.put("description", "Maximum methods before flagging (default 20)");
-        properties.put("maxMethods", maxMethods);
-
-        Map<String, Object> maxFields = new LinkedHashMap<>();
-        maxFields.put("type", "integer");
-        maxFields.put("description", "Maximum fields before flagging (default 10)");
-        properties.put("maxFields", maxFields);
-
-        Map<String, Object> maxLines = new LinkedHashMap<>();
-        maxLines.put("type", "integer");
-        maxLines.put("description", "Maximum lines before flagging (default 300)");
-        properties.put("maxLines", maxLines);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of());
-
-        return schema;
+        return SchemaBuilder.object()
+            .optional("maxMethods", "integer", "Maximum methods before flagging (default 20)")
+            .optional("maxFields", "integer", "Maximum fields before flagging (default 10)")
+            .optional("maxLines", "integer", "Maximum lines before flagging (default 300)")
+            .build();
     }
 
     @Override

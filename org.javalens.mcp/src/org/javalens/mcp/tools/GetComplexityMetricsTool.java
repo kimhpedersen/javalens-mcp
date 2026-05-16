@@ -77,24 +77,11 @@ public class GetComplexityMetricsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file"
-            ),
-            "granularity", Map.of(
-                "type", "string",
-                "description", "Level of detail: 'file', 'type', or 'method' (default: 'file')"
-            ),
-            "includeDetails", Map.of(
-                "type", "boolean",
-                "description", "Include per-method breakdown (default: true)"
-            )
-        ));
-        schema.put("required", List.of("filePath"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .optional("granularity", "string", "Level of detail: 'file', 'type', or 'method' (default: 'file')")
+            .optional("includeDetails", "boolean", "Include per-method breakdown (default: true)")
+            .build();
     }
 
     @Override

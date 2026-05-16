@@ -73,20 +73,10 @@ public class FindPossibleBugsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Optional: specific file to check (default: all files)"
-            ),
-            "severity", Map.of(
-                "type", "string",
-                "description", "Filter by severity: high, medium, low, all (default: all)"
-            )
-        ));
-        schema.put("required", List.of());
-        return schema;
+        return SchemaBuilder.object()
+            .optional("filePath", "string", "Optional: specific file to check (default: all files)")
+            .optional("severity", "string", "Filter by severity: high, medium, low, all (default: all)")
+            .build();
     }
 
     @Override

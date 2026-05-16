@@ -73,36 +73,14 @@ public class ExtractVariableTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file"
-            ),
-            "startLine", Map.of(
-                "type", "integer",
-                "description", "Zero-based start line of expression"
-            ),
-            "startColumn", Map.of(
-                "type", "integer",
-                "description", "Zero-based start column of expression"
-            ),
-            "endLine", Map.of(
-                "type", "integer",
-                "description", "Zero-based end line of expression"
-            ),
-            "endColumn", Map.of(
-                "type", "integer",
-                "description", "Zero-based end column of expression"
-            ),
-            "variableName", Map.of(
-                "type", "string",
-                "description", "Name for the new variable (optional, will suggest if not provided)"
-            )
-        ));
-        schema.put("required", List.of("filePath", "startLine", "startColumn", "endLine", "endColumn"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .required("startLine", "integer", "Zero-based start line of expression")
+            .required("startColumn", "integer", "Zero-based start column of expression")
+            .required("endLine", "integer", "Zero-based end line of expression")
+            .required("endColumn", "integer", "Zero-based end column of expression")
+            .optional("variableName", "string", "Name for the new variable (optional, will suggest if not provided)")
+            .build();
     }
 
     @Override

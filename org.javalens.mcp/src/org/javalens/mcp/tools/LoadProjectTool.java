@@ -61,16 +61,9 @@ public class LoadProjectTool implements Tool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "projectPath", Map.of(
-                "type", "string",
-                "description", "Absolute path to the project root directory containing pom.xml or build.gradle"
-            )
-        ));
-        schema.put("required", List.of("projectPath"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("projectPath", "string", "Absolute path to the project root directory containing pom.xml or build.gradle")
+            .build();
     }
 
     @Override

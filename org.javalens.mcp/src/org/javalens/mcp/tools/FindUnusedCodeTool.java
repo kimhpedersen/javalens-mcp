@@ -72,24 +72,11 @@ public class FindUnusedCodeTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Optional: specific file to check (default: all files)"
-            ),
-            "includeFields", Map.of(
-                "type", "boolean",
-                "description", "Include unused fields (default true)"
-            ),
-            "includeMethods", Map.of(
-                "type", "boolean",
-                "description", "Include unused methods (default true)"
-            )
-        ));
-        schema.put("required", List.of());
-        return schema;
+        return SchemaBuilder.object()
+            .optional("filePath", "string", "Optional: specific file to check (default: all files)")
+            .optional("includeFields", "boolean", "Include unused fields (default true)")
+            .optional("includeMethods", "boolean", "Include unused methods (default true)")
+            .build();
     }
 
     @Override

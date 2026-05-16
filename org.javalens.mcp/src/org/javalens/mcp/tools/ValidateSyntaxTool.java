@@ -55,24 +55,11 @@ public class ValidateSyntaxTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file to validate"
-            ),
-            "content", Map.of(
-                "type", "string",
-                "description", "Inline Java source code to validate (alternative to filePath)"
-            ),
-            "fileName", Map.of(
-                "type", "string",
-                "description", "Optional filename for inline content (default: Untitled.java)"
-            )
-        ));
-        schema.put("required", List.of());
-        return schema;
+        return SchemaBuilder.object()
+            .optional("filePath", "string", "Path to source file to validate")
+            .optional("content", "string", "Inline Java source code to validate (alternative to filePath)")
+            .optional("fileName", "string", "Optional filename for inline content (default: Untitled.java)")
+            .build();
     }
 
     @Override

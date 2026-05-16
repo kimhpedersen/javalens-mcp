@@ -54,35 +54,12 @@ public class FindMethodReferencesTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> filePath = new LinkedHashMap<>();
-        filePath.put("type", "string");
-        filePath.put("description", "Path to source file containing the method");
-        properties.put("filePath", filePath);
-
-        Map<String, Object> line = new LinkedHashMap<>();
-        line.put("type", "integer");
-        line.put("description", "Zero-based line number of the method");
-        properties.put("line", line);
-
-        Map<String, Object> column = new LinkedHashMap<>();
-        column.put("type", "integer");
-        column.put("description", "Zero-based column number");
-        properties.put("column", column);
-
-        Map<String, Object> maxResults = new LinkedHashMap<>();
-        maxResults.put("type", "integer");
-        maxResults.put("description", "Maximum results to return (default 100)");
-        properties.put("maxResults", maxResults);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("filePath", "line", "column"));
-
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file containing the method")
+            .required("line", "integer", "Zero-based line number of the method")
+            .required("column", "integer", "Zero-based column number")
+            .optional("maxResults", "integer", "Maximum results to return (default 100)")
+            .build();
     }
 
     @Override

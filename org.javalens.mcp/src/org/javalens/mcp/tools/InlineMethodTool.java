@@ -77,24 +77,11 @@ public class InlineMethodTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file containing the method call"
-            ),
-            "line", Map.of(
-                "type", "integer",
-                "description", "Zero-based line number of method call"
-            ),
-            "column", Map.of(
-                "type", "integer",
-                "description", "Zero-based column number (on method name)"
-            )
-        ));
-        schema.put("required", List.of("filePath", "line", "column"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file containing the method call")
+            .required("line", "integer", "Zero-based line number of method call")
+            .required("column", "integer", "Zero-based column number (on method name)")
+            .build();
     }
 
     @Override

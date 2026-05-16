@@ -77,20 +77,9 @@ public class GetDiRegistrationsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> maxResults = new LinkedHashMap<>();
-        maxResults.put("type", "integer");
-        maxResults.put("description", "Maximum results per annotation type (default 200)");
-        properties.put("maxResults", maxResults);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of());
-
-        return schema;
+        return SchemaBuilder.object()
+            .optional("maxResults", "integer", "Maximum results per annotation type (default 200)")
+            .build();
     }
 
     @Override

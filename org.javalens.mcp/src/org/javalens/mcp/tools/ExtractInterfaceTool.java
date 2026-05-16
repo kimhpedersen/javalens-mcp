@@ -71,33 +71,17 @@ public class ExtractInterfaceTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file containing the class"
-            ),
-            "line", Map.of(
-                "type", "integer",
-                "description", "Zero-based line number of class declaration"
-            ),
-            "column", Map.of(
-                "type", "integer",
-                "description", "Zero-based column number"
-            ),
-            "interfaceName", Map.of(
-                "type", "string",
-                "description", "Name for the new interface"
-            ),
-            "methodNames", Map.of(
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file containing the class")
+            .required("line", "integer", "Zero-based line number of class declaration")
+            .required("column", "integer", "Zero-based column number")
+            .required("interfaceName", "string", "Name for the new interface")
+            .optionalCustom("methodNames", Map.of(
                 "type", "array",
                 "items", Map.of("type", "string"),
                 "description", "Specific method names to include (default: all public non-static methods)"
-            )
-        ));
-        schema.put("required", List.of("filePath", "line", "column", "interfaceName"));
-        return schema;
+            ))
+            .build();
     }
 
     @Override

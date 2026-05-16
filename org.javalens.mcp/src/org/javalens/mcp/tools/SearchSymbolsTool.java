@@ -63,28 +63,12 @@ public class SearchSymbolsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "query", Map.of(
-                "type", "string",
-                "description", "Search pattern - supports * and ? wildcards"
-            ),
-            "kind", Map.of(
-                "type", "string",
-                "description", "Filter by kind: Class, Interface, Enum, Method, Field"
-            ),
-            "maxResults", Map.of(
-                "type", "integer",
-                "description", "Max results to return (default 50)"
-            ),
-            "offset", Map.of(
-                "type", "integer",
-                "description", "Skip first N results for pagination"
-            )
-        ));
-        schema.put("required", List.of("query"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("query", "string", "Search pattern - supports * and ? wildcards")
+            .optional("kind", "string", "Filter by kind: class, interface, enum, method, field")
+            .optional("maxResults", "integer", "Max results to return (default 50)")
+            .optional("offset", "integer", "Skip first N results for pagination")
+            .build();
     }
 
     @Override

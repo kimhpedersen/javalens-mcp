@@ -79,28 +79,12 @@ public class RenameSymbolTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file containing the symbol"
-            ),
-            "line", Map.of(
-                "type", "integer",
-                "description", "Zero-based line number"
-            ),
-            "column", Map.of(
-                "type", "integer",
-                "description", "Zero-based column number"
-            ),
-            "newName", Map.of(
-                "type", "string",
-                "description", "New name for the symbol"
-            )
-        ));
-        schema.put("required", List.of("filePath", "line", "column", "newName"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file containing the symbol")
+            .required("line", "integer", "Zero-based line number")
+            .required("column", "integer", "Zero-based column number")
+            .required("newName", "string", "New name for the symbol")
+            .build();
     }
 
     @Override

@@ -52,22 +52,10 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("typeName", Map.of(
-            "type", "string",
-            "description", "Fully qualified or simple type name"
-        ));
-        properties.put("maxPerCategory", Map.of(
-            "type", "integer",
-            "description", "Maximum results per category (default 10)"
-        ));
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("typeName"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("typeName", "string", "Fully qualified or simple type name")
+            .optional("maxPerCategory", "integer", "Maximum results per category (default 10)")
+            .build();
     }
 
     @Override

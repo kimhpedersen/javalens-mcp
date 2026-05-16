@@ -59,11 +59,7 @@ public class HealthCheckTool implements Tool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of());
-        schema.put("required", List.of());
-        return schema;
+        return SchemaBuilder.object().build();
     }
 
     @Override

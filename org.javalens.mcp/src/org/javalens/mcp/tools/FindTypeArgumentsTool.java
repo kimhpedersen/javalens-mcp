@@ -50,25 +50,10 @@ public class FindTypeArgumentsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> typeName = new LinkedHashMap<>();
-        typeName.put("type", "string");
-        typeName.put("description", "Fully qualified type name to find in generic arguments");
-        properties.put("typeName", typeName);
-
-        Map<String, Object> maxResults = new LinkedHashMap<>();
-        maxResults.put("type", "integer");
-        maxResults.put("description", "Maximum results to return (default 100)");
-        properties.put("maxResults", maxResults);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("typeName"));
-
-        return schema;
+        return SchemaBuilder.object()
+            .required("typeName", "string", "Fully qualified type name to find in generic arguments")
+            .optional("maxResults", "integer", "Maximum results to return (default 100)")
+            .build();
     }
 
     @Override

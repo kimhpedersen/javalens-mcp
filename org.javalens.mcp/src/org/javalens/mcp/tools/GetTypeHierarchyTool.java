@@ -58,31 +58,13 @@ public class GetTypeHierarchyTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file (for position-based lookup)"
-            ),
-            "line", Map.of(
-                "type", "integer",
-                "description", "Zero-based line number"
-            ),
-            "column", Map.of(
-                "type", "integer",
-                "description", "Zero-based column number"
-            ),
-            "typeName", Map.of(
-                "type", "string",
-                "description", "Fully qualified type name (alternative to position)"
-            ),
-            "maxDepth", Map.of(
-                "type", "integer",
-                "description", "Maximum depth of hierarchy to return (default 10)"
-            )
-        ));
-        return schema;
+        return SchemaBuilder.object()
+            .optional("filePath", "string", "Path to source file (for position-based lookup)")
+            .optional("line", "integer", "Zero-based line number")
+            .optional("column", "integer", "Zero-based column number")
+            .optional("typeName", "string", "Fully qualified type name (alternative to position)")
+            .optional("maxDepth", "integer", "Maximum depth of hierarchy to return (default 10)")
+            .build();
     }
 
     @Override

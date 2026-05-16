@@ -49,23 +49,11 @@ public class GetClasspathInfoTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "includeLibraries", Map.of(
-                "type", "boolean",
-                "description", "Include library entries (default true)"
-            ),
-            "includeSource", Map.of(
-                "type", "boolean",
-                "description", "Include source folder entries (default true)"
-            ),
-            "includeContainers", Map.of(
-                "type", "boolean",
-                "description", "Include container entries like JRE (default true)"
-            )
-        ));
-        return schema;
+        return SchemaBuilder.object()
+            .optional("includeLibraries", "boolean", "Include library entries (default true)")
+            .optional("includeSource", "boolean", "Include source folder entries (default true)")
+            .optional("includeContainers", "boolean", "Include container entries like JRE (default true)")
+            .build();
     }
 
     @Override

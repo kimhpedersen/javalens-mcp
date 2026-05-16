@@ -71,20 +71,9 @@ public class FindNamingViolationsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> filePath = new LinkedHashMap<>();
-        filePath.put("type", "string");
-        filePath.put("description", "File to check (omit to scan all files)");
-        properties.put("filePath", filePath);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of());
-
-        return schema;
+        return SchemaBuilder.object()
+            .optional("filePath", "string", "File to check (omit to scan all files)")
+            .build();
     }
 
     @Override

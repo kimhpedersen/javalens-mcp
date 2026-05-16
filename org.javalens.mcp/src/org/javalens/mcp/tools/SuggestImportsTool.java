@@ -60,20 +60,10 @@ public class SuggestImportsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "typeName", Map.of(
-                "type", "string",
-                "description", "Simple type name to find imports for (e.g., 'List', 'Map')"
-            ),
-            "maxResults", Map.of(
-                "type", "integer",
-                "description", "Maximum candidates to return (default 20)"
-            )
-        ));
-        schema.put("required", List.of("typeName"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("typeName", "string", "Simple type name to find imports for (e.g., 'List', 'Map')")
+            .optional("maxResults", "integer", "Maximum candidates to return (default 20)")
+            .build();
     }
 
     @Override

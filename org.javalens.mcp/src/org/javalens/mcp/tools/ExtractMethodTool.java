@@ -79,36 +79,14 @@ public class ExtractMethodTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file"
-            ),
-            "startLine", Map.of(
-                "type", "integer",
-                "description", "Zero-based start line of code to extract"
-            ),
-            "startColumn", Map.of(
-                "type", "integer",
-                "description", "Zero-based start column"
-            ),
-            "endLine", Map.of(
-                "type", "integer",
-                "description", "Zero-based end line of code to extract"
-            ),
-            "endColumn", Map.of(
-                "type", "integer",
-                "description", "Zero-based end column"
-            ),
-            "methodName", Map.of(
-                "type", "string",
-                "description", "Name for the new method"
-            )
-        ));
-        schema.put("required", List.of("filePath", "startLine", "startColumn", "endLine", "endColumn", "methodName"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .required("startLine", "integer", "Zero-based start line of code to extract")
+            .required("startColumn", "integer", "Zero-based start column")
+            .required("endLine", "integer", "Zero-based end line of code to extract")
+            .required("endColumn", "integer", "Zero-based end column")
+            .required("methodName", "string", "Name for the new method")
+            .build();
     }
 
     @Override

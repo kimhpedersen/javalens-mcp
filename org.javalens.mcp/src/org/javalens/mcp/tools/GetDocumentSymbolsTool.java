@@ -56,24 +56,11 @@ public class GetDocumentSymbolsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Path to source file"
-            ),
-            "includePrivate", Map.of(
-                "type", "boolean",
-                "description", "Include private members (default true)"
-            ),
-            "maxResults", Map.of(
-                "type", "integer",
-                "description", "Maximum symbols to return (default 500)"
-            )
-        ));
-        schema.put("required", List.of("filePath"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .optional("includePrivate", "boolean", "Include private members (default true)")
+            .optional("maxResults", "integer", "Maximum symbols to return (default 500)")
+            .build();
     }
 
     @Override

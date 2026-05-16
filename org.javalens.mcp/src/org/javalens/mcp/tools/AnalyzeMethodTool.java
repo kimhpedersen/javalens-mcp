@@ -75,34 +75,13 @@ public class AnalyzeMethodTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("filePath", Map.of(
-            "type", "string",
-            "description", "Path to source file"
-        ));
-        properties.put("line", Map.of(
-            "type", "integer",
-            "description", "Zero-based line number"
-        ));
-        properties.put("column", Map.of(
-            "type", "integer",
-            "description", "Zero-based column number"
-        ));
-        properties.put("maxCallers", Map.of(
-            "type", "integer",
-            "description", "Maximum callers to return (default 20)"
-        ));
-        properties.put("maxCallees", Map.of(
-            "type", "integer",
-            "description", "Maximum callees to return (default 50)"
-        ));
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("filePath", "line", "column"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .required("line", "integer", "Zero-based line number")
+            .required("column", "integer", "Zero-based column number")
+            .optional("maxCallers", "integer", "Maximum callers to return (default 20)")
+            .optional("maxCallees", "integer", "Maximum callees to return (default 50)")
+            .build();
     }
 
     @Override

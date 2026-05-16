@@ -50,25 +50,10 @@ public class FindCatchBlocksTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> exceptionType = new LinkedHashMap<>();
-        exceptionType.put("type", "string");
-        exceptionType.put("description", "Fully qualified exception type name (e.g., 'java.io.IOException')");
-        properties.put("exceptionType", exceptionType);
-
-        Map<String, Object> maxResults = new LinkedHashMap<>();
-        maxResults.put("type", "integer");
-        maxResults.put("description", "Maximum results to return (default 100)");
-        properties.put("maxResults", maxResults);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("exceptionType"));
-
-        return schema;
+        return SchemaBuilder.object()
+            .required("exceptionType", "string", "Fully qualified exception type name (e.g., 'java.io.IOException')")
+            .optional("maxResults", "integer", "Maximum results to return (default 100)")
+            .build();
     }
 
     @Override

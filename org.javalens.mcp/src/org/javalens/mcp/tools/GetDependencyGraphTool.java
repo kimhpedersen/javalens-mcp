@@ -68,28 +68,12 @@ public class GetDependencyGraphTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "scope", Map.of(
-                "type", "string",
-                "description", "Scope: 'type' or 'package'"
-            ),
-            "name", Map.of(
-                "type", "string",
-                "description", "Type name (fully qualified) or package name"
-            ),
-            "depth", Map.of(
-                "type", "integer",
-                "description", "How deep to follow dependencies (default: 1)"
-            ),
-            "includeExternal", Map.of(
-                "type", "boolean",
-                "description", "Include JDK/library dependencies (default: false)"
-            )
-        ));
-        schema.put("required", List.of("scope", "name"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("scope", "string", "Scope: 'type' or 'package'")
+            .required("name", "string", "Type name (fully qualified) or package name")
+            .optional("depth", "integer", "How deep to follow dependencies (default: 1)")
+            .optional("includeExternal", "boolean", "Include JDK/library dependencies (default: false)")
+            .build();
     }
 
     @Override

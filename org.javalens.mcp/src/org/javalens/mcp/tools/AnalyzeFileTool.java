@@ -63,26 +63,11 @@ public class AnalyzeFileTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("filePath", Map.of(
-            "type", "string",
-            "description", "Path to source file"
-        ));
-        properties.put("includeMembers", Map.of(
-            "type", "boolean",
-            "description", "Include full member details for each type (default false)"
-        ));
-        properties.put("includeDiagnostics", Map.of(
-            "type", "boolean",
-            "description", "Include compilation errors/warnings (default true)"
-        ));
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("filePath"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file")
+            .optional("includeMembers", "boolean", "Include full member details for each type (default false)")
+            .optional("includeDiagnostics", "boolean", "Include compilation errors/warnings (default true)")
+            .build();
     }
 
     @Override

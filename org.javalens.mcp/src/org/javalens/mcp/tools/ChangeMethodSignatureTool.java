@@ -87,46 +87,25 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("filePath", Map.of(
-            "type", "string",
-            "description", "Path to source file containing the method"
-        ));
-        properties.put("line", Map.of(
-            "type", "integer",
-            "description", "Zero-based line number of method declaration"
-        ));
-        properties.put("column", Map.of(
-            "type", "integer",
-            "description", "Zero-based column number"
-        ));
-        properties.put("newName", Map.of(
-            "type", "string",
-            "description", "New method name (optional, omit to keep current)"
-        ));
-        properties.put("newReturnType", Map.of(
-            "type", "string",
-            "description", "New return type (optional, omit to keep current)"
-        ));
-        properties.put("newParameters", Map.of(
-            "type", "array",
-            "description", "New parameter list. Each item: {name, type, defaultValue?}. Order matters.",
-            "items", Map.of(
-                "type", "object",
-                "properties", Map.of(
-                    "name", Map.of("type", "string", "description", "Parameter name"),
-                    "type", Map.of("type", "string", "description", "Parameter type"),
-                    "defaultValue", Map.of("type", "string", "description", "Default value for new params at call sites")
+        return SchemaBuilder.object()
+            .required("filePath", "string", "Path to source file containing the method")
+            .required("line", "integer", "Zero-based line number of method declaration")
+            .required("column", "integer", "Zero-based column number")
+            .optional("newName", "string", "New method name (optional, omit to keep current)")
+            .optional("newReturnType", "string", "New return type (optional, omit to keep current)")
+            .optionalCustom("newParameters", Map.of(
+                "type", "array",
+                "description", "New parameter list. Each item: {name, type, defaultValue?}. Order matters.",
+                "items", Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "name", Map.of("type", "string", "description", "Parameter name"),
+                        "type", Map.of("type", "string", "description", "Parameter type"),
+                        "defaultValue", Map.of("type", "string", "description", "Default value for new params at call sites")
+                    )
                 )
-            )
-        ));
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("filePath", "line", "column"));
-        return schema;
+            ))
+            .build();
     }
 
     @Override

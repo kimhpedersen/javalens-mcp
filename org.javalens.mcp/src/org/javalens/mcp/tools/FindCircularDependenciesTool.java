@@ -61,20 +61,10 @@ public class FindCircularDependenciesTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "packageFilter", Map.of(
-                "type", "string",
-                "description", "Package prefix to analyze (default: all project packages)"
-            ),
-            "maxCycleLength", Map.of(
-                "type", "integer",
-                "description", "Maximum cycle length to report (default: 10)"
-            )
-        ));
-        schema.put("required", List.of());
-        return schema;
+        return SchemaBuilder.object()
+            .optional("packageFilter", "string", "Package prefix to analyze (default: all project packages)")
+            .optional("maxCycleLength", "integer", "Maximum cycle length to report (default: 10)")
+            .build();
     }
 
     @Override

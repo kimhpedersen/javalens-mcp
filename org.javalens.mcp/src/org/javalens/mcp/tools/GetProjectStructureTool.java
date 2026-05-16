@@ -49,19 +49,10 @@ public class GetProjectStructureTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "includeFiles", Map.of(
-                "type", "boolean",
-                "description", "Include file names in each package (default false)"
-            ),
-            "maxDepth", Map.of(
-                "type", "integer",
-                "description", "Maximum package depth to show (default 10)"
-            )
-        ));
-        return schema;
+        return SchemaBuilder.object()
+            .optional("includeFiles", "boolean", "Include file names in each package (default false)")
+            .optional("maxDepth", "integer", "Maximum package depth to show (default 10)")
+            .build();
     }
 
     @Override

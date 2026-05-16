@@ -57,24 +57,11 @@ public class GetDiagnosticsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "filePath", Map.of(
-                "type", "string",
-                "description", "Optional path to source file. If omitted, checks all files."
-            ),
-            "severity", Map.of(
-                "type", "string",
-                "description", "Filter by severity: 'error', 'warning', or 'all' (default: 'all')"
-            ),
-            "maxResults", Map.of(
-                "type", "integer",
-                "description", "Max diagnostics to return (default 100)"
-            )
-        ));
-        schema.put("required", List.of());
-        return schema;
+        return SchemaBuilder.object()
+            .optional("filePath", "string", "Optional path to source file. If omitted, checks all files.")
+            .optional("severity", "string", "Filter by severity: 'error', 'warning', or 'all' (default: 'all')")
+            .optional("maxResults", "integer", "Max diagnostics to return (default 100)")
+            .build();
     }
 
     @Override

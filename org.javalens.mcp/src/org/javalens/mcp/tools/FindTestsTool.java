@@ -64,20 +64,10 @@ public class FindTestsTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "pattern", Map.of(
-                "type", "string",
-                "description", "Filter test classes by name pattern (glob)"
-            ),
-            "includeDisabled", Map.of(
-                "type", "boolean",
-                "description", "Include disabled/ignored tests (default false)"
-            )
-        ));
-        schema.put("required", List.of());
-        return schema;
+        return SchemaBuilder.object()
+            .optional("pattern", "string", "Filter test classes by name pattern (glob)")
+            .optional("includeDisabled", "boolean", "Include disabled/ignored tests (default false)")
+            .build();
     }
 
     @Override

@@ -58,24 +58,11 @@ public class GetTypeMembersTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of(
-            "typeName", Map.of(
-                "type", "string",
-                "description", "Fully qualified or simple type name"
-            ),
-            "includeInherited", Map.of(
-                "type", "boolean",
-                "description", "Include inherited members (default false)"
-            ),
-            "memberKind", Map.of(
-                "type", "string",
-                "description", "Filter: 'method', 'field', 'type', or null for all"
-            )
-        ));
-        schema.put("required", List.of("typeName"));
-        return schema;
+        return SchemaBuilder.object()
+            .required("typeName", "string", "Fully qualified or simple type name")
+            .optional("includeInherited", "boolean", "Include inherited members (default false)")
+            .optional("memberKind", "string", "Filter: 'method', 'field', 'type', or null for all")
+            .build();
     }
 
     @Override

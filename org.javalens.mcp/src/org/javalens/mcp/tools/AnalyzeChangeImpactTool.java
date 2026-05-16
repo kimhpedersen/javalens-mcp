@@ -59,35 +59,12 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
 
     @Override
     public Map<String, Object> getInputSchema() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        Map<String, Object> filePath = new LinkedHashMap<>();
-        filePath.put("type", "string");
-        filePath.put("description", "File containing the symbol");
-        properties.put("filePath", filePath);
-
-        Map<String, Object> line = new LinkedHashMap<>();
-        line.put("type", "integer");
-        line.put("description", "Zero-based line number");
-        properties.put("line", line);
-
-        Map<String, Object> column = new LinkedHashMap<>();
-        column.put("type", "integer");
-        column.put("description", "Zero-based column number");
-        properties.put("column", column);
-
-        Map<String, Object> depth = new LinkedHashMap<>();
-        depth.put("type", "integer");
-        depth.put("description", "Levels of transitive callers to follow (default 1, max 3)");
-        properties.put("depth", depth);
-
-        schema.put("properties", properties);
-        schema.put("required", List.of("filePath", "line", "column"));
-
-        return schema;
+        return SchemaBuilder.object()
+            .required("filePath", "string", "File containing the symbol")
+            .required("line", "integer", "Zero-based line number")
+            .required("column", "integer", "Zero-based column number")
+            .optional("depth", "integer", "Levels of transitive callers to follow (default 1, max 3)")
+            .build();
     }
 
     @Override
