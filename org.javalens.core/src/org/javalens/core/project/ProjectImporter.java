@@ -165,43 +165,55 @@ public class ProjectImporter {
 
     /**
      * Enable JDT's APT framework on the project and register annotation-processor jars on
-     * its factory path. We collect from two complementary sources:
-     *
+     * its factory path. Splits into {@link #collectProcessorJars} (gathering) and
+     * {@link #wireApt} (registration), each with a single concern.
+     */
+    private void applyAnnotationProcessing(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
+        java.util.Set<java.nio.file.Path> processorJars = collectProcessorJars(projectPath, buildSystem);
+        if (processorJars.isEmpty()) return;
+        wireApt(javaProject, processorJars);
+    }
+
+    /**
+     * Union of annotation processors from two complementary sources:
      * <ol>
      *   <li><b>Build-system-specific declarations</b> — {@code <annotationProcessorPaths>}
      *       (Maven), the {@code annotationProcessor} configuration (Gradle).</li>
      *   <li><b>Generic classpath scan</b> — any jar on the resolved classpath that contains
-     *       {@code META-INF/services/javax.annotation.processing.Processor} is treated as
-     *       a processor. This catches Bazel projects (where processors come from
-     *       {@code java_plugin} rules) and any system that places a processor jar on the
-     *       compile classpath without a separate processor-path declaration.</li>
+     *       {@code META-INF/services/javax.annotation.processing.Processor}. Catches Bazel
+     *       projects (processors come from {@code java_plugin} rules we don't introspect)
+     *       and any system that drops a processor jar on the compile classpath without a
+     *       separate processor-path declaration. Maven/Gradle inherit the empty default for
+     *       {@link BuildSystemImporter#getResolvedClasspathJars} since their declarations
+     *       are already harvested above.
      * </ol>
+     *
+     * <p>Note: an earlier draft also fired {@code GENERATED_SOURCES_NOT_FOUND} when
+     * processors were declared but no generated-source directory existed. That produced
+     * false positives for Lombok, which modifies AST in-place rather than emitting .java —
+     * a Lombok-only project always has the processor declared and never has
+     * {@code target/generated-sources/}. Without inspecting each processor's behavior we
+     * cannot reliably distinguish "build hasn't run" from "this processor doesn't emit",
+     * so the warning was removed.
      */
-    private void applyAnnotationProcessing(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
+    private java.util.Set<java.nio.file.Path> collectProcessorJars(java.nio.file.Path projectPath, BuildSystem buildSystem) {
         BuildSystemImporter importer = importerFor(buildSystem);
         java.util.LinkedHashSet<java.nio.file.Path> processorJars = new java.util.LinkedHashSet<>();
         processorJars.addAll(importer.detectAnnotationProcessors(projectPath));
-
-        // Note: an earlier draft also fired GENERATED_SOURCES_NOT_FOUND when processors
-        // were declared but no generated-source directory existed. That produced false
-        // positives for Lombok, which modifies AST in-place rather than emitting .java —
-        // a Lombok-only project always has the processor declared and never has
-        // target/generated-sources/. Without inspecting each processor's behavior we
-        // cannot reliably distinguish "build hasn't run" from "this processor doesn't
-        // emit", so the warning was removed.
-        // Cross-cutting scan: pick up any jar with a processor SPI descriptor so Bazel +
-        // any classpath that quietly carries a processor (compileOnly, transitive, etc.)
-        // gets APT wired up. Maven/Gradle declare processors via build-file blocks already
-        // harvested above; only Bazel overrides getResolvedClasspathJars (the default
-        // returns empty), so this loop is a no-op for non-Bazel projects.
         for (java.nio.file.Path jar : importer.getResolvedClasspathJars(projectPath, warnings)) {
             if (jarDeclaresAnnotationProcessor(jar)) {
                 processorJars.add(jar);
             }
         }
+        return processorJars;
+    }
 
-        if (processorJars.isEmpty()) return;
-
+    /**
+     * Register the given jars on the project's JDT APT factory path and enable processing.
+     * Failures are logged but don't propagate — APT not wiring up is a degraded mode, not
+     * a fatal load error.
+     */
+    private void wireApt(IJavaProject javaProject, java.util.Set<java.nio.file.Path> processorJars) {
         try {
             AptConfig.setEnabled(javaProject, true);
             IFactoryPath factoryPath = AptConfig.getDefaultFactoryPath(javaProject);
