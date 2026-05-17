@@ -19,6 +19,7 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchPattern;
 import org.eclipse.jdt.core.search.TypeNameRequestor;
+import org.javalens.core.project.BuildSystem;
 import org.javalens.core.project.ProjectImporter;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
@@ -63,7 +64,7 @@ public class JdtServiceImpl implements IJdtService {
     private int sourceFileCount;
     private int packageCount;
     private List<String> packages;
-    private ProjectImporter.BuildSystem buildSystem;
+    private BuildSystem buildSystem;
 
     public JdtServiceImpl() {
         this.workspaceManager = new WorkspaceManager();
@@ -225,7 +226,7 @@ public class JdtServiceImpl implements IJdtService {
         return packages;
     }
 
-    public ProjectImporter.BuildSystem getBuildSystem() {
+    public BuildSystem getBuildSystem() {
         return buildSystem;
     }
 

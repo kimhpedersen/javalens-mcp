@@ -34,8 +34,6 @@ public class ProjectImporter {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectImporter.class);
 
-    public enum BuildSystem { MAVEN, GRADLE, BAZEL, UNKNOWN }
-
     /**
      * Warnings accumulated during the most recent {@link #configureJavaProject} call.
      * Reset at the start of each invocation. {@link JdtServiceImpl#getWarnings()} reads
