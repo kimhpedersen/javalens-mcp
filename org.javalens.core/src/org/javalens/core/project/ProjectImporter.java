@@ -49,16 +49,6 @@ public class ProjectImporter {
     private final List<LoadWarning> warnings = new ArrayList<>();
 
     /**
-     * Cached values harvested from the Gradle init script's aux files during
-     * {@link #getGradleDependencies}. Populated on the Gradle path; consumed by
-     * {@link #applyCompilerOptions} and {@link #applyAnnotationProcessing}, which run later
-     * in the configure flow when the underlying files have already been cleaned up.
-     * Both reset at the start of every {@link #configureJavaProject} call.
-     */
-    private String cachedGradleCompilerLevel;
-    private final List<java.nio.file.Path> cachedGradleProcessorJars = new ArrayList<>();
-
-    /**
      * Per-directory source-path discovery + linked-folder creation. Split out of this class
      * in 1.4.0 (E-10 C1): the layout probing and Eclipse linked-folder wiring don't depend
      * on the build system, so the orchestrator delegates to them after harvesting source
@@ -72,6 +62,15 @@ public class ProjectImporter {
      * symlink-aware dedup), and javacopts-derived compiler-level extraction.
      */
     private final BazelImporter bazelImporter = new BazelImporter();
+
+    /**
+     * Gradle build-system support (1.4.0 E-10 C3): subproject discovery, classpath
+     * assembly via an injected init script, and compiler-level / annotation-processor
+     * extraction from the aux files that script writes. Caches compliance and processor
+     * data internally so the orchestrator's later calls in the configure flow can read
+     * after the aux files have been cleaned up.
+     */
+    private final GradleImporter gradleImporter = new GradleImporter();
 
     /**
      * Returns the warnings from the most recent project import.
@@ -96,10 +95,10 @@ public class ProjectImporter {
      */
     public IJavaProject configureJavaProject(IProject project, java.nio.file.Path projectPath,
             org.javalens.core.workspace.WorkspaceManager workspaceManager) throws CoreException {
-        // Reset accumulated state from any previous load.
+        // Reset accumulated state from any previous load. GradleImporter resets its
+        // own caches internally at the start of getDependencies(); the orchestrator
+        // does not need to clear them here.
         warnings.clear();
-        cachedGradleCompilerLevel = null;
-        cachedGradleProcessorJars.clear();
 
         IJavaProject javaProject = JavaCore.create(project);
 
@@ -166,7 +165,7 @@ public class ProjectImporter {
         java.util.LinkedHashSet<java.nio.file.Path> processorJars = new java.util.LinkedHashSet<>();
         processorJars.addAll(switch (buildSystem) {
             case MAVEN -> detectMavenAnnotationProcessors(projectPath);
-            case GRADLE -> detectGradleAnnotationProcessors(projectPath);
+            case GRADLE -> gradleImporter.detectAnnotationProcessors();
             case BAZEL, UNKNOWN -> List.of();
         });
 
@@ -327,7 +326,7 @@ public class ProjectImporter {
     private void applyCompilerOptions(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
         String level = switch (buildSystem) {
             case MAVEN -> detectMavenCompilerLevel(projectPath);
-            case GRADLE -> detectGradleCompilerLevel(projectPath);
+            case GRADLE -> gradleImporter.detectCompilerLevel();
             case BAZEL -> bazelImporter.detectCompilerLevel(projectPath);
             case UNKNOWN -> null;
         };
@@ -530,7 +529,7 @@ public class ProjectImporter {
         // If multi-project Gradle, also check each subproject. Without this, subproject
         // src/main/java directories and their build/generated/sources/* are absent from
         // the classpath and types declared in subprojects show as unresolved.
-        for (java.nio.file.Path subproject : getGradleSubprojects(projectPath)) {
+        for (java.nio.file.Path subproject : gradleImporter.getSubprojects(projectPath)) {
             linkedFolderConfigurator.addSourcePathsFromDirectory(subproject, sourcePaths);
         }
 
@@ -552,51 +551,12 @@ public class ProjectImporter {
         return sourcePaths;
     }
 
-    /**
-     * Parse {@code settings.gradle} (or {@code settings.gradle.kts}) for {@code include}
-     * directives and resolve each to a subproject directory under the root.
-     *
-     * <p>Recognizes the common forms: {@code include 'a'}, {@code include "a"},
-     * {@code include 'a', 'b'} and {@code include('a')}. Colon-prefixed paths
-     * (e.g. {@code include ':app:core'}) are normalized: leading colons stripped, internal
-     * colons converted to file separators.
-     */
-    private List<java.nio.file.Path> getGradleSubprojects(java.nio.file.Path projectPath) {
-        java.nio.file.Path settings = projectPath.resolve("settings.gradle");
-        if (!Files.exists(settings)) settings = projectPath.resolve("settings.gradle.kts");
-        if (!Files.exists(settings)) return List.of();
-
-        List<java.nio.file.Path> subprojects = new ArrayList<>();
-        try {
-            String content = Files.readString(settings);
-            // Match include 'name' or include "name" or include('name'); also handle commas.
-            Matcher includeMatcher = Pattern.compile(
-                "include\\s*\\(?\\s*((?:['\"][^'\"]+['\"]\\s*,?\\s*)+)").matcher(content);
-            while (includeMatcher.find()) {
-                Matcher nameMatcher = Pattern.compile("['\"]([^'\"]+)['\"]").matcher(includeMatcher.group(1));
-                while (nameMatcher.find()) {
-                    String raw = nameMatcher.group(1).trim();
-                    if (raw.isEmpty()) continue;
-                    // Gradle ':app:core' notation -> 'app/core' on disk.
-                    String pathStr = raw.replaceAll("^:+", "").replace(':', '/');
-                    java.nio.file.Path subprojectPath = projectPath.resolve(pathStr);
-                    if (Files.isDirectory(subprojectPath)) {
-                        subprojects.add(subprojectPath);
-                    }
-                }
-            }
-        } catch (IOException e) {
-            log.debug("Failed to read settings.gradle for subprojects: {}", e.getMessage());
-        }
-        return subprojects;
-    }
-
     private void addDependencyEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath) {
         BuildSystem buildSystem = detectBuildSystem(projectPath);
 
         List<String> jars = switch (buildSystem) {
             case MAVEN -> getMavenDependencies(projectPath);
-            case GRADLE -> getGradleDependencies(projectPath);
+            case GRADLE -> gradleImporter.getDependencies(projectPath, warnings);
             case BAZEL -> bazelImporter.getDependencies(projectPath, warnings);
             default -> List.of();
         };
@@ -812,303 +772,6 @@ public class ProjectImporter {
             sb.append(t);
         }
         return sb.toString();
-    }
-
-    /**
-     * Init script that registers a {@code javalensWriteClasspath} task in every Java
-     * subproject. The task writes three files under each subproject's {@code build/}:
-     * <ul>
-     *   <li>{@code javalens-classpath.txt} — testRuntime/runtime/compile classpath jars.</li>
-     *   <li>{@code javalens-compliance.txt} — declared {@code sourceCompatibility} (Bug G).</li>
-     *   <li>{@code javalens-processors.txt} — annotationProcessor configuration jars (Bug H).</li>
-     * </ul>
-     * ProjectImporter reads all three after Gradle exits.
-     */
-    private static final String GRADLE_INIT_SCRIPT = """
-        allprojects { proj ->
-            proj.afterEvaluate {
-                if (proj.plugins.hasPlugin('java-base')) {
-                    proj.tasks.register('javalensWriteClasspath') {
-                        doLast {
-                            def buildDir = proj.buildDir
-                            buildDir.mkdirs()
-
-                            // Union compileClasspath (includes compileOnly deps like Lombok),
-                            // testRuntimeClasspath (includes test deps), and runtimeClasspath
-                            // (the actual runtime). Picking just one drops compileOnly deps,
-                            // which JDT needs for code that references compile-time annotations.
-                            def cps = [] as Set
-                            ['compileClasspath', 'testCompileClasspath',
-                             'runtimeClasspath', 'testRuntimeClasspath'].each { cfgName ->
-                                proj.configurations.findByName(cfgName)?.resolve()?.each { cps << it.absolutePath }
-                            }
-                            new File(buildDir, 'javalens-classpath.txt').text =
-                                cps.join(System.getProperty('path.separator'))
-
-                            def srcCompat = ''
-                            try {
-                                if (proj.hasProperty('java') && proj.java.sourceCompatibility) {
-                                    srcCompat = proj.java.sourceCompatibility.toString()
-                                } else if (proj.hasProperty('sourceCompatibility') && proj.sourceCompatibility) {
-                                    srcCompat = proj.sourceCompatibility.toString()
-                                }
-                            } catch (Exception ignored) {}
-                            if (srcCompat) {
-                                new File(buildDir, 'javalens-compliance.txt').text = srcCompat
-                            }
-
-                            def procs = [] as Set
-                            proj.configurations.findByName('annotationProcessor')?.resolve()?.each { procs << it.absolutePath }
-                            if (procs) {
-                                new File(buildDir, 'javalens-processors.txt').text =
-                                    procs.join(System.getProperty('path.separator'))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        """;
-
-    private static final String GRADLE_CP_FILENAME = "javalens-classpath.txt";
-    private static final String GRADLE_COMPLIANCE_FILENAME = "javalens-compliance.txt";
-    private static final String GRADLE_PROCESSORS_FILENAME = "javalens-processors.txt";
-
-    /**
-     * Bug D fix: the original implementation was a stub returning {@code List.of()}, leaving
-     * Gradle projects with empty classpaths. We now ship a Gradle init script that registers a
-     * {@code javalensWriteClasspath} task in every subproject and run it via the project's
-     * Gradle Wrapper (preferred) or {@code gradle} on PATH. Per-subproject classpath files
-     * land at {@code <subproject>/build/javalens-classpath.txt}; we walk the tree and union
-     * them.
-     */
-    private List<String> getGradleDependencies(java.nio.file.Path projectPath) {
-        java.util.LinkedHashSet<String> jars = new java.util.LinkedHashSet<>();
-
-        String gradleBinary = resolveGradleBinary(projectPath);
-        if (gradleBinary == null) {
-            warnings.add(new LoadWarning(
-                LoadWarning.GRADLE_SUBPROCESS_FAILED,
-                "No Gradle binary available: neither the project's Gradle Wrapper nor a 'gradle' on PATH",
-                "Commit a Gradle Wrapper (./gradlew) into the project, or install Gradle and ensure 'gradle' is on PATH for the process that launches JavaLens."));
-            return new ArrayList<>(jars);
-        }
-
-        java.nio.file.Path initScript = null;
-        StringBuilder capturedOutput = new StringBuilder();
-        try {
-            initScript = Files.createTempFile("javalens-gradle-init-", ".gradle");
-            Files.writeString(initScript, GRADLE_INIT_SCRIPT);
-
-            ProcessBuilder pb = new ProcessBuilder(
-                gradleBinary,
-                "--init-script", initScript.toAbsolutePath().toString(),
-                "javalensWriteClasspath",
-                "-q",
-                "--console=plain"
-            );
-            pb.directory(projectPath.toFile());
-            pb.redirectErrorStream(true);
-
-            log.info("Running Gradle to get classpath...");
-            Process process;
-            try {
-                process = pb.start();
-            } catch (IOException e) {
-                log.warn("Cannot start Gradle subprocess: {}", e.getMessage());
-                warnings.add(new LoadWarning(
-                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
-                    "Could not start '" + gradleBinary + "': " + e.getMessage(),
-                    "Verify the Gradle Wrapper is intact, or install Gradle and ensure 'gradle' is on PATH."));
-                return new ArrayList<>(jars);
-            }
-
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (capturedOutput.length() < 4096) {
-                        capturedOutput.append(line).append('\n');
-                    }
-                }
-            }
-
-            // Gradle wrapper sometimes downloads a distribution on first run, hence a generous
-            // timeout. Subsequent runs hit the cache.
-            boolean completed = process.waitFor(10, TimeUnit.MINUTES);
-            if (!completed) {
-                process.destroyForcibly();
-                log.warn("Gradle classpath command timed out");
-                warnings.add(new LoadWarning(
-                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
-                    "Gradle javalensWriteClasspath did not finish within 10 minutes",
-                    "Check that the project's build.gradle resolves correctly. Try running './gradlew help' manually in " + projectPath));
-                return new ArrayList<>(jars);
-            }
-
-            if (process.exitValue() == 0) {
-                aggregateGradleClasspathFiles(projectPath, jars);
-                // Harvest compliance + processor jars while their aux files still exist.
-                // The cleanup in finally below removes them; subsequent applyCompilerOptions
-                // / applyAnnotationProcessing read from the cache populated here.
-                cachedGradleCompilerLevel = readFirstGradleAuxFile(projectPath, GRADLE_COMPLIANCE_FILENAME);
-                cachedGradleProcessorJars.clear();
-                cachedGradleProcessorJars.addAll(readGradleProcessorJars(projectPath));
-                log.info("Got {} classpath entries from Gradle (compliance={}, {} processor jars)",
-                    jars.size(), cachedGradleCompilerLevel, cachedGradleProcessorJars.size());
-            } else {
-                int exitCode = process.exitValue();
-                log.warn("Gradle classpath command failed with exit code: {}", exitCode);
-                String snippet = trimToLastLines(capturedOutput.toString(), 5);
-                warnings.add(new LoadWarning(
-                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
-                    "Gradle javalensWriteClasspath exited with code " + exitCode +
-                        (snippet.isEmpty() ? "" : ". Last output: " + snippet),
-                    "Run './gradlew help' manually in " + projectPath + " to see the full error."));
-            }
-        } catch (Exception e) {
-            log.error("Failed to get Gradle classpath", e);
-            warnings.add(new LoadWarning(
-                LoadWarning.GRADLE_SUBPROCESS_FAILED,
-                "Gradle invocation threw an unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage(),
-                "Run './gradlew help' manually in " + projectPath + " to reproduce."));
-        } finally {
-            if (initScript != null) {
-                try { Files.deleteIfExists(initScript); }
-                catch (IOException e) { log.trace("Could not delete init script: {}", e.getMessage()); }
-            }
-            cleanupGradleClasspathFiles(projectPath);
-        }
-
-        return new ArrayList<>(jars);
-    }
-
-    /**
-     * Locate a Gradle binary to invoke. Prefers the project's Gradle Wrapper
-     * ({@code ./gradlew}), then {@code gradle} on PATH; returns {@code null} if neither is
-     * available. Test runs can override via the {@code javalens.gradle.binary} system
-     * property.
-     */
-    private String resolveGradleBinary(java.nio.file.Path projectPath) {
-        String override = System.getProperty("javalens.gradle.binary");
-        if (override != null && !override.isBlank()) return override;
-
-        String wrapperName = isWindows() ? "gradlew.bat" : "gradlew";
-        java.nio.file.Path wrapper = projectPath.resolve(wrapperName);
-        if (Files.isRegularFile(wrapper)) return wrapper.toAbsolutePath().toString();
-
-        return isWindows() ? "gradle.bat" : "gradle";
-    }
-
-    private void aggregateGradleClasspathFiles(java.nio.file.Path projectPath, java.util.Set<String> jars) {
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && GRADLE_CP_FILENAME.equals(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                  .forEach(cpFile -> {
-                      try {
-                          String content = Files.readString(cpFile).trim();
-                          if (!content.isEmpty()) {
-                              for (String entry : content.split(File.pathSeparator)) {
-                                  if (!entry.isBlank()) jars.add(entry);
-                              }
-                          }
-                      } catch (IOException e) {
-                          log.warn("Could not read Gradle classpath file {}: {}", cpFile, e.getMessage());
-                      }
-                  });
-        } catch (IOException e) {
-            log.warn("Failed to walk {} for Gradle classpath files: {}", projectPath, e.getMessage());
-        }
-    }
-
-    private void cleanupGradleClasspathFiles(java.nio.file.Path projectPath) {
-        // Cleanup all three aux files written by the init script. Compliance + processor
-        // files are read by applyCompilerOptions / applyAnnotationProcessing further along
-        // configureJavaProject, so cleanup happens after those callsites consume them.
-        java.util.Set<String> auxFiles = java.util.Set.of(
-            GRADLE_CP_FILENAME, GRADLE_COMPLIANCE_FILENAME, GRADLE_PROCESSORS_FILENAME);
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && auxFiles.contains(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                  .forEach(p -> {
-                      try { Files.deleteIfExists(p); }
-                      catch (IOException e) { log.trace("Could not delete {}: {}", p, e.getMessage()); }
-                  });
-        } catch (IOException e) {
-            log.trace("Cleanup walk failed for {}: {}", projectPath, e.getMessage());
-        }
-    }
-
-    /** Cached during {@link #getGradleDependencies}; null when no Gradle build ran. */
-    private String detectGradleCompilerLevel(java.nio.file.Path projectPath) {
-        return cachedGradleCompilerLevel;
-    }
-
-    /** Cached during {@link #getGradleDependencies}; empty when no Gradle build ran. */
-    private List<java.nio.file.Path> detectGradleAnnotationProcessors(java.nio.file.Path projectPath) {
-        return new ArrayList<>(cachedGradleProcessorJars);
-    }
-
-    /**
-     * Read the first {@code build/<filename>} aux file the init script wrote. In a
-     * multi-project build every Java subproject writes its own; we use the first one as a
-     * representative value (compliance levels are typically uniform).
-     */
-    private String readFirstGradleAuxFile(java.nio.file.Path projectPath, String filename) {
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
-            return stream.filter(p -> p.getFileName() != null
-                        && filename.equals(p.getFileName().toString()))
-                    .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                    .map(p -> {
-                        try { return Files.readString(p).trim(); }
-                        catch (IOException e) { return ""; }
-                    })
-                    .filter(s -> !s.isEmpty())
-                    .findFirst()
-                    .orElse(null);
-        } catch (IOException e) {
-            log.debug("Failed to walk for Gradle {} files: {}", filename, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Walk for {@code build/javalens-processors.txt} files and union their entries into a
-     * list of processor jar paths.
-     */
-    private List<java.nio.file.Path> readGradleProcessorJars(java.nio.file.Path projectPath) {
-        java.util.LinkedHashSet<java.nio.file.Path> jars = new java.util.LinkedHashSet<>();
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && GRADLE_PROCESSORS_FILENAME.equals(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                  .forEach(file -> {
-                      try {
-                          String content = Files.readString(file).trim();
-                          if (content.isEmpty()) return;
-                          for (String entry : content.split(File.pathSeparator)) {
-                              String trimmed = entry.trim();
-                              if (trimmed.isEmpty()) continue;
-                              java.nio.file.Path jar = java.nio.file.Path.of(trimmed);
-                              if (Files.isRegularFile(jar)) jars.add(jar);
-                          }
-                      } catch (IOException e) {
-                          log.warn("Could not read Gradle processors file {}: {}", file, e.getMessage());
-                      }
-                  });
-        } catch (IOException e) {
-            log.warn("Failed to walk for Gradle processor files: {}", e.getMessage());
-        }
-        return new ArrayList<>(jars);
     }
 
     private boolean isWindows() {
