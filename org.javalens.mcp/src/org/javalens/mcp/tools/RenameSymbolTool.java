@@ -9,8 +9,10 @@ import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -28,6 +30,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -147,6 +150,12 @@ public class RenameSymbolTool extends AbstractTool {
                 log.debug("Using handle identifier as fallback: {}", targetKey);
             }
 
+            // Renaming a method must also rename its overriders (in subtypes) and
+            // overridden parents (in supertypes), or the override chain breaks and the
+            // code stops compiling. Pre-compute the binding keys for all related
+            // methods so the visitor below accepts any of them as a rename target.
+            Set<String> compatibleKeys = computeCompatibleKeys(element, targetKey);
+
             // Find all references across project
             Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
             int totalEdits = 0;
@@ -163,7 +172,7 @@ public class RenameSymbolTool extends AbstractTool {
                     CompilationUnit sourceAst = (CompilationUnit) sourceParser.createAST(null);
 
                     List<Map<String, Object>> fileEdits = findRenameEdits(
-                        sourceAst, targetKey, oldName, newName
+                        sourceAst, compatibleKeys, oldName, newName
                     );
 
                     if (!fileEdits.isEmpty()) {
@@ -203,7 +212,67 @@ public class RenameSymbolTool extends AbstractTool {
         }
     }
 
-    private List<Map<String, Object>> findRenameEdits(CompilationUnit ast, String targetKey,
+    /**
+     * For a method, gather the binding keys of every related method whose name must
+     * change in lockstep: the method itself, every overrider in the subtype hierarchy,
+     * and every overridden method in the supertype hierarchy. Renaming an interface
+     * method without propagating to implementors would leave the implementor signature
+     * mismatched against the interface — the project would stop compiling. For non-
+     * methods (fields, types, locals) the set is just the single target key.
+     */
+    private Set<String> computeCompatibleKeys(IJavaElement element, String targetKey) {
+        Set<String> keys = new LinkedHashSet<>();
+        keys.add(targetKey);
+
+        if (!(element instanceof IMethod targetMethod)) return keys;
+
+        try {
+            IType declaringType = targetMethod.getDeclaringType();
+            if (declaringType == null) return keys;
+
+            ITypeHierarchy hierarchy = declaringType.newTypeHierarchy(new NullProgressMonitor());
+            for (IType subtype : hierarchy.getAllSubtypes(declaringType)) {
+                addBindingKeyForMatchingMethod(subtype, targetMethod, keys);
+            }
+            for (IType supertype : hierarchy.getAllSupertypes(declaringType)) {
+                addBindingKeyForMatchingMethod(supertype, targetMethod, keys);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to compute override-related binding keys: {}", e.getMessage());
+        }
+        return keys;
+    }
+
+    private void addBindingKeyForMatchingMethod(IType type, IMethod target, Set<String> keys) {
+        try {
+            String targetName = target.getElementName();
+            String[] targetParamTypes = target.getParameterTypes();
+            for (IMethod m : type.getMethods()) {
+                if (!m.getElementName().equals(targetName)) continue;
+                String[] paramTypes = m.getParameterTypes();
+                if (paramTypes.length != targetParamTypes.length) continue;
+                boolean match = true;
+                for (int i = 0; i < paramTypes.length; i++) {
+                    if (!paramTypes[i].equals(targetParamTypes[i])) { match = false; break; }
+                }
+                if (!match) continue;
+
+                ICompilationUnit cu = m.getCompilationUnit();
+                if (cu == null) continue;
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(cu);
+                parser.setResolveBindings(true);
+                parser.setBindingsRecovery(true);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                String key = findBindingKey(m, ast, targetName);
+                if (key != null) keys.add(key);
+            }
+        } catch (Exception e) {
+            log.debug("Error matching method in {}: {}", type.getFullyQualifiedName(), e.getMessage());
+        }
+    }
+
+    private List<Map<String, Object>> findRenameEdits(CompilationUnit ast, Set<String> compatibleKeys,
                                                        String oldName, String newName) {
         List<Map<String, Object>> edits = new ArrayList<>();
 
@@ -215,7 +284,7 @@ public class RenameSymbolTool extends AbstractTool {
                 }
 
                 IBinding nodeBinding = node.resolveBinding();
-                if (nodeBinding != null && targetKey.equals(nodeBinding.getKey())) {
+                if (nodeBinding != null && compatibleKeys.contains(nodeBinding.getKey())) {
                     Map<String, Object> edit = new LinkedHashMap<>();
                     edit.put("line", ast.getLineNumber(node.getStartPosition()) - 1);
                     edit.put("column", ast.getColumnNumber(node.getStartPosition()));
