@@ -273,68 +273,91 @@ public class SearchService {
     // These use IJavaSearchConstants fine-grain reference types that only JDT can do.
 
     /**
-     * Find all usages of an annotation type.
-     * Example: Find all @Autowired, @Test, @Entity usages.
-     * JDT-unique: LSP cannot distinguish annotation references from other type references.
+     * Categories of fine-grained type references that JDT can distinguish
+     * (LSP cannot). Each maps to one {@code IJavaSearchConstants.*_TYPE_REFERENCE}
+     * value via the internal {@link #JDT_KIND} table.
      */
+    public enum ReferenceKind {
+        ANNOTATION,
+        INSTANTIATION,
+        CAST,
+        INSTANCEOF,
+        THROWS_CLAUSE,
+        CATCH,
+        TYPE_ARGUMENT
+    }
+
+    private static final java.util.Map<ReferenceKind, Integer> JDT_KIND;
+    static {
+        var m = new java.util.EnumMap<ReferenceKind, Integer>(ReferenceKind.class);
+        m.put(ReferenceKind.ANNOTATION, IJavaSearchConstants.ANNOTATION_TYPE_REFERENCE);
+        m.put(ReferenceKind.INSTANTIATION, IJavaSearchConstants.CLASS_INSTANCE_CREATION_TYPE_REFERENCE);
+        m.put(ReferenceKind.CAST, IJavaSearchConstants.CAST_TYPE_REFERENCE);
+        m.put(ReferenceKind.INSTANCEOF, IJavaSearchConstants.INSTANCEOF_TYPE_REFERENCE);
+        m.put(ReferenceKind.THROWS_CLAUSE, IJavaSearchConstants.THROWS_CLAUSE_TYPE_REFERENCE);
+        m.put(ReferenceKind.CATCH, IJavaSearchConstants.CATCH_TYPE_REFERENCE);
+        m.put(ReferenceKind.TYPE_ARGUMENT, IJavaSearchConstants.TYPE_ARGUMENT_TYPE_REFERENCE);
+        JDT_KIND = java.util.Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * Find fine-grained references to a type by category. The category maps to
+     * a JDT {@code IJavaSearchConstants.*_TYPE_REFERENCE} value internally.
+     * JDT-unique: LSP cannot distinguish these reference shapes.
+     */
+    public List<SearchMatch> findReferences(IType type, ReferenceKind kind, int maxResults) throws CoreException {
+        return findFineGrainReferences(type, JDT_KIND.get(kind), maxResults);
+    }
+
+    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#ANNOTATION}. */
+    @Deprecated
     public List<SearchMatch> findAnnotationUsages(IType annotationType, int maxResults) throws CoreException {
-        return findFineGrainReferences(annotationType, IJavaSearchConstants.ANNOTATION_TYPE_REFERENCE, maxResults);
+        return findReferences(annotationType, ReferenceKind.ANNOTATION, maxResults);
     }
 
-    /**
-     * Find all instantiations of a type (new Foo() calls).
-     * JDT-unique: LSP cannot distinguish instantiation from other type references.
-     */
+    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#INSTANTIATION}. */
+    @Deprecated
     public List<SearchMatch> findTypeInstantiations(IType type, int maxResults) throws CoreException {
-        return findFineGrainReferences(type, IJavaSearchConstants.CLASS_INSTANCE_CREATION_TYPE_REFERENCE, maxResults);
+        return findReferences(type, ReferenceKind.INSTANTIATION, maxResults);
     }
 
-    /**
-     * Find all casts to a type ((Foo) x expressions).
-     * JDT-unique: Helps identify unsafe downcasts and refactoring opportunities.
-     */
+    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#CAST}. */
+    @Deprecated
     public List<SearchMatch> findCasts(IType type, int maxResults) throws CoreException {
-        return findFineGrainReferences(type, IJavaSearchConstants.CAST_TYPE_REFERENCE, maxResults);
+        return findReferences(type, ReferenceKind.CAST, maxResults);
     }
 
-    /**
-     * Find all instanceof checks for a type (x instanceof Foo).
-     * JDT-unique: Helps identify type checking patterns and polymorphism issues.
-     */
+    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#INSTANCEOF}. */
+    @Deprecated
     public List<SearchMatch> findInstanceofChecks(IType type, int maxResults) throws CoreException {
-        return findFineGrainReferences(type, IJavaSearchConstants.INSTANCEOF_TYPE_REFERENCE, maxResults);
+        return findReferences(type, ReferenceKind.INSTANCEOF, maxResults);
     }
 
-    /**
-     * Find all throws declarations of an exception type (throws Foo).
-     * JDT-unique: Helps understand exception flow in method signatures.
-     */
+    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#THROWS_CLAUSE}. */
+    @Deprecated
     public List<SearchMatch> findThrowsDeclarations(IType exceptionType, int maxResults) throws CoreException {
-        return findFineGrainReferences(exceptionType, IJavaSearchConstants.THROWS_CLAUSE_TYPE_REFERENCE, maxResults);
+        return findReferences(exceptionType, ReferenceKind.THROWS_CLAUSE, maxResults);
     }
 
-    /**
-     * Find all catch blocks for an exception type (catch(Foo e)).
-     * JDT-unique: Helps understand exception handling patterns.
-     */
+    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#CATCH}. */
+    @Deprecated
     public List<SearchMatch> findCatchBlocks(IType exceptionType, int maxResults) throws CoreException {
-        return findFineGrainReferences(exceptionType, IJavaSearchConstants.CATCH_TYPE_REFERENCE, maxResults);
+        return findReferences(exceptionType, ReferenceKind.CATCH, maxResults);
+    }
+
+    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#TYPE_ARGUMENT}. */
+    @Deprecated
+    public List<SearchMatch> findTypeArguments(IType type, int maxResults) throws CoreException {
+        return findReferences(type, ReferenceKind.TYPE_ARGUMENT, maxResults);
     }
 
     /**
-     * Find all method reference expressions (Foo::bar lambdas).
-     * JDT-unique: Helps understand functional programming patterns.
+     * Find all method reference expressions ({@code Foo::bar} lambdas).
+     * JDT-unique: distinct from the type-reference enum above because it
+     * searches against an {@link IMethod}, not an {@link IType}.
      */
     public List<SearchMatch> findMethodReferences(IMethod method, int maxResults) throws CoreException {
         return findReferences(method, IJavaSearchConstants.METHOD_REFERENCE_EXPRESSION, maxResults);
-    }
-
-    /**
-     * Find all type argument usages (List<Foo>, Map<K, Foo>).
-     * JDT-unique: Helps understand generic usage patterns.
-     */
-    public List<SearchMatch> findTypeArguments(IType type, int maxResults) throws CoreException {
-        return findFineGrainReferences(type, IJavaSearchConstants.TYPE_ARGUMENT_TYPE_REFERENCE, maxResults);
     }
 
     /**
