@@ -21,7 +21,6 @@ import java.io.InputStreamReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -68,17 +67,18 @@ public class ProjectImporter {
     private final LinkedFolderConfigurator linkedFolderConfigurator = new LinkedFolderConfigurator();
 
     /**
+     * Bazel build-system support (1.4.0 E-10 C2): source-path discovery for
+     * BUILD-anchored layouts, classpath assembly from bazel-bin/bazel-out (with
+     * symlink-aware dedup), and javacopts-derived compiler-level extraction.
+     */
+    private final BazelImporter bazelImporter = new BazelImporter();
+
+    /**
      * Returns the warnings from the most recent project import.
      */
     public List<LoadWarning> getWarnings() {
         return Collections.unmodifiableList(warnings);
     }
-
-    // Directories to skip during recursive source scanning
-    private static final List<String> IGNORED_DIRS = List.of(
-        ".git", ".svn", ".mvn", ".gradle", ".settings", ".metadata",
-        "node_modules", "target", "build", "bin", "out", "dist"
-    );
 
     // Pattern to extract module names from pom.xml
     private static final Pattern MODULE_PATTERN = Pattern.compile("<module>([^<]+)</module>");
@@ -179,8 +179,14 @@ public class ProjectImporter {
         // emit", so the warning was removed.
         // Cross-cutting scan: pick up any jar with a processor SPI descriptor so Bazel +
         // any classpath that quietly carries a processor (compileOnly, transitive, etc.)
-        // gets APT wired up.
-        for (java.nio.file.Path jar : currentClasspathJars(projectPath, buildSystem)) {
+        // gets APT wired up. Maven/Gradle declare processors via build-file blocks already
+        // harvested above; only Bazel needs the resolve-and-scan fallback because there is
+        // no per-target processor-path declaration we parse.
+        List<java.nio.file.Path> resolvedJars = switch (buildSystem) {
+            case BAZEL -> bazelImporter.getResolvedClasspathJars(projectPath, warnings);
+            case MAVEN, GRADLE, UNKNOWN -> List.of();
+        };
+        for (java.nio.file.Path jar : resolvedJars) {
             if (jarDeclaresAnnotationProcessor(jar)) {
                 processorJars.add(jar);
             }
@@ -203,25 +209,6 @@ public class ProjectImporter {
         } catch (CoreException e) {
             log.warn("Failed to configure APT: {}", e.getMessage());
         }
-    }
-
-    /**
-     * Jars to feed the cross-cutting APT-discovery scan. Maven and Gradle already extract
-     * formal processor declarations from build files; the scan is redundant for them. For
-     * Bazel there is no per-target processor-path declaration we parse, so the only way
-     * APT gets wired for Bazel projects today is by scanning the resolved jars on the
-     * build classpath for the standard SPI descriptor. {@code getBazelDependencies} is a
-     * pure filesystem walk (no subprocess), so calling it again here is cheap.
-     */
-    private List<java.nio.file.Path> currentClasspathJars(java.nio.file.Path projectPath, BuildSystem buildSystem) {
-        if (buildSystem != BuildSystem.BAZEL) return List.of();
-        List<String> raw = getBazelDependencies(projectPath);
-        List<java.nio.file.Path> result = new ArrayList<>(raw.size());
-        for (String s : raw) {
-            java.nio.file.Path p = java.nio.file.Path.of(s);
-            if (Files.isRegularFile(p)) result.add(p);
-        }
-        return result;
     }
 
     /**
@@ -341,7 +328,7 @@ public class ProjectImporter {
         String level = switch (buildSystem) {
             case MAVEN -> detectMavenCompilerLevel(projectPath);
             case GRADLE -> detectGradleCompilerLevel(projectPath);
-            case BAZEL -> detectBazelCompilerLevel(projectPath);
+            case BAZEL -> bazelImporter.detectCompilerLevel(projectPath);
             case UNKNOWN -> null;
         };
         // Final fallback for any build system that didn't surface a level: use the running
@@ -549,10 +536,9 @@ public class ProjectImporter {
 
         // For Bazel multi-target builds, walk for every BUILD/BUILD.bazel package and
         // probe it for standard layouts (src/main/java, etc.). Without this, only targets
-        // co-located with their .java files are discovered (the original
-        // addBazelSourcePaths behavior, kept below as a fallback for that layout).
+        // co-located with their .java files are discovered (handled by the fallback below).
         if (detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
-            for (java.nio.file.Path targetPkg : getBazelTargetPackages(projectPath)) {
+            for (java.nio.file.Path targetPkg : bazelImporter.getTargetPackages(projectPath)) {
                 linkedFolderConfigurator.addSourcePathsFromDirectory(targetPkg, sourcePaths);
             }
         }
@@ -560,31 +546,10 @@ public class ProjectImporter {
         // For Bazel projects without standard source layout, scan for directories that
         // hold both BUILD files and .java sources directly.
         if (sourcePaths.isEmpty() && detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
-            addBazelSourcePaths(projectPath, sourcePaths);
+            bazelImporter.addFallbackSourcePaths(projectPath, sourcePaths);
         }
 
         return sourcePaths;
-    }
-
-    /**
-     * Walk the project tree for every directory containing a {@code BUILD} or
-     * {@code BUILD.bazel} file (a Bazel "package"). These are the natural roots from which
-     * to probe for {@code src/main/java}-style layouts in multi-target Bazel builds.
-     * Bazel output trees ({@code bazel-*}) are skipped.
-     */
-    private List<java.nio.file.Path> getBazelTargetPackages(java.nio.file.Path projectPath) {
-        List<java.nio.file.Path> packages = new ArrayList<>();
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
-            stream.filter(Files::isDirectory)
-                  .filter(dir -> !IGNORED_DIRS.contains(dir.getFileName().toString()))
-                  .filter(dir -> !isBazelOutputDirectory(projectPath, dir))
-                  .filter(dir -> Files.exists(dir.resolve("BUILD"))
-                              || Files.exists(dir.resolve("BUILD.bazel")))
-                  .forEach(packages::add);
-        } catch (IOException e) {
-            log.debug("Failed to walk for Bazel packages: {}", e.getMessage());
-        }
-        return packages;
     }
 
     /**
@@ -632,7 +597,7 @@ public class ProjectImporter {
         List<String> jars = switch (buildSystem) {
             case MAVEN -> getMavenDependencies(projectPath);
             case GRADLE -> getGradleDependencies(projectPath);
-            case BAZEL -> getBazelDependencies(projectPath);
+            case BAZEL -> bazelImporter.getDependencies(projectPath, warnings);
             default -> List.of();
         };
 
@@ -1084,62 +1049,6 @@ public class ProjectImporter {
         return cachedGradleCompilerLevel;
     }
 
-    /**
-     * Read Java source level from BUILD.bazel files. Bazel exposes javac flags via the
-     * {@code javacopts} attribute on {@code java_library} / {@code java_binary} / etc.,
-     * which we walk for {@code -source}, {@code -target}, {@code --release}, and
-     * {@code --release=N}-style entries. Returns the highest level found across the
-     * workspace (multi-target builds may declare it on every target).
-     *
-     * <p>Workspace-wide flags via {@code .bazelrc} (e.g. {@code build --javacopt=-source})
-     * are not parsed; teams that pin compliance globally typically still set it per-target.
-     */
-    private String detectBazelCompilerLevel(java.nio.file.Path projectPath) {
-        Integer best = null;
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
-            for (java.nio.file.Path file : (Iterable<java.nio.file.Path>) stream
-                    .filter(p -> {
-                        if (p.getFileName() == null) return false;
-                        String n = p.getFileName().toString();
-                        return n.equals("BUILD") || n.equals("BUILD.bazel");
-                    })
-                    .filter(p -> !isBazelOutputDirectory(projectPath, p))::iterator) {
-                String content = Files.readString(file);
-                Matcher block = Pattern.compile("javacopts\\s*=\\s*\\[(.*?)\\]", Pattern.DOTALL).matcher(content);
-                while (block.find()) {
-                    Integer level = highestLevelInJavacopts(block.group(1));
-                    if (level != null && (best == null || level > best)) best = level;
-                }
-            }
-        } catch (IOException e) {
-            log.debug("Failed to walk for Bazel javacopts: {}", e.getMessage());
-        }
-        return best == null ? null : String.valueOf(best);
-    }
-
-    /**
-     * Extract the highest numeric Java level declared in a {@code javacopts} list literal.
-     * Recognizes {@code "-source", "17"}, {@code "-target", "17"}, {@code "--release", "17"},
-     * and {@code "--release=17"} forms.
-     */
-    private Integer highestLevelInJavacopts(String inner) {
-        Integer max = null;
-        // -source 17 / -target 17 / --release 17 (paired tokens)
-        Matcher paired = Pattern.compile(
-            "['\"](?:-source|-target|--release)['\"]\\s*,\\s*['\"](\\d+)['\"]").matcher(inner);
-        while (paired.find()) {
-            int v = Integer.parseInt(paired.group(1));
-            if (max == null || v > max) max = v;
-        }
-        // --release=17 (single token)
-        Matcher inline = Pattern.compile("['\"]--release=(\\d+)['\"]").matcher(inner);
-        while (inline.find()) {
-            int v = Integer.parseInt(inline.group(1));
-            if (max == null || v > max) max = v;
-        }
-        return max;
-    }
-
     /** Cached during {@link #getGradleDependencies}; empty when no Gradle build ran. */
     private List<java.nio.file.Path> detectGradleAnnotationProcessors(java.nio.file.Path projectPath) {
         return new ArrayList<>(cachedGradleProcessorJars);
@@ -1202,102 +1111,6 @@ public class ProjectImporter {
         return new ArrayList<>(jars);
     }
 
-    /**
-     * Get dependency JARs from Bazel build output.
-     *
-     * <p>Bug E fix: {@code bazel-bin} is typically a symlink that resolves into
-     * {@code bazel-out/<config>/bin/}. Scanning both naively produces every jar twice.
-     * We canonicalize each scan root with {@link java.nio.file.Path#toRealPath} and skip
-     * any root whose canonical path is contained in another root we've already scanned.
-     * Within a single scan, we additionally key collected paths by their canonical form so
-     * even hardlinks or nested symlinks dedupe.
-     */
-    private List<String> getBazelDependencies(java.nio.file.Path projectPath) {
-        java.util.LinkedHashSet<java.nio.file.Path> canonicalJars = new java.util.LinkedHashSet<>();
-        java.util.List<java.nio.file.Path> rootsToScan = canonicalizeAndDedupe(java.util.List.of(
-            projectPath.resolve("bazel-bin"),
-            projectPath.resolve("bazel-out")));
-        for (java.nio.file.Path root : rootsToScan) {
-            scanBazelDirForJars(root, canonicalJars);
-        }
-        List<String> jars = new ArrayList<>(canonicalJars.size());
-        for (java.nio.file.Path p : canonicalJars) jars.add(p.toString());
-        log.debug("Found {} JARs from Bazel output ({} candidate roots)", jars.size(), rootsToScan.size());
-        // Surface BAZEL_NOT_BUILT once per import when the user hasn't built the project
-        // recently. Two distinct cases produce the same signal:
-        //   1. Neither bazel-bin nor bazel-out exists (`rootsToScan.isEmpty()`).
-        //   2. The roots exist but contain no jars — typically `bazel clean` left the
-        //      symlinks pointing at empty trees. The signal is "JavaLens read what's there
-        //      and it's empty", not a JavaLens bug.
-        // Suppressed if a previous code path already added the warning.
-        boolean noScanRoots = rootsToScan.isEmpty();
-        boolean rootsButNoJars = !rootsToScan.isEmpty() && jars.isEmpty();
-        if ((noScanRoots || rootsButNoJars)
-                && warnings.stream().noneMatch(w -> LoadWarning.BAZEL_NOT_BUILT.equals(w.code()))) {
-            String detail = noScanRoots
-                ? "Neither bazel-bin nor bazel-out exists in " + projectPath
-                : "bazel-bin/bazel-out exist in " + projectPath + " but contain no jars (likely bazel clean was just run)";
-            warnings.add(new LoadWarning(
-                LoadWarning.BAZEL_NOT_BUILT,
-                detail + "; classpath will be empty",
-                "Run 'bazel build //...' (or the relevant target set) in the project root " +
-                    "before loading. JavaLens reads dependency jars from Bazel's build " +
-                    "output, not from the source tree."));
-        }
-        return jars;
-    }
-
-    /**
-     * Canonicalize each candidate root and drop any whose real path is contained in
-     * another root's real path (to avoid double-walking the same physical directory tree).
-     * Non-existent roots and roots whose canonicalization fails are skipped.
-     */
-    private java.util.List<java.nio.file.Path> canonicalizeAndDedupe(java.util.List<java.nio.file.Path> candidates) {
-        java.util.LinkedHashSet<java.nio.file.Path> reals = new java.util.LinkedHashSet<>();
-        for (java.nio.file.Path c : candidates) {
-            if (!Files.exists(c)) continue;
-            try {
-                reals.add(c.toRealPath());
-            } catch (IOException e) {
-                log.warn("Failed to canonicalize {}: {}", c, e.getMessage());
-            }
-        }
-        java.util.List<java.nio.file.Path> kept = new ArrayList<>();
-        for (java.nio.file.Path candidate : reals) {
-            boolean contained = false;
-            for (java.nio.file.Path other : reals) {
-                if (candidate.equals(other)) continue;
-                if (candidate.startsWith(other)) { contained = true; break; }
-            }
-            // Return canonical paths so scanBazelDirForJars walks real directories. On
-            // Linux, bazel-bin/bazel-out are real symbolic links and Files.walk without
-            // FOLLOW_LINKS treats a symlink-to-directory as a non-directory single entry,
-            // descending nothing. Walking the resolved canonical target avoids that.
-            if (!contained) kept.add(candidate);
-        }
-        return kept;
-    }
-
-    private void scanBazelDirForJars(java.nio.file.Path dir, java.util.Set<java.nio.file.Path> canonicalJars) {
-        if (!Files.exists(dir)) {
-            return;
-        }
-        try (Stream<java.nio.file.Path> stream = Files.walk(dir)) {
-            stream.filter(p -> p.toString().endsWith(".jar"))
-                  .filter(Files::isRegularFile)
-                  .forEach(p -> {
-                      try {
-                          canonicalJars.add(p.toRealPath());
-                      } catch (IOException e) {
-                          // Fall back to non-canonical path; dedup via Set semantics still helps.
-                          canonicalJars.add(p);
-                      }
-                  });
-        } catch (IOException e) {
-            log.warn("Failed to scan {} for JARs: {}", dir, e.getMessage());
-        }
-    }
-
     private boolean isWindows() {
         return System.getProperty("os.name").toLowerCase().contains("win");
     }
@@ -1343,39 +1156,6 @@ public class ProjectImporter {
         }
 
         return packages;
-    }
-
-    /**
-     * Scan for Java source directories in a Bazel project.
-     * Looks for directories containing both a BUILD/BUILD.bazel file and .java files.
-     * Skips bazel-* output directories.
-     */
-    private void addBazelSourcePaths(java.nio.file.Path projectPath, List<java.nio.file.Path> sourcePaths) {
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
-            stream.filter(Files::isDirectory)
-                  .filter(dir -> !IGNORED_DIRS.contains(dir.getFileName().toString()))
-                  .filter(dir -> !isBazelOutputDirectory(projectPath, dir))
-                  .filter(this::isBazelJavaPackage)
-                  .forEach(sourcePaths::add);
-        } catch (IOException e) {
-            log.warn("Failed to scan Bazel project for source directories: {}", e.getMessage());
-        }
-        log.debug("Found {} Bazel source directories", sourcePaths.size());
-    }
-
-    private boolean isBazelOutputDirectory(java.nio.file.Path projectRoot, java.nio.file.Path dir) {
-        if (dir.equals(projectRoot)) {
-            return false;
-        }
-        java.nio.file.Path relative = projectRoot.relativize(dir);
-        String first = relative.getName(0).toString();
-        return first.startsWith("bazel-");
-    }
-
-    private boolean isBazelJavaPackage(java.nio.file.Path dir) {
-        boolean hasBuildFile = Files.exists(dir.resolve("BUILD")) ||
-                               Files.exists(dir.resolve("BUILD.bazel"));
-        return hasBuildFile && containsJavaFiles(dir);
     }
 
     private boolean containsJavaFiles(java.nio.file.Path dir) {
