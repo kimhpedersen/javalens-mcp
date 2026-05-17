@@ -191,6 +191,43 @@ class JdtContractTest {
             "SearchService.searchSymbols can drop its broaden-then-filter shim.");
     }
 
+    // ========== R_REGEXP_MATCH is documented as "not yet supported by Eclipse JDT" ==========
+
+    @Test
+    @DisplayName("R_REGEXP_MATCH returns 0 matches even for an anchored literal (JDT docs: 'not yet supported')")
+    void regexpMatch_anchoredLiteral_returnsEmpty() throws Exception {
+        // JDT's SearchPattern Javadoc states R_REGEXP_MATCH is "not yet supported by
+        // Eclipse JDT". SearchService.searchSymbols's broaden-then-client-filter shim
+        // for ?-glob exists because of this. We pin the contract so a future JDT
+        // upgrade that implements R_REGEXP_MATCH causes this test to fail loudly,
+        // prompting us to drop the shim.
+        SearchPattern p = SearchPattern.createPattern(
+            "^Calculator$",
+            IJavaSearchConstants.TYPE,
+            IJavaSearchConstants.DECLARATIONS,
+            SearchPattern.R_REGEXP_MATCH | SearchPattern.R_CASE_SENSITIVE);
+        // JDT may either return null (rejecting the rule) or a pattern that produces
+        // zero matches. Both outcomes confirm "not yet supported".
+        List<SearchMatch> matches = runSearchAcceptingNull(p);
+        assertTrue(matches.isEmpty(),
+            "JDT contract: R_REGEXP_MATCH is documented as 'not yet supported by Eclipse JDT'. " +
+            "If this assertion fires, JDT added support — drop SearchService.searchSymbols's " +
+            "broaden-then-client-filter shim and use R_REGEXP_MATCH for ?-glob.");
+    }
+
+    @Test
+    @DisplayName("R_REGEXP_MATCH returns 0 matches for a dot-wildcard regex (JDT docs: 'not yet supported')")
+    void regexpMatch_dotWildcard_returnsEmpty() throws Exception {
+        SearchPattern p = SearchPattern.createPattern(
+            "^.alculator$",
+            IJavaSearchConstants.TYPE,
+            IJavaSearchConstants.DECLARATIONS,
+            SearchPattern.R_REGEXP_MATCH | SearchPattern.R_CASE_SENSITIVE);
+        List<SearchMatch> matches = runSearchAcceptingNull(p);
+        assertTrue(matches.isEmpty(),
+            "Same contract as anchored-literal: R_REGEXP_MATCH not yet supported.");
+    }
+
     // ========== Helpers ==========
 
     private List<SearchMatch> runSearch(SearchPattern pattern) throws Exception {

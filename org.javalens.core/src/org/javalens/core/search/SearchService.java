@@ -65,6 +65,13 @@ public class SearchService {
         // documents both as wildcards, so for patterns containing `?` we broaden the
         // JDT search (substituting `?` -> `*`) and then narrow client-side with a regex
         // compiled from the original glob.
+        //
+        // R_REGEXP_MATCH would be the natural alternative but the JDT Javadoc documents
+        // it as "not yet supported by Eclipse JDT". JdtContractTest pins both behaviors:
+        // patternMatch_questionWildcard_doesNotMatch confirms `?` is a literal under
+        // R_PATTERN_MATCH; regexpMatch_anchoredLiteral_returnsEmpty confirms
+        // R_REGEXP_MATCH returns zero matches. When the regexp rule is implemented
+        // upstream, those tests fail and this shim can be deleted.
         int searchForType = searchFor != null ? searchFor : IJavaSearchConstants.TYPE;
         boolean hasQuestionMark = pattern.indexOf('?') >= 0;
         String jdtSearchPattern = hasQuestionMark ? pattern.replace('?', '*') : pattern;
