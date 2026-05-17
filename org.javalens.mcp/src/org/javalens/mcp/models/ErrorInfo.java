@@ -107,6 +107,41 @@ public class ErrorInfo {
         );
     }
 
+    /**
+     * Build an internal-error ErrorInfo enriched with JDT diagnostic details
+     * when the throwable is a {@link org.eclipse.core.runtime.CoreException}.
+     * For plain throwables, falls back to {@link #internalError(String)}.
+     */
+    public static ErrorInfo fromThrowable(Throwable e) {
+        if (e == null) return internalError("<null exception>");
+        if (e instanceof org.eclipse.core.runtime.CoreException coreEx) {
+            org.eclipse.core.runtime.IStatus status = coreEx.getStatus();
+            if (status != null) {
+                String plugin = status.getPlugin() == null ? "<unknown>" : status.getPlugin();
+                String severity = severityName(status.getSeverity());
+                String base = "Internal JDT error [" + plugin + ":" + status.getCode()
+                    + ", " + severity + "]: " + status.getMessage();
+                return new ErrorInfo(
+                    INTERNAL_ERROR,
+                    base,
+                    "This is a JDT-layer failure; the plugin id + code identifies the JDT subsystem."
+                );
+            }
+        }
+        return internalError(e.getMessage());
+    }
+
+    private static String severityName(int severity) {
+        return switch (severity) {
+            case org.eclipse.core.runtime.IStatus.OK -> "OK";
+            case org.eclipse.core.runtime.IStatus.INFO -> "INFO";
+            case org.eclipse.core.runtime.IStatus.WARNING -> "WARNING";
+            case org.eclipse.core.runtime.IStatus.ERROR -> "ERROR";
+            case org.eclipse.core.runtime.IStatus.CANCEL -> "CANCEL";
+            default -> "SEVERITY(" + severity + ")";
+        };
+    }
+
     public static ErrorInfo refactoringFailed(String reason) {
         return new ErrorInfo(
             REFACTORING_FAILED,

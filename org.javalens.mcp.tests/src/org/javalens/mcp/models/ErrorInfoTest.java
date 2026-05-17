@@ -128,6 +128,48 @@ class ErrorInfoTest {
         assertTrue(error.getMessage().contains("name conflict"));
     }
 
+    // ========== fromThrowable Tests ==========
+
+    @Test
+    @DisplayName("fromThrowable(null) returns a generic internal error")
+    void fromThrowable_nullThrowable_isHandled() {
+        ErrorInfo error = ErrorInfo.fromThrowable(null);
+        assertEquals(ErrorInfo.INTERNAL_ERROR, error.getCode());
+        assertTrue(error.getMessage().contains("null exception"));
+    }
+
+    @Test
+    @DisplayName("fromThrowable(RuntimeException) falls back to plain internalError message")
+    void fromThrowable_runtimeException_fallsBackToPlainMessage() {
+        ErrorInfo error = ErrorInfo.fromThrowable(new RuntimeException("plain bug"));
+        assertEquals(ErrorInfo.INTERNAL_ERROR, error.getCode());
+        assertTrue(error.getMessage().contains("plain bug"));
+    }
+
+    @Test
+    @DisplayName("fromThrowable(CoreException with IStatus) unpacks plugin + code + severity")
+    void fromThrowable_coreException_unpacksStatus() {
+        org.eclipse.core.runtime.Status status = new org.eclipse.core.runtime.Status(
+            org.eclipse.core.runtime.IStatus.ERROR,
+            "org.example.test.plugin",
+            42,
+            "JDT subsystem failure detail",
+            null);
+        org.eclipse.core.runtime.CoreException ex = new org.eclipse.core.runtime.CoreException(status);
+
+        ErrorInfo error = ErrorInfo.fromThrowable(ex);
+
+        assertEquals(ErrorInfo.INTERNAL_ERROR, error.getCode());
+        assertTrue(error.getMessage().contains("org.example.test.plugin"),
+            "Message must include plugin id; got: " + error.getMessage());
+        assertTrue(error.getMessage().contains("42"),
+            "Message must include status code; got: " + error.getMessage());
+        assertTrue(error.getMessage().contains("ERROR"),
+            "Message must include severity name; got: " + error.getMessage());
+        assertTrue(error.getMessage().contains("JDT subsystem failure detail"),
+            "Message must include status message; got: " + error.getMessage());
+    }
+
     // ========== Error Code Constants Tests ==========
 
     @Test

@@ -138,9 +138,13 @@ public class ToolResponse {
     }
 
     /**
-     * Create an internal error response from an exception.
+     * Create an internal error response from an exception. JDT
+     * {@link org.eclipse.core.runtime.CoreException} carries an {@link
+     * org.eclipse.core.runtime.IStatus} with a plugin/code identifier and a
+     * structured severity; this factory unpacks that information so callers
+     * see the JDT diagnostic, not just the generic message.
      */
     public static ToolResponse internalError(Throwable e) {
-        return error(ErrorInfo.internalError(e.getMessage()));
+        return error(ErrorInfo.fromThrowable(e));
     }
 }
