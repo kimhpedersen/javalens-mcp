@@ -60,20 +60,19 @@ public class ProjectImporter {
     private final List<java.nio.file.Path> cachedGradleProcessorJars = new ArrayList<>();
 
     /**
+     * Per-directory source-path discovery + linked-folder creation. Split out of this class
+     * in 1.4.0 (E-10 C1): the layout probing and Eclipse linked-folder wiring don't depend
+     * on the build system, so the orchestrator delegates to them after harvesting source
+     * paths from build-system-specific aggregators.
+     */
+    private final LinkedFolderConfigurator linkedFolderConfigurator = new LinkedFolderConfigurator();
+
+    /**
      * Returns the warnings from the most recent project import.
      */
     public List<LoadWarning> getWarnings() {
         return Collections.unmodifiableList(warnings);
     }
-
-    // Source folder mapping: external relative path -> linked folder name
-    private static final String[][] SOURCE_MAPPINGS = {
-        {"src/main/java", "src-main-java"},
-        {"src/test/java", "src-test-java"},
-        {"src/main/kotlin", "src-main-kotlin"},
-        {"src/test/kotlin", "src-test-kotlin"},
-        {"src", "src"}
-    };
 
     // Directories to skip during recursive source scanning
     private static final List<String> IGNORED_DIRS = List.of(
@@ -111,8 +110,14 @@ public class ProjectImporter {
         IPath jreContainerPath = JavaRuntime.getDefaultJREContainerEntry().getPath();
         entries.add(JavaCore.newContainerEntry(jreContainerPath));
 
-        // 2. Create linked folders and add source entries
-        addSourceEntries(entries, project, projectPath, workspaceManager);
+        // 2. Create linked folders and add source entries. Source-path aggregation is
+        // build-system-aware (Maven modules, Gradle subprojects, Bazel packages); the
+        // per-directory layout probing and linked-folder creation live in
+        // LinkedFolderConfigurator.
+        List<java.nio.file.Path> sourcePaths = getAllSourcePaths(projectPath);
+        linkedFolderConfigurator.addLinkedSourceFolders(
+            entries, project, projectPath, sourcePaths, workspaceManager,
+            isMultiModuleProject(projectPath));
 
         // 3. Add dependency JARs from build system
         addDependencyEntries(entries, projectPath);
@@ -486,7 +491,7 @@ public class ProjectImporter {
         }
         if (!visited.add(canonical)) return;
 
-        addSourcePathsFromDirectory(moduleRoot, sourcePaths);
+        linkedFolderConfigurator.addSourcePathsFromDirectory(moduleRoot, sourcePaths);
 
         if (isMultiModuleProject(moduleRoot)) {
             for (java.nio.file.Path child : getModules(moduleRoot)) {
@@ -539,7 +544,7 @@ public class ProjectImporter {
         // src/main/java directories and their build/generated/sources/* are absent from
         // the classpath and types declared in subprojects show as unresolved.
         for (java.nio.file.Path subproject : getGradleSubprojects(projectPath)) {
-            addSourcePathsFromDirectory(subproject, sourcePaths);
+            linkedFolderConfigurator.addSourcePathsFromDirectory(subproject, sourcePaths);
         }
 
         // For Bazel multi-target builds, walk for every BUILD/BUILD.bazel package and
@@ -548,7 +553,7 @@ public class ProjectImporter {
         // addBazelSourcePaths behavior, kept below as a fallback for that layout).
         if (detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
             for (java.nio.file.Path targetPkg : getBazelTargetPackages(projectPath)) {
-                addSourcePathsFromDirectory(targetPkg, sourcePaths);
+                linkedFolderConfigurator.addSourcePathsFromDirectory(targetPkg, sourcePaths);
             }
         }
 
@@ -619,107 +624,6 @@ public class ProjectImporter {
             log.debug("Failed to read settings.gradle for subprojects: {}", e.getMessage());
         }
         return subprojects;
-    }
-
-    /**
-     * Add source paths from a single project directory.
-     */
-    private void addSourcePathsFromDirectory(java.nio.file.Path projectPath, List<java.nio.file.Path> sourcePaths) {
-        // Check standard layouts
-        for (int i = 0; i < SOURCE_MAPPINGS.length - 1; i++) {
-            java.nio.file.Path srcPath = projectPath.resolve(SOURCE_MAPPINGS[i][0]);
-            if (Files.exists(srcPath) && Files.isDirectory(srcPath)) {
-                sourcePaths.add(srcPath);
-            }
-        }
-
-        // Only add "src" fallback if no standard layout found for this directory
-        boolean foundStandard = sourcePaths.stream()
-            .anyMatch(p -> p.startsWith(projectPath));
-        if (!foundStandard) {
-            java.nio.file.Path srcPath = projectPath.resolve("src");
-            if (Files.exists(srcPath) && Files.isDirectory(srcPath)) {
-                sourcePaths.add(srcPath);
-            }
-        }
-
-        // Bug B fix: include generated-source directories. Annotation processors
-        // (Lombok, MapStruct, Dagger, JPA Metamodel) write here at build time, and the
-        // hand-written code references symbols from those generated files. Without these
-        // on the classpath as source folders, references are unresolved and many
-        // navigation / refactor tools return wrong results.
-        addGeneratedSourcePaths(projectPath, sourcePaths);
-    }
-
-    // Maven puts each annotation processor's output under its own subdirectory of
-    // target/generated-sources/ (e.g. annotations, jaxws, jpamodelgen, ...). Gradle's
-    // layout is build/generated/sources/<task>/{main,test}/java/. We probe one level
-    // deep so each processor's directory becomes its own source folder.
-    private void addGeneratedSourcePaths(java.nio.file.Path projectPath, List<java.nio.file.Path> sourcePaths) {
-        addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-sources"), sourcePaths);
-        addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-test-sources"), sourcePaths);
-
-        java.nio.file.Path gradleGenerated = projectPath.resolve("build").resolve("generated").resolve("sources");
-        if (Files.isDirectory(gradleGenerated)) {
-            try (Stream<java.nio.file.Path> tasks = Files.list(gradleGenerated)) {
-                tasks.filter(Files::isDirectory).forEach(taskDir -> {
-                    java.nio.file.Path mainJava = taskDir.resolve("main").resolve("java");
-                    java.nio.file.Path testJava = taskDir.resolve("test").resolve("java");
-                    if (Files.isDirectory(mainJava)) sourcePaths.add(mainJava);
-                    if (Files.isDirectory(testJava)) sourcePaths.add(testJava);
-                });
-            } catch (IOException e) {
-                log.debug("Failed to scan Gradle generated sources: {}", e.getMessage());
-            }
-        }
-    }
-
-    private void addImmediateSubdirectories(java.nio.file.Path parent, List<java.nio.file.Path> sourcePaths) {
-        if (!Files.isDirectory(parent)) return;
-        try (Stream<java.nio.file.Path> children = Files.list(parent)) {
-            children.filter(Files::isDirectory)
-                    .forEach(sourcePaths::add);
-        } catch (IOException e) {
-            log.debug("Failed to list {}: {}", parent, e.getMessage());
-        }
-    }
-
-    /**
-     * Create linked folders for source directories and add them to classpath.
-     * Uses linked folders to keep Eclipse metadata in the workspace.
-     * Supports multi-module projects by scanning submodules.
-     */
-    private void addSourceEntries(List<IClasspathEntry> entries, IProject project,
-            java.nio.file.Path projectPath, org.javalens.core.workspace.WorkspaceManager workspaceManager)
-            throws CoreException {
-
-        List<java.nio.file.Path> sourcePaths = getAllSourcePaths(projectPath);
-        int folderIndex = 0;
-
-        for (java.nio.file.Path srcPath : sourcePaths) {
-            // Create unique linked folder name based on relative path
-            String relativePath = projectPath.relativize(srcPath).toString().replace(File.separator, "-");
-            String linkedName = "src-" + folderIndex + "-" + sanitizeFolderName(relativePath);
-            folderIndex++;
-
-            try {
-                workspaceManager.createLinkedFolder(project, linkedName, srcPath);
-                IPath sourceEntryPath = project.getFolder(linkedName).getFullPath();
-                entries.add(JavaCore.newSourceEntry(sourceEntryPath));
-                log.debug("Added linked source folder: {} -> {}", linkedName, srcPath);
-            } catch (Exception e) {
-                log.warn("Failed to create linked folder for {}: {}", srcPath, e.getMessage());
-            }
-        }
-
-        log.info("Added {} source folders (multi-module: {})", sourcePaths.size(), isMultiModuleProject(projectPath));
-    }
-
-    /**
-     * Sanitize folder name for Eclipse project.
-     */
-    private String sanitizeFolderName(String name) {
-        return name.replaceAll("[^a-zA-Z0-9\\-_]", "-").replaceAll("-+", "-");
     }
 
     private void addDependencyEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath) {
