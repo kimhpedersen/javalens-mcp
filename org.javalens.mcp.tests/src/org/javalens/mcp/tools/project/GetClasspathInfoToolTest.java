@@ -40,22 +40,29 @@ class GetClasspathInfoToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Verify project info
-        assertNotNull(data.get("projectName"));
-        assertNotNull(data.get("projectRoot"));
-        assertNotNull(data.get("totalEntries"));
+        // Verify project info — non-blank identity fields, non-negative count
+        String projectName = (String) data.get("projectName");
+        assertNotNull(projectName, "projectName missing");
+        assertFalse(projectName.isBlank(), "projectName non-blank; got: " + data);
+        String projectRoot = (String) data.get("projectRoot");
+        assertNotNull(projectRoot, "projectRoot missing");
+        assertFalse(projectRoot.isBlank(), "projectRoot non-blank; got: " + data);
+        assertTrue(((Number) data.get("totalEntries")).intValue() >= 0,
+            "totalEntries >= 0; got: " + data);
 
         // Verify source folders
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> sourceFolders = (List<Map<String, Object>>) data.get("sourceFolders");
-        assertNotNull(sourceFolders);
-        assertFalse(sourceFolders.isEmpty());
+        assertNotNull(sourceFolders, "sourceFolders list must be present");
+        assertFalse(sourceFolders.isEmpty(), "fixture has source folders");
         assertEquals("source", sourceFolders.get(0).get("kind"));
 
-        // Verify containers (JRE)
+        // Verify containers (JRE) — should always include at least JRE
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> containers = (List<Map<String, Object>>) data.get("containers");
-        assertNotNull(containers);
+        assertNotNull(containers, "containers list must be present");
+        assertFalse(containers.isEmpty(),
+            "Every Java project has at least a JRE container; got: " + containers);
     }
 
     @Test @DisplayName("supports filter parameters")

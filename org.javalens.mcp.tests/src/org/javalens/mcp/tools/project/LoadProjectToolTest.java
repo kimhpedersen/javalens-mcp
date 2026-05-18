@@ -48,20 +48,26 @@ class LoadProjectToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Verify project info
+        // Verify project info — recognized build system
         assertTrue((Boolean) data.get("loaded"));
-        assertNotNull(data.get("projectPath"));
-        assertNotNull(data.get("buildSystem"));
+        assertNotNull(data.get("projectPath"), "projectPath key must be present");
+        String buildSystem = (String) data.get("buildSystem");
+        assertNotNull(buildSystem, "buildSystem missing");
+        // simple-maven is a Maven project — buildSystem must reflect that.
+        assertEquals("maven", buildSystem,
+            "simple-maven fixture is Maven; got: " + data);
         assertTrue((Integer) data.get("sourceFileCount") > 0);
         assertTrue((Integer) data.get("packageCount") > 0);
 
-        // Verify packages list
+        // Verify packages list contains com.example
         @SuppressWarnings("unchecked")
         List<String> packages = (List<String>) data.get("packages");
         assertFalse(packages.isEmpty());
+        assertTrue(packages.contains("com.example"),
+            "simple-maven fixture has com.example package; got: " + packages);
 
         // Verify service was set
-        assertNotNull(serviceRef.get());
+        assertNotNull(serviceRef.get(), "service reference must be populated on successful load");
     }
 
     @Test @DisplayName("requires projectPath parameter")

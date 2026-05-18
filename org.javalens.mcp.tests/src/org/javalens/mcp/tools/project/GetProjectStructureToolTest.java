@@ -40,9 +40,13 @@ class GetProjectStructureToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Verify project info
-        assertNotNull(data.get("projectName"));
-        assertNotNull(data.get("projectRoot"));
+        // Verify project info — non-blank identity
+        String projectName = (String) data.get("projectName");
+        assertNotNull(projectName, "projectName missing");
+        assertFalse(projectName.isBlank(), "projectName non-blank; got: " + data);
+        String projectRoot = (String) data.get("projectRoot");
+        assertNotNull(projectRoot, "projectRoot missing");
+        assertFalse(projectRoot.isBlank(), "projectRoot non-blank; got: " + data);
         assertTrue((Integer) data.get("totalPackages") > 0);
         assertTrue((Integer) data.get("totalFiles") > 0);
 
@@ -52,13 +56,21 @@ class GetProjectStructureToolTest {
         assertFalse(sourceRoots.isEmpty());
 
         Map<String, Object> srcRoot = sourceRoots.get(0);
-        assertNotNull(srcRoot.get("path"));
+        String srcPath = (String) srcRoot.get("path");
+        assertNotNull(srcPath, "source root path missing");
+        assertFalse(srcPath.isBlank(), "source root path non-blank; got: " + srcRoot);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> packages = (List<Map<String, Object>>) srcRoot.get("packages");
         assertFalse(packages.isEmpty());
-        assertNotNull(packages.get(0).get("name"));
-        assertNotNull(packages.get(0).get("fileCount"));
+        Map<String, Object> firstPkg = packages.get(0);
+        String pkgName = (String) firstPkg.get("name");
+        assertNotNull(pkgName, "package name missing");
+        assertFalse(pkgName.isBlank(), "package name non-blank; got: " + firstPkg);
+        // The default package is rendered with fileCount=0 when empty; non-default
+        // packages should report a non-negative count.
+        assertTrue(((Number) firstPkg.get("fileCount")).intValue() >= 0,
+            "fileCount >= 0; got: " + firstPkg);
     }
 
     @Test @DisplayName("supports optional parameters")
