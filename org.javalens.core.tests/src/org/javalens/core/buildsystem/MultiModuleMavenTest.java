@@ -7,6 +7,7 @@ import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
+import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -19,6 +20,8 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -72,6 +75,14 @@ class MultiModuleMavenTest {
                 "Expected commons-lang3 (declared in impl module) on classpath. Libraries: " + snapshot.libraries());
             assertTrue(snapshot.hasLibraryMatching(".*spring-core.*\\.jar"),
                 "Expected spring-core (declared in web module) on classpath. Libraries: " + snapshot.libraries());
+
+            // Silent-pass: a successful reactor load must not emit MAVEN_SUBPROCESS_FAILED.
+            // Without this, a regression that broke mvn invocation but happened to find
+            // jars elsewhere (e.g. test resources) could still pass the matchers above.
+            assertFalse(service.getWarnings().stream()
+                    .anyMatch(w -> LoadWarning.MAVEN_SUBPROCESS_FAILED.equals(w.code())),
+                "MAVEN_SUBPROCESS_FAILED must not fire on a successful reactor load. "
+                    + "Warnings: " + service.getWarnings());
         } finally {
             if (previousOverride == null) System.clearProperty("javalens.maven.binary");
             else System.setProperty("javalens.maven.binary", previousOverride);
@@ -103,14 +114,21 @@ class MultiModuleMavenTest {
 
             List<SearchMatch> refs = service.getSearchService()
                 .findReferences(greeter, IJavaSearchConstants.REFERENCES, 100);
+            List<String> refFiles = refs.stream()
+                .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
+                .toList();
 
-            boolean foundInImpl = refs.stream().anyMatch(m -> {
-                String resourcePath = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
-                return resourcePath.contains("GreeterImpl");
-            });
-            assertTrue(foundInImpl,
-                "Expected to find GreeterImpl as a reference to Greeter across the module boundary. " +
-                "Got " + refs.size() + " matches.");
+            // Greeter has exactly 2 type references, both in GreeterImpl.java:
+            //   line 3: import com.example.api.Greeter
+            //   line 6: implements Greeter
+            // GreeterController doesn't reference Greeter (it uses GreeterImpl directly).
+            // Pinning the exact count catches stale-match regressions that anyMatch hides.
+            assertEquals(2, refs.size(),
+                "Expected exactly 2 Greeter references (import + implements in "
+                    + "GreeterImpl.java). Got " + refs.size() + " matches in files: "
+                    + refFiles);
+            assertTrue(refFiles.stream().allMatch(f -> f.contains("GreeterImpl")),
+                "All Greeter refs must be in GreeterImpl.java; got: " + refFiles);
         } finally {
             if (previousOverride == null) System.clearProperty("javalens.maven.binary");
             else System.setProperty("javalens.maven.binary", previousOverride);
