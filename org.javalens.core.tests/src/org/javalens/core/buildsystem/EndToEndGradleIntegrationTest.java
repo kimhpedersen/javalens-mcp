@@ -1,6 +1,7 @@
 package org.javalens.core.buildsystem;
 
 import org.eclipse.jdt.apt.core.util.AptConfig;
+import org.eclipse.jdt.apt.core.util.IFactoryPath;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
@@ -15,12 +16,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -94,10 +98,24 @@ class EndToEndGradleIntegrationTest {
             assertEquals("17", snapshot.compilerCompliance(),
                 "Expected COMPILER_COMPLIANCE=17 from sourceCompatibility = JavaVersion.VERSION_17");
 
-            // === Bug H (Gradle): APT enabled for projects with annotationProcessor ====
+            // === Bug H (Gradle): APT enabled + factory path actually contains lombok ===
+            // isEnabled alone is insufficient — the silent-degradation path (every candidate
+            // jar fails Files.isRegularFile → APT enabled, factory path empty) would pass an
+            // isEnabled-only check. Replicating the strict check that
+            // AnnotationProcessingTest applies to the Maven path.
             IJavaProject javaProject = service.getJavaProject();
             assertTrue(AptConfig.isEnabled(javaProject),
                 "Expected APT to be enabled because :model declares annotationProcessor 'org.projectlombok:lombok'");
+            assertTrue(AptConfig.hasProjectSpecificFactoryPath(javaProject),
+                "hasProjectSpecificFactoryPath must be true after wireApt registers the lombok jar");
+            assertTrue(factoryPathContainerIds(AptConfig.getFactoryPath(javaProject)).stream()
+                    .anyMatch(id -> id != null && id.toLowerCase().contains("lombok")),
+                "Factory path must include the lombok processor jar; container ids: "
+                    + factoryPathContainerIds(AptConfig.getFactoryPath(javaProject)));
+            assertFalse(service.getWarnings().stream()
+                    .anyMatch(w -> LoadWarning.APT_PROCESSOR_JARS_MISSING.equals(w.code())),
+                "APT_PROCESSOR_JARS_MISSING must not fire on a clean Gradle build with the "
+                    + "lombok jar present in Gradle's cache; warnings: " + service.getWarnings());
 
             // === Bug F: search works synchronously after loadProject ===================
             IType user = service.findType("com.example.model.User");
@@ -112,23 +130,60 @@ class EndToEndGradleIntegrationTest {
             assertNotNull(generated, "Expected to resolve generated UserMetadata");
 
             // === Cross-subproject find_references =======================================
+            // The fixture has 3 type references to User per caller file: the import
+            // declaration plus two method parameter type usages. UserService.java +
+            // UserController.java = 6 total. Pinning the exact count catches the case
+            // where a search regression leaks stale matches (e.g., index from a previous
+            // load) — an anyMatch-only check would still pass with extras present.
             List<SearchMatch> userRefs = service.getSearchService()
                 .findReferences(user, IJavaSearchConstants.REFERENCES, 100);
-            boolean serviceUsesUser = userRefs.stream().anyMatch(m -> {
-                String path = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
-                return path.contains("UserService");
-            });
-            boolean webUsesUser = userRefs.stream().anyMatch(m -> {
-                String path = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
-                return path.contains("UserController");
-            });
-            assertTrue(serviceUsesUser,
-                "Expected User references in :service (UserService). Got " + userRefs.size() + " matches");
-            assertTrue(webUsesUser,
-                "Expected User references in :web (UserController). Got " + userRefs.size() + " matches");
+            List<String> userRefFiles = userRefs.stream()
+                .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
+                .toList();
+            assertEquals(6, userRefs.size(),
+                "Expected exactly 6 User references (3 per caller file × 2 files: import "
+                    + "+ two method-param type usages each). Got " + userRefs.size()
+                    + " matches in files: " + userRefFiles);
+            long inUserService = userRefFiles.stream()
+                .filter(f -> f.contains("UserService")).count();
+            long inUserController = userRefFiles.stream()
+                .filter(f -> f.contains("UserController")).count();
+            assertEquals(3, inUserService,
+                "Expected 3 User refs in UserService.java; got " + inUserService + ": "
+                    + userRefFiles);
+            assertEquals(3, inUserController,
+                "Expected 3 User refs in UserController.java; got " + inUserController + ": "
+                    + userRefFiles);
         } finally {
             if (previousOverride == null) System.clearProperty("javalens.gradle.binary");
             else System.setProperty("javalens.gradle.binary", previousOverride);
+        }
+    }
+
+    /**
+     * Pull the registered container ids out of an {@link IFactoryPath} via reflection.
+     * Duplicated from {@code AnnotationProcessingTest.factoryPathContainerIds} — consolidate
+     * to a shared test fixture (e.g. {@code AptAssertions}) when a third caller materializes
+     * or when the per-file audit reaches the fixtures pass.
+     */
+    private static List<String> factoryPathContainerIds(IFactoryPath factoryPath) {
+        try {
+            Method getAllContainers = factoryPath.getClass().getMethod("getAllContainers");
+            Object result = getAllContainers.invoke(factoryPath);
+            if (!(result instanceof Map<?, ?> containers)) {
+                throw new AssertionError("getAllContainers returned non-Map: " + result);
+            }
+            List<String> ids = new java.util.ArrayList<>();
+            for (Object container : containers.keySet()) {
+                Method getId = container.getClass().getMethod("getId");
+                Object id = getId.invoke(container);
+                ids.add(id == null ? null : id.toString());
+            }
+            return ids;
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Could not introspect factory path containers — "
+                + "JDT internal API may have changed (impl class: "
+                + factoryPath.getClass().getName() + ")", e);
         }
     }
 
