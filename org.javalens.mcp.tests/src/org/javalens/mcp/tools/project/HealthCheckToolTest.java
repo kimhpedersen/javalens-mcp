@@ -42,18 +42,28 @@ class HealthCheckToolTest {
 
         // Status
         assertEquals("Ready", data.get("status"));
-        assertNotNull(data.get("message"));
-        assertNotNull(data.get("version"));
-        assertNotNull(data.get("uptime"));
+        String message = (String) data.get("message");
+        assertNotNull(message, "message missing");
+        assertFalse(message.isBlank(), "message non-blank; got: " + data);
+        String version = (String) data.get("version");
+        assertNotNull(version, "version missing");
+        assertFalse(version.isBlank(), "version non-blank; got: " + data);
+        assertNotNull(data.get("uptime"), "uptime missing");
 
         // Project info
         @SuppressWarnings("unchecked")
         Map<String, Object> project = (Map<String, Object>) data.get("project");
         assertTrue((Boolean) project.get("loaded"));
 
-        // Java/OS info
-        assertNotNull(data.get("java"));
-        assertNotNull(data.get("os"));
+        // Java/OS info — both maps must be present
+        @SuppressWarnings("unchecked")
+        Map<String, Object> java = (Map<String, Object>) data.get("java");
+        assertNotNull(java, "java block missing");
+        assertFalse(java.isEmpty(), "java block non-empty; got: " + data);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> os = (Map<String, Object>) data.get("os");
+        assertNotNull(os, "os block missing");
+        assertFalse(os.isEmpty(), "os block non-empty; got: " + data);
 
         // Capabilities
         @SuppressWarnings("unchecked")

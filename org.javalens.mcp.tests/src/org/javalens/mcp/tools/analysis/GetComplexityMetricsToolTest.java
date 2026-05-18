@@ -49,24 +49,34 @@ class GetComplexityMetricsToolTest {
         // File metrics
         @SuppressWarnings("unchecked")
         Map<String, Object> file = (Map<String, Object>) data.get("file");
-        assertNotNull(file.get("path"));
+        String path = (String) file.get("path");
+        assertNotNull(path, "file.path missing");
+        assertTrue(path.endsWith(".java"), "file.path ends with .java; got: " + file);
         assertTrue((Integer) file.get("physicalLOC") > 0);
 
-        // Summary
+        // Summary — all metric counts non-negative; methodCount > 0 (Calculator has methods)
         @SuppressWarnings("unchecked")
         Map<String, Object> summary = (Map<String, Object>) data.get("summary");
-        assertNotNull(summary.get("totalCyclomaticComplexity"));
-        assertNotNull(summary.get("totalCognitiveComplexity"));
-        assertNotNull(summary.get("methodCount"));
+        assertTrue(((Number) summary.get("totalCyclomaticComplexity")).intValue() >= 0,
+            "totalCyclomaticComplexity >= 0; got: " + summary);
+        assertTrue(((Number) summary.get("totalCognitiveComplexity")).intValue() >= 0,
+            "totalCognitiveComplexity >= 0; got: " + summary);
+        assertTrue(((Number) summary.get("methodCount")).intValue() > 0,
+            "Calculator has methods; methodCount > 0; got: " + summary);
 
-        // Risk assessment
+        // Risk assessment — counts non-negative
         @SuppressWarnings("unchecked")
         Map<String, Object> risk = (Map<String, Object>) data.get("riskAssessment");
-        assertNotNull(risk.get("highRiskMethods"));
-        assertNotNull(risk.get("lowRiskMethods"));
+        assertTrue(((Number) risk.get("highRiskMethods")).intValue() >= 0,
+            "highRiskMethods >= 0; got: " + risk);
+        assertTrue(((Number) risk.get("lowRiskMethods")).intValue() >= 0,
+            "lowRiskMethods >= 0; got: " + risk);
 
-        // Method details included by default
-        assertNotNull(data.get("methods"));
+        // Method details included by default — non-empty
+        @SuppressWarnings("unchecked")
+        List<?> methods = (List<?>) data.get("methods");
+        assertNotNull(methods, "methods list must be present by default");
+        assertFalse(methods.isEmpty(), "Calculator has methods; details list must be non-empty");
     }
 
     @Test @DisplayName("respects includeDetails option")
