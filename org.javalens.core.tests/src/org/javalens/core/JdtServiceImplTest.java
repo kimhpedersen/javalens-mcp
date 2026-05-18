@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -45,22 +46,42 @@ class JdtServiceImplTest {
     }
 
     @Test
-    @DisplayName("loadProject should detect source files")
+    @DisplayName("loadProject should detect source files (current fixture floor)")
     void loadProject_detectsSourceFiles() {
         int sourceFiles = service.getSourceFileCount();
 
-        assertTrue(sourceFiles >= 3, "Should find at least 3 source files (Calculator, HelloWorld, UserService)");
+        // The simple-maven fixture currently ships 45 .java files. Pinning a tighter floor
+        // (>= 30) than the previous `>= 3` so a regression that drops most files to e.g.
+        // 5 (e.g. linked-folder discovery missing a subdir) is caught instead of passing
+        // silently. Not pinning the exact 45 because adding new fixtures is the
+        // expected change pattern.
+        assertTrue(sourceFiles >= 30,
+            "Expected at least 30 source files in simple-maven fixture; got: " + sourceFiles);
     }
 
     @Test
-    @DisplayName("loadProject should detect packages")
+    @DisplayName("loadProject should detect packages — known names present and total matches")
     void loadProject_detectsPackages() {
         int packages = service.getPackageCount();
+        List<String> packageList = service.getPackages();
 
-        assertTrue(packages >= 1, "Should find at least 1 package");
-        assertTrue(service.getPackages().contains("com.example") ||
-                   service.getPackages().stream().anyMatch(p -> p.startsWith("com.example")),
-                   "Should find com.example package");
+        // Pin every known package name. Previous test only verified ONE existed. If a
+        // regression dropped half the packages from findPackages, the previous assertion
+        // would still pass as long as com.example survived. Now each known package is
+        // checked explicitly.
+        assertTrue(packageList.contains("com.example"),
+            "Expected com.example among packages; got: " + packageList);
+        assertTrue(packageList.contains("com.example.service"),
+            "Expected com.example.service among packages; got: " + packageList);
+        assertTrue(packageList.contains("com.example.cycledemo.a"),
+            "Expected com.example.cycledemo.a among packages; got: " + packageList);
+        assertTrue(packageList.contains("com.example.cycledemo.b"),
+            "Expected com.example.cycledemo.b among packages; got: " + packageList);
+
+        // Sanity floor: getPackageCount must match the list size (defends against a stale
+        // count field).
+        assertEquals(packageList.size(), packages,
+            "getPackageCount must equal getPackages().size()");
     }
 
     // ========== Compilation Unit Tests ==========
@@ -120,16 +141,18 @@ class JdtServiceImplTest {
     void getElementAtPosition_findsMethod() {
         Path calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java");
 
-        // Position at 'add' method name (line 13, column 15 - 0-based)
-        // public int add(int a, int b) {
-        //            ^
-        IJavaElement element = service.getElementAtPosition(calculatorPath, 13, 15);
+        // Position at 'add' method name. The previous "name.equals('add') OR 'a'"
+        // tolerated either method or parameter — too permissive. Pin a precise position
+        // (column 16) that lands ON the method name token, away from parameter names,
+        // and require it to be an IMethod.
+        IJavaElement element = service.getElementAtPosition(calculatorPath, 13, 16);
 
         assertNotNull(element, "Should find element at method declaration");
-        // Element could be method or parameter depending on exact position
-        String name = element.getElementName();
-        assertTrue(name.equals("add") || name.equals("a"),
-            "Should find add method or its parameter, got: " + name);
+        assertTrue(element instanceof IMethod,
+            "Expected IMethod at the 'add' method declaration; got "
+                + element.getClass().getSimpleName() + " named " + element.getElementName());
+        assertEquals("add", element.getElementName(),
+            "Expected to find 'add' method; got: " + element.getElementName());
     }
 
     // ========== Offset Conversion Tests ==========
@@ -210,10 +233,13 @@ class JdtServiceImplTest {
     void getAllJavaFiles_returnsAllFiles() {
         var files = service.getAllJavaFiles();
 
-        assertFalse(files.isEmpty(), "Should find Java files");
-        assertTrue(files.size() >= 3, "Should find at least 3 files");
+        // Tightened floor (was >= 3). simple-maven currently ships 45 .java files; >= 30
+        // catches the "linked folder dropped most files" regression while leaving headroom
+        // for expected fixture additions.
+        assertTrue(files.size() >= 30,
+            "Expected at least 30 Java files; got: " + files.size());
 
-        // Verify file names
+        // Verify expected files are present.
         boolean hasCalculator = files.stream().anyMatch(p -> p.toString().contains("Calculator.java"));
         boolean hasHelloWorld = files.stream().anyMatch(p -> p.toString().contains("HelloWorld.java"));
         boolean hasUserService = files.stream().anyMatch(p -> p.toString().contains("UserService.java"));
@@ -221,6 +247,10 @@ class JdtServiceImplTest {
         assertTrue(hasCalculator, "Should include Calculator.java");
         assertTrue(hasHelloWorld, "Should include HelloWorld.java");
         assertTrue(hasUserService, "Should include UserService.java");
+
+        // Sanity: getAllJavaFiles must agree with getSourceFileCount.
+        assertEquals(service.getSourceFileCount(), files.size(),
+            "getAllJavaFiles().size() must equal getSourceFileCount()");
     }
 
     // ========== PathUtils Tests ==========
@@ -241,5 +271,166 @@ class JdtServiceImplTest {
         assertNotNull(root, "Project root should be set");
         assertTrue(root.toString().contains("simple-maven"),
             "Should contain project name");
+    }
+
+    // ========== getTypeAtPosition (distinct from getElementAtPosition) ==========
+
+    @Test
+    @DisplayName("getTypeAtPosition returns the IType for a position inside a class")
+    void getTypeAtPosition_findsEnclosingType() {
+        Path calc = projectPath.resolve("src/main/java/com/example/Calculator.java");
+        // Position inside the class body (anywhere — getTypeAtPosition walks ancestors).
+        // Picking the class name itself for the simplest case.
+        IType type = service.getTypeAtPosition(calc, 5, 13);
+        assertNotNull(type, "getTypeAtPosition must surface the enclosing type");
+        assertEquals("Calculator", type.getElementName());
+    }
+
+    @Test
+    @DisplayName("getTypeAtPosition returns enclosing type when position is inside a method body")
+    void getTypeAtPosition_returnsEnclosingTypeForMethodPosition() {
+        Path calc = projectPath.resolve("src/main/java/com/example/Calculator.java");
+        // Inside add() — should walk up the ancestor chain and surface Calculator.
+        IType type = service.getTypeAtPosition(calc, 13, 30);
+        assertNotNull(type,
+            "getTypeAtPosition must walk ancestors to surface the enclosing class");
+        assertEquals("Calculator", type.getElementName(),
+            "Even for a method-internal position, the enclosing type is Calculator");
+    }
+
+    // ========== findType — defensive branches + nested fallback ==========
+
+    @Test
+    @DisplayName("findType returns null for null input (defensive branch)")
+    void findType_nullInput_returnsNull() {
+        assertNull(service.findType(null),
+            "findType(null) must return null per defensive null-guard, not throw");
+    }
+
+    @Test
+    @DisplayName("findType returns null for blank input (defensive branch)")
+    void findType_blankInput_returnsNull() {
+        assertNull(service.findType(""),
+            "findType('') must return null per defensive blank-guard, not throw");
+        assertNull(service.findType("   "),
+            "findType(whitespace) must return null per the same guard");
+    }
+
+    @Test
+    @DisplayName("findType resolves nested type by dotted FQN (Outer.Inner)")
+    void findType_nestedDottedFqn_resolves() {
+        // TypeKindsFixture.Color is a nested enum. JDT's findType can return the OUTER
+        // type for dotted nested input on first try, which the source's lastSeg-match
+        // guard detects and falls back to the dollar-form. This test pins both the
+        // dotted-input contract and the fallback's correctness.
+        IType color = service.findType("com.example.TypeKindsFixture.Color");
+        assertNotNull(color, "Expected to resolve nested type via dotted FQN");
+        assertEquals("Color", color.getElementName());
+    }
+
+    // ========== Classpath + Loaded-at + Column ==========
+
+    @Test
+    @DisplayName("getClasspathEntryCount returns >0 for a loaded project")
+    void getClasspathEntryCount_returnsPositive() {
+        // simple-maven load produces at minimum a JRE container + at least one source folder.
+        // Exact count varies with build-system inputs; pinning > 0 is enough to catch a
+        // "raw classpath empty" regression. The configureJavaProject orchestrator's job
+        // is to populate this.
+        assertTrue(service.getClasspathEntryCount() > 0,
+            "Expected at least one classpath entry after loadProject; got: "
+                + service.getClasspathEntryCount());
+    }
+
+    @Test
+    @DisplayName("getLoadedAt returns a non-null timestamp after load")
+    void getLoadedAt_returnsTimestamp() {
+        assertNotNull(service.getLoadedAt(),
+            "getLoadedAt must be set during loadProject");
+    }
+
+    @Test
+    @DisplayName("getColumnNumber/getLineNumber/getOffset round-trip for non-trivial positions")
+    void offsetLineColumn_roundTrip() throws Exception {
+        Path calc = projectPath.resolve("src/main/java/com/example/Calculator.java");
+        ICompilationUnit cu = service.getCompilationUnit(calc);
+        assertNotNull(cu);
+
+        // Pick a known position inside the file (line 5 = `public class Calculator {`).
+        // Compute offset, then round-trip back through getLineNumber + getColumnNumber.
+        int line = 5;
+        int column = 13; // `Calculator` starts here on this line
+        int offset = service.getOffset(cu, line, column);
+        assertEquals(line, service.getLineNumber(cu, offset),
+            "Line round-trip must preserve the input line");
+        assertEquals(column, service.getColumnNumber(cu, offset),
+            "Column round-trip must preserve the input column");
+    }
+
+    @Test
+    @DisplayName("getContextLine returns the trimmed line text at the given offset")
+    void getContextLine_returnsTrimmedLine() throws Exception {
+        Path calc = projectPath.resolve("src/main/java/com/example/Calculator.java");
+        ICompilationUnit cu = service.getCompilationUnit(calc);
+        assertNotNull(cu);
+
+        // Offset for line 5 column 13 → "public class Calculator {"
+        int offset = service.getOffset(cu, 5, 13);
+        String contextLine = service.getContextLine(cu, offset);
+        assertNotNull(contextLine);
+        assertFalse(contextLine.isBlank(),
+            "Context line must not be blank at a code-bearing offset");
+        assertTrue(contextLine.contains("Calculator"),
+            "Context line at the class declaration must mention 'Calculator'; got: "
+                + contextLine);
+        // Source trims the line — leading whitespace should be gone.
+        assertEquals(contextLine.trim(), contextLine,
+            "Context line must already be trimmed");
+    }
+
+    // ========== executeWithTimeout ==========
+
+    @Test
+    @DisplayName("executeWithTimeout returns operation result on the happy path")
+    void executeWithTimeout_happyPath() {
+        Integer result = service.executeWithTimeout(() -> 42, "fast op");
+        assertEquals(42, result,
+            "executeWithTimeout must return the Callable's value when it completes in time");
+    }
+
+    @Test
+    @DisplayName("executeWithTimeout propagates RuntimeException thrown by the Callable")
+    void executeWithTimeout_propagatesRuntimeException() {
+        // Source's ExecutionException branch: if the cause is RuntimeException, rethrow it
+        // (not wrap it). Pin this so the API contract doesn't silently change to wrap-all.
+        RuntimeException expected = new IllegalStateException("boom");
+        RuntimeException thrown = assertThrows(IllegalStateException.class,
+            () -> service.executeWithTimeout(() -> { throw expected; }, "throwing op"));
+        assertSame(expected, thrown,
+            "executeWithTimeout must re-throw the original RuntimeException, not wrap it");
+    }
+
+    @Test
+    @DisplayName("executeWithTimeout wraps a checked exception in RuntimeException with op name")
+    void executeWithTimeout_wrapsCheckedException() {
+        // Source's ExecutionException branch: non-RuntimeException causes get wrapped in
+        // a RuntimeException whose message includes the operationName.
+        RuntimeException thrown = assertThrows(RuntimeException.class,
+            () -> service.executeWithTimeout(
+                () -> { throw new java.io.IOException("disk error"); },
+                "io-op"));
+        assertTrue(thrown.getMessage().contains("io-op"),
+            "Wrapped exception message must include the operationName; got: "
+                + thrown.getMessage());
+        assertNotNull(thrown.getCause(),
+            "Wrapped exception must preserve the original cause");
+    }
+
+    @Test
+    @DisplayName("getTimeoutSeconds returns the configured timeout (positive)")
+    void getTimeoutSeconds_returnsPositive() {
+        int timeout = service.getTimeoutSeconds();
+        assertTrue(timeout > 0,
+            "Timeout must be a positive number of seconds; got: " + timeout);
     }
 }
