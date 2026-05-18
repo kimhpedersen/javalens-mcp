@@ -59,24 +59,35 @@ class SuggestImportsToolTest {
 
         // Verify summary fields
         assertEquals("List", data.get("typeName"));
-        assertNotNull(data.get("totalCandidates"));
+        int totalCandidates = ((Number) data.get("totalCandidates")).intValue();
+        assertTrue(totalCandidates > 0, "List has candidate imports; got: " + data);
 
         // Verify candidates structure
         List<Map<String, Object>> candidates = getCandidates(data);
-        assertFalse(candidates.isEmpty());
+        assertEquals(totalCandidates, candidates.size(),
+            "totalCandidates must equal candidates list size; got: " + data);
 
         // Verify java.util.List is found
         assertTrue(candidates.stream()
             .anyMatch(c -> "java.util.List".equals(c.get("fullyQualifiedName"))));
 
-        // Verify first candidate has all required fields
+        // Verify first candidate has all required fields with valid values
         Map<String, Object> first = candidates.get(0);
-        assertNotNull(first.get("fullyQualifiedName"));
-        assertNotNull(first.get("packageName"));
-        assertNotNull(first.get("relevance"));
-        assertNotNull(first.get("isInterface"));
-        assertNotNull(first.get("isClass"));
-        assertNotNull(first.get("isEnum"));
+        String fqn = (String) first.get("fullyQualifiedName");
+        assertNotNull(fqn, "fullyQualifiedName missing");
+        assertTrue(fqn.contains("."), "FQN must include package; got: " + first);
+        String pkg = (String) first.get("packageName");
+        assertNotNull(pkg, "packageName missing");
+        assertTrue(fqn.startsWith(pkg + "."),
+            "FQN must start with packageName; got: " + first);
+        assertTrue(((Number) first.get("relevance")).intValue() >= 0,
+            "relevance >= 0; got: " + first);
+        assertTrue(first.get("isInterface") instanceof Boolean,
+            "isInterface must be Boolean; got: " + first);
+        assertTrue(first.get("isClass") instanceof Boolean,
+            "isClass must be Boolean; got: " + first);
+        assertTrue(first.get("isEnum") instanceof Boolean,
+            "isEnum must be Boolean; got: " + first);
 
         // Verify fixId format
         String fixId = (String) first.get("fixId");
@@ -87,10 +98,10 @@ class SuggestImportsToolTest {
         int utilIndex = -1;
         int awtIndex = -1;
         for (int i = 0; i < candidates.size(); i++) {
-            String fqn = (String) candidates.get(i).get("fullyQualifiedName");
-            if ("java.util.List".equals(fqn)) {
+            String candFqn = (String) candidates.get(i).get("fullyQualifiedName");
+            if ("java.util.List".equals(candFqn)) {
                 utilIndex = i;
-            } else if (fqn != null && fqn.startsWith("java.awt.")) {
+            } else if (candFqn != null && candFqn.startsWith("java.awt.")) {
                 awtIndex = i;
             }
         }

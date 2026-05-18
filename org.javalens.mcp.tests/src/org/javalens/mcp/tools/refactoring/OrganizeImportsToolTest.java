@@ -64,19 +64,22 @@ class OrganizeImportsToolTest {
         Map<String, Object> data = getData(response);
 
         // Verify basic info
-        assertNotNull(data.get("filePath"));
-        assertNotNull(data.get("totalImports"));
-        assertNotNull(data.get("usedImports"));
-        assertNotNull(data.get("hasChanges"));
+        String fp = (String) data.get("filePath");
+        assertNotNull(fp, "filePath missing");
+        assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + fp);
+        assertTrue(((Number) data.get("totalImports")).intValue() >= 0,
+            "totalImports >= 0; got: " + data);
+        assertTrue(((Number) data.get("usedImports")).intValue() >= 0,
+            "usedImports >= 0; got: " + data);
+        assertTrue(data.get("hasChanges") instanceof Boolean,
+            "hasChanges must be Boolean; got: " + data);
 
         // Verify unused imports detection
-        List<String> unused = getUnusedImports(data);
-        assertNotNull(unused);
         assertTrue(data.get("unusedImports") instanceof List);
 
-        // Verify organized import block
-        assertNotNull(data.get("organizedImportBlock"));
+        // Verify organized import block — non-blank string of imports
         String organizedBlock = (String) data.get("organizedImportBlock");
+        assertNotNull(organizedBlock, "organizedImportBlock missing");
         // java.* imports should come before other imports
         if (organizedBlock.contains("java.") && organizedBlock.contains("com.")) {
             assertTrue(organizedBlock.indexOf("java.") < organizedBlock.indexOf("com."));
@@ -95,11 +98,13 @@ class OrganizeImportsToolTest {
         Map<String, Object> data = getData(response);
 
         if ((int) data.get("totalImports") > 0) {
-            assertNotNull(data.get("importRange"));
             @SuppressWarnings("unchecked")
             Map<String, Object> range = (Map<String, Object>) data.get("importRange");
-            assertNotNull(range.get("startLine"));
-            assertNotNull(range.get("endLine"));
+            assertNotNull(range, "importRange missing when imports exist");
+            int startLine = ((Number) range.get("startLine")).intValue();
+            int endLine = ((Number) range.get("endLine")).intValue();
+            assertTrue(startLine >= 0, "startLine >= 0; got: " + range);
+            assertTrue(endLine >= startLine, "endLine >= startLine; got: " + range);
         }
     }
 

@@ -185,9 +185,14 @@ class GetQuickFixesToolTest {
         List<Map<String, Object>> problems = (List<Map<String, Object>>) data.get("problems");
         assertFalse(problems.isEmpty());
         for (Map<String, Object> p : problems) {
-            assertNotNull(p.get("problemId"));
-            assertNotNull(p.get("message"));
-            assertNotNull(p.get("severity"));
+            assertNotNull(p.get("problemId"), "problemId missing: " + p);
+            String msg = (String) p.get("message");
+            assertNotNull(msg, "message missing: " + p);
+            assertFalse(msg.isBlank(), "message non-blank: " + p);
+            String sev = (String) p.get("severity");
+            assertNotNull(sev, "severity missing: " + p);
+            assertTrue(List.of("error", "warning", "info").contains(sev.toLowerCase()),
+                "severity in {error,warning,info}; got: " + p);
         }
     }
 
@@ -203,11 +208,18 @@ class GetQuickFixesToolTest {
         List<Map<String, Object>> fixes = getFixes(getData(r));
         assertFalse(fixes.isEmpty());
         for (Map<String, Object> f : fixes) {
-            assertNotNull(f.get("fixId"));
-            assertNotNull(f.get("label"));
-            assertNotNull(f.get("category"));
-            assertNotNull(f.get("relevance"));
-            assertNotNull(f.get("problemId"));
+            String fixId = (String) f.get("fixId");
+            assertNotNull(fixId, "fixId missing: " + f);
+            assertFalse(fixId.isBlank(), "fixId non-blank: " + f);
+            String label = (String) f.get("label");
+            assertNotNull(label, "label missing: " + f);
+            assertFalse(label.isBlank(), "label non-blank: " + f);
+            String category = (String) f.get("category");
+            assertNotNull(category, "category missing: " + f);
+            assertFalse(category.isBlank(), "category non-blank: " + f);
+            assertTrue(((Number) f.get("relevance")).intValue() >= 0,
+                "relevance >= 0; got: " + f);
+            assertNotNull(f.get("problemId"), "problemId missing: " + f);
         }
     }
 
