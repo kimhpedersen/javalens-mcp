@@ -4,6 +4,8 @@ import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
+import org.javalens.core.project.GradleImporter;
+import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -11,8 +13,11 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -54,10 +59,84 @@ class GradleClasspathTest {
         });
     }
 
+    @Test
+    @DisplayName("getSubprojects parses every documented include-statement syntax")
+    void getSubprojectsParsesAllIncludeForms() throws Exception {
+        // Pure parser test (no Gradle invocation) — fast and exercises every regex branch
+        // documented on getSubprojects. The Gradle-classpath tests above use real Gradle
+        // and only exercise one syntactic form (whatever the canonical fixture uses).
+        Path projectRoot = helper.getTempDirectory().resolve("settings-parser");
+        Files.createDirectories(projectRoot);
+        Files.createDirectories(projectRoot.resolve("alpha"));
+        Files.createDirectories(projectRoot.resolve("beta"));
+        Files.createDirectories(projectRoot.resolve("gamma"));
+        Files.createDirectories(projectRoot.resolve("delta"));
+        Files.createDirectories(projectRoot.resolve("nested/inner"));
+
+        // Four syntactic forms in one settings.gradle:
+        //   include 'alpha'
+        //   include "beta"
+        //   include('gamma')
+        //   include 'delta', ':nested:inner'
+        Files.writeString(projectRoot.resolve("settings.gradle"), """
+            include 'alpha'
+            include "beta"
+            include('gamma')
+            include 'delta', ':nested:inner'
+            """);
+
+        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot);
+        // Compare by relative path to the project root for OS-independence.
+        List<String> rel = subprojects.stream()
+            .map(p -> projectRoot.relativize(p).toString().replace('\\', '/'))
+            .toList();
+        assertEquals(5, subprojects.size(),
+            "Expected 5 subprojects (alpha, beta, gamma, delta, nested/inner); got: " + rel);
+        assertTrue(rel.contains("alpha"), "missing 'alpha' (single-quote form); got: " + rel);
+        assertTrue(rel.contains("beta"), "missing 'beta' (double-quote form); got: " + rel);
+        assertTrue(rel.contains("gamma"), "missing 'gamma' (include(...) form); got: " + rel);
+        assertTrue(rel.contains("delta"), "missing 'delta' (multi-arg form); got: " + rel);
+        assertTrue(rel.contains("nested/inner"),
+            "missing 'nested/inner' (colon-notation normalized to /); got: " + rel);
+    }
+
+    @Test
+    @DisplayName("getSubprojects: missing settings.gradle returns empty list, no exception")
+    void getSubprojectsReturnsEmptyWhenSettingsMissing() throws Exception {
+        Path projectRoot = helper.getTempDirectory().resolve("no-settings");
+        Files.createDirectories(projectRoot);
+        assertTrue(new GradleImporter().getSubprojects(projectRoot).isEmpty(),
+            "Expected empty list when settings.gradle is absent");
+    }
+
+    @Test
+    @DisplayName("getSubprojects: subprojects whose directories don't exist are dropped silently")
+    void getSubprojectsDropsNonexistentDirectories() throws Exception {
+        Path projectRoot = helper.getTempDirectory().resolve("nonexistent-include");
+        Files.createDirectories(projectRoot);
+        Files.createDirectories(projectRoot.resolve("real-module"));
+        Files.writeString(projectRoot.resolve("settings.gradle"), """
+            include 'real-module'
+            include 'phantom-module'
+            """);
+
+        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot);
+        assertEquals(1, subprojects.size(),
+            "Expected only the existing 'real-module' to be returned; got: " + subprojects);
+        assertTrue(subprojects.get(0).getFileName().toString().equals("real-module"),
+            "Expected 'real-module', got: " + subprojects.get(0));
+    }
+
     /**
      * Resolve a usable Gradle binary, set the {@code javalens.gradle.binary} override so
      * ProjectImporter spawns the same one, copy the fixture, load it, and run the
      * caller-supplied assertions on the resulting classpath snapshot.
+     *
+     * <p>Always asserts (regardless of the caller-supplied assertions): the load surfaced
+     * no {@link LoadWarning#GRADLE_SUBPROCESS_FAILED}, and the init script's aux files
+     * ({@code javalens-classpath.txt}, {@code javalens-compliance.txt},
+     * {@code javalens-processors.txt}) were cleaned up. Both pin behaviors that the
+     * single-positive-assertion tests would have silently regressed on.
      */
     private void runWithGradle(String fixtureName, java.util.function.Consumer<ClasspathSnapshot> assertions)
             throws Exception {
@@ -71,10 +150,42 @@ class GradleClasspathTest {
             JdtServiceImpl service = new JdtServiceImpl();
             service.loadProject(projectRoot);
             ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+            // Silent-pass: a successful Gradle build must not emit any subprocess-failed
+            // warning. Without this, a regression that broke Gradle invocation entirely
+            // but returned a cached-from-elsewhere jar list could still pass the
+            // single-library-present check.
+            List<LoadWarning> warnings = service.getWarnings();
+            assertFalse(warnings.stream()
+                    .anyMatch(w -> LoadWarning.GRADLE_SUBPROCESS_FAILED.equals(w.code())),
+                "GRADLE_SUBPROCESS_FAILED must not fire on a successful Gradle build. "
+                    + "Warnings: " + warnings);
+
+            // Cleanup pin: the three aux files written by GRADLE_INIT_SCRIPT must be
+            // removed after load. cleanupGradleClasspathFiles runs in the finally block of
+            // getDependencies; a regression that skipped cleanup would leave artifacts in
+            // the project tree (visible to the user as build/ litter).
+            assertAuxFilesCleanedUp(projectRoot);
+
             assertions.accept(snapshot);
         } finally {
             if (previousOverride == null) System.clearProperty("javalens.gradle.binary");
             else System.setProperty("javalens.gradle.binary", previousOverride);
+        }
+    }
+
+    private static void assertAuxFilesCleanedUp(Path projectRoot) throws IOException {
+        try (Stream<Path> walk = Files.walk(projectRoot)) {
+            List<String> leftovers = walk
+                .filter(Files::isRegularFile)
+                .map(p -> p.getFileName().toString())
+                .filter(n -> n.equals("javalens-classpath.txt")
+                          || n.equals("javalens-compliance.txt")
+                          || n.equals("javalens-processors.txt"))
+                .toList();
+            assertTrue(leftovers.isEmpty(),
+                "Expected no javalens-*.txt aux files after load; cleanup did not run. "
+                    + "Leftover names: " + leftovers);
         }
     }
 
