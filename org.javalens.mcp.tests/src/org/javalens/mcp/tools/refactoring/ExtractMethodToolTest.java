@@ -261,10 +261,12 @@ class ExtractMethodToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> insert = editsOf(r).stream()
             .filter(e -> "insert".equals(e.get("type"))).findFirst().orElseThrow();
-        assertNotNull(insert.get("newText"));
-        assertNotNull(insert.get("line"));
-        assertNotNull(insert.get("offset"));
-        assertTrue(((String) insert.get("newText")).contains("calculateSum"));
+        String newText = (String) insert.get("newText");
+        assertNotNull(newText, "newText missing on insert edit");
+        assertTrue(newText.contains("calculateSum"),
+            "newText must contain the extracted method name; got: " + insert);
+        assertTrue(((Number) insert.get("line")).intValue() >= 0, "line >= 0; got: " + insert);
+        assertTrue(((Number) insert.get("offset")).intValue() >= 0, "offset >= 0; got: " + insert);
     }
 
     @Test

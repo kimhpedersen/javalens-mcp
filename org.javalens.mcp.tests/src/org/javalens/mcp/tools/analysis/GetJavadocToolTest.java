@@ -49,13 +49,17 @@ class GetJavadocToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertNotNull(data.get("symbol"));
-        assertNotNull(data.get("kind"));
-        assertNotNull(data.get("hasDocumentation"));
+        assertEquals("add", data.get("symbol"));
+        String kind = (String) data.get("kind");
+        assertNotNull(kind, "kind missing");
+        assertFalse(kind.isBlank(), "kind non-blank; got: " + data);
+        assertTrue(data.get("hasDocumentation") instanceof Boolean,
+            "hasDocumentation must be Boolean; got: " + data);
 
         if ((Boolean) data.get("hasDocumentation")) {
-            assertNotNull(data.get("summary"));
-            // May have @param, @return, @throws depending on the method
+            String summary = (String) data.get("summary");
+            assertNotNull(summary, "documented symbol must have summary");
+            assertFalse(summary.isBlank(), "summary non-blank; got: " + data);
         }
     }
 
@@ -70,7 +74,8 @@ class GetJavadocToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertNotNull(data.get("hasDocumentation"));
+        assertTrue(data.get("hasDocumentation") instanceof Boolean,
+            "hasDocumentation must be Boolean; got: " + data);
     }
 
     @Test @DisplayName("requires filePath, line, column parameters")

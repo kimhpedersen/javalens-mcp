@@ -52,12 +52,21 @@ class FindLargeClassesToolTest {
         // Verify violation details are present
         @SuppressWarnings("unchecked")
         Map<String, Object> firstClass = (Map<String, Object>) largeClasses.get(0);
-        assertNotNull(firstClass.get("file"), "Should include file path");
-        assertNotNull(firstClass.get("typeName"), "Should include type name");
-        assertNotNull(firstClass.get("methodCount"), "Should include method count");
-        assertNotNull(firstClass.get("fieldCount"), "Should include field count");
-        assertNotNull(firstClass.get("lineCount"), "Should include line count");
-        assertNotNull(firstClass.get("violations"), "Should include violations list");
+        String file = (String) firstClass.get("file");
+        assertNotNull(file, "Should include file path");
+        assertTrue(file.endsWith(".java"), "file must end with .java; got: " + firstClass);
+        String typeName = (String) firstClass.get("typeName");
+        assertNotNull(typeName, "Should include type name");
+        assertFalse(typeName.isBlank(), "typeName non-blank; got: " + firstClass);
+        assertTrue(((Number) firstClass.get("methodCount")).intValue() > 5,
+            "methodCount must exceed the 5-method threshold; got: " + firstClass);
+        assertTrue(((Number) firstClass.get("fieldCount")).intValue() >= 0,
+            "fieldCount >= 0; got: " + firstClass);
+        assertTrue(((Number) firstClass.get("lineCount")).intValue() > 0,
+            "lineCount > 0 for a non-empty class; got: " + firstClass);
+        List<?> violations = (List<?>) firstClass.get("violations");
+        assertNotNull(violations, "Should include violations list");
+        assertFalse(violations.isEmpty(), "An entry above the threshold must have violations; got: " + firstClass);
     }
 
     @Test

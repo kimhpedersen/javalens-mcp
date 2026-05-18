@@ -55,11 +55,20 @@ class FindNamingViolationsToolTest {
 
         // Verify violation structure
         Map<String, Object> firstViolation = violations.get(0);
-        assertNotNull(firstViolation.get("file"), "Should include file path");
-        assertNotNull(firstViolation.get("line"), "Should include line number");
-        assertNotNull(firstViolation.get("elementType"), "Should include element type");
-        assertNotNull(firstViolation.get("name"), "Should include the name");
-        assertNotNull(firstViolation.get("convention"), "Should include expected convention");
+        String file = (String) firstViolation.get("file");
+        assertNotNull(file, "Should include file path");
+        assertTrue(file.endsWith(".java"), "file must end with .java; got: " + firstViolation);
+        assertTrue(((Number) firstViolation.get("line")).intValue() >= 0,
+            "line must be >= 0; got: " + firstViolation);
+        String elementType = (String) firstViolation.get("elementType");
+        assertNotNull(elementType, "Should include element type");
+        assertFalse(elementType.isBlank(), "elementType non-blank; got: " + firstViolation);
+        String name = (String) firstViolation.get("name");
+        assertNotNull(name, "Should include the name");
+        assertFalse(name.isBlank(), "name non-blank; got: " + firstViolation);
+        String convention = (String) firstViolation.get("convention");
+        assertNotNull(convention, "Should include expected convention");
+        assertFalse(convention.isBlank(), "convention non-blank; got: " + firstViolation);
     }
 
     @Test

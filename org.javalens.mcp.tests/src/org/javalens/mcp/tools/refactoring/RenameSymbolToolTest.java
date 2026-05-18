@@ -83,9 +83,12 @@ class RenameSymbolToolTest {
         assertFalse(edits.isEmpty());
 
         Map<String, Object> edit = edits.get(0);
-        assertNotNull(edit.get("line"));
-        assertNotNull(edit.get("column"));
-        assertNotNull(edit.get("endColumn"));
+        assertTrue(((Number) edit.get("line")).intValue() >= 0, "line >= 0; got: " + edit);
+        int col = ((Number) edit.get("column")).intValue();
+        int endCol = ((Number) edit.get("endColumn")).intValue();
+        assertTrue(col >= 0, "column >= 0; got: " + edit);
+        assertEquals(col + "oldName".length(), endCol,
+            "endColumn must equal column + oldText.length(); got: " + edit);
         assertEquals("oldName", edit.get("oldText"));
         assertEquals("newName", edit.get("newText"));
     }
@@ -287,19 +290,19 @@ class RenameSymbolToolTest {
         Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
         for (List<Map<String, Object>> edits : editsByFile.values()) {
             for (Map<String, Object> e : edits) {
-                assertNotNull(e.get("line"), "line missing: " + e);
-                assertNotNull(e.get("column"), "column missing: " + e);
-                assertNotNull(e.get("endColumn"), "endColumn missing: " + e);
-                assertNotNull(e.get("oldText"), "oldText missing: " + e);
-                assertNotNull(e.get("newText"), "newText missing: " + e);
-                assertNotNull(e.get("startOffset"), "startOffset missing: " + e);
-                assertNotNull(e.get("endOffset"), "endOffset missing: " + e);
+                assertTrue(((Number) e.get("line")).intValue() >= 0, "line >= 0; got: " + e);
                 assertEquals("add", e.get("oldText"));
                 assertEquals("sum", e.get("newText"));
                 int col = ((Number) e.get("column")).intValue();
                 int endCol = ((Number) e.get("endColumn")).intValue();
+                assertTrue(col >= 0, "column >= 0; got: " + e);
                 assertEquals(col + "add".length(), endCol,
                     "endColumn must equal column + oldText.length(); got: " + e);
+                int startOffset = ((Number) e.get("startOffset")).intValue();
+                int endOffset = ((Number) e.get("endOffset")).intValue();
+                assertTrue(startOffset >= 0, "startOffset >= 0; got: " + e);
+                assertEquals(startOffset + "add".length(), endOffset,
+                    "endOffset must equal startOffset + oldText.length(); got: " + e);
             }
         }
     }
