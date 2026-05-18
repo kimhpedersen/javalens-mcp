@@ -82,10 +82,13 @@ class GetHoverInfoToolTest {
         assertEquals("add", data.get("name"));
         assertEquals("Method", data.get("kind"));
         assertEquals("com.example.Calculator", data.get("declaringType"));
-        assertNotNull(data.get("filePath"));
+        String fp = (String) data.get("filePath");
+        assertNotNull(fp, "filePath missing");
+        assertTrue(fp.endsWith("Calculator.java"),
+            "filePath must point to Calculator.java; got: " + fp);
 
-        assertNotNull(data.get("signature"));
-        String sig = data.get("signature").toString();
+        String sig = (String) data.get("signature");
+        assertNotNull(sig, "signature missing");
         assertTrue(sig.contains("add"));
         assertTrue(sig.contains("int"));
 

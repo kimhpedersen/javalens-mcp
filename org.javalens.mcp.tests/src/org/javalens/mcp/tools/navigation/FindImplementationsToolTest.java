@@ -66,12 +66,17 @@ class FindImplementationsToolTest {
         Map<String, Object> data = getData(response);
         assertEquals("Calculator", data.get("symbol"));
         assertEquals(false, data.get("isInterface"));
-        assertNotNull(data.get("totalImplementations"));
+        int total = ((Number) data.get("totalImplementations")).intValue();
+        assertTrue(total >= 0, "totalImplementations >= 0; got: " + data);
 
         List<Map<String, Object>> implementations = getImplementations(data);
         assertNotNull(implementations);
+        assertEquals(total, implementations.size(),
+            "totalImplementations must equal implementations list size; got: " + data);
         for (Map<String, Object> impl : implementations) {
-            assertNotNull(impl.get("qualifiedName"));
+            String qn = (String) impl.get("qualifiedName");
+            assertNotNull(qn, "qualifiedName missing: " + impl);
+            assertTrue(qn.contains("."), "qualifiedName must include package; got: " + impl);
         }
     }
 

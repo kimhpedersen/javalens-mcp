@@ -68,11 +68,11 @@ class GetDocumentSymbolsToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(data.get("symbols"));
-        assertNotNull(data.get("totalSymbols"));
-
         List<Map<String, Object>> symbols = getSymbols(data);
         assertFalse(symbols.isEmpty());
+        int totalSymbols = ((Number) data.get("totalSymbols")).intValue();
+        assertTrue(totalSymbols > 0,
+            "totalSymbols includes top-level + member symbols; must be > 0; got: " + data);
 
         // Find Calculator class and verify all fields
         Map<String, Object> calcSymbol = symbols.stream()
@@ -80,16 +80,17 @@ class GetDocumentSymbolsToolTest {
             .findFirst()
             .orElse(null);
 
-        assertNotNull(calcSymbol);
+        assertNotNull(calcSymbol, "Calculator symbol must be present");
         assertEquals("class", calcSymbol.get("kind"));
-        assertNotNull(calcSymbol.get("line"));
+        assertTrue(((Number) calcSymbol.get("line")).intValue() >= 0,
+            "Calculator line >= 0; got: " + calcSymbol);
 
         List<String> modifiers = (List<String>) calcSymbol.get("modifiers");
-        assertNotNull(modifiers);
         assertTrue(modifiers.contains("public"));
 
         List<Map<String, Object>> children = getChildren(calcSymbol);
-        assertNotNull(children);
+        assertNotNull(children, "Calculator children must be present");
+        assertFalse(children.isEmpty(), "Calculator has members; children non-empty");
 
         // Methods with signatures
         assertTrue(children.stream().anyMatch(c -> "add".equals(c.get("name"))));
@@ -100,8 +101,11 @@ class GetDocumentSymbolsToolTest {
             .filter(c -> "add".equals(c.get("name")))
             .findFirst()
             .orElse(null);
-        assertNotNull(addMethod);
-        assertNotNull(addMethod.get("signature"));
+        assertNotNull(addMethod, "add method symbol must be present");
+        String addSig = (String) addMethod.get("signature");
+        assertNotNull(addSig, "add signature missing");
+        assertTrue(addSig.contains("add("),
+            "add signature must contain `add(`; got: " + addMethod);
 
         // Fields with types
         Map<String, Object> lastResultField = children.stream()
