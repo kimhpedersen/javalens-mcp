@@ -1,6 +1,7 @@
 package org.javalens.core.buildsystem;
 
 import org.eclipse.jdt.apt.core.util.AptConfig;
+import org.eclipse.jdt.apt.core.util.IFactoryPath;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
@@ -15,9 +16,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -117,9 +120,26 @@ class EndToEndIntegrationTest {
                 "Expected COMPILER_COMPLIANCE=17 from pom <maven.compiler.source>");
 
             // === Bug H: APT enabled and lombok on the factory path =====================
+            // The display name promises "lombok on the factory path" but isEnabled-only
+            // would pass even in the silent-degradation state (every candidate jar missing,
+            // APT enabled with empty factory path). Now strictly verifies:
+            //  - APT enabled
+            //  - hasProjectSpecificFactoryPath (not workspace default)
+            //  - lombok jar id present in the registered containers (via reflection helper)
+            //  - APT_PROCESSOR_JARS_MISSING did NOT fire
             IJavaProject javaProject = service.getJavaProject();
             assertTrue(AptConfig.isEnabled(javaProject),
                 "Expected APT to be enabled because :model declares <annotationProcessorPaths>");
+            assertTrue(AptConfig.hasProjectSpecificFactoryPath(javaProject),
+                "hasProjectSpecificFactoryPath must be true after wireApt registers lombok");
+            assertTrue(factoryPathContainerIds(AptConfig.getFactoryPath(javaProject)).stream()
+                    .anyMatch(id -> id != null && id.toLowerCase().contains("lombok")),
+                "Factory path must include the lombok processor jar; container ids: "
+                    + factoryPathContainerIds(AptConfig.getFactoryPath(javaProject)));
+            assertFalse(service.getWarnings().stream()
+                    .anyMatch(w -> LoadWarning.APT_PROCESSOR_JARS_MISSING.equals(w.code())),
+                "APT_PROCESSOR_JARS_MISSING must not fire on a clean reactor with lombok in "
+                    + "~/.m2; warnings: " + service.getWarnings());
 
             // === Bug F: search works synchronously immediately after loadProject =======
             // (No sleep before this call. If the index isn't ready, findType returns null.)
@@ -136,31 +156,44 @@ class EndToEndIntegrationTest {
                 "Expected to resolve com.example.model.UserMetadata generated under target/generated-sources");
 
             // === Cross-module navigation: User <- UserService <- UserController =======
+            // Exact counts pin the search behavior. The fixture's User type has 3 refs
+            // per caller file (import + two method-param type usages) × 2 callers = 6.
+            // UserService has 3 refs in UserController (import + field-type + constructor
+            // call `new UserService()`). An anyMatch-only check would silently pass even
+            // if stale-index regressions leaked extras.
             List<SearchMatch> userRefs = service.getSearchService()
                 .findReferences(user, IJavaSearchConstants.REFERENCES, 100);
-            boolean serviceUsesUser = userRefs.stream().anyMatch(m -> {
-                String path = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
-                return path.contains("UserService");
-            });
-            boolean webUsesUser = userRefs.stream().anyMatch(m -> {
-                String path = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
-                return path.contains("UserController");
-            });
-            assertTrue(serviceUsesUser,
-                "Expected User references in :service module (UserService). Got " + userRefs.size() + " matches");
-            assertTrue(webUsesUser,
-                "Expected User references in :web module (UserController). Got " + userRefs.size() + " matches");
+            List<String> userRefFiles = userRefs.stream()
+                .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
+                .toList();
+            assertEquals(6, userRefs.size(),
+                "Expected exactly 6 User references (3 per caller file × 2 files: import + "
+                    + "two method-param type usages each). Got " + userRefs.size()
+                    + " matches in files: " + userRefFiles);
+            assertEquals(3, userRefFiles.stream().filter(f -> f.contains("UserService")).count(),
+                "Expected 3 User refs in UserService.java; got files: " + userRefFiles);
+            assertEquals(3, userRefFiles.stream().filter(f -> f.contains("UserController")).count(),
+                "Expected 3 User refs in UserController.java; got files: " + userRefFiles);
 
-            // Direct service -> web cross-module hop.
+            // Direct service -> web cross-module hop. UserService has 4 references total:
+            //  - 1 self-reference in UserService.java: `LoggerFactory.getLogger(UserService.class)`
+            //  - 3 in UserController.java: import + field type + `new UserService()`
+            // The self-reference is real and should be reported; the test pins both counts.
             List<SearchMatch> svcRefs = service.getSearchService()
                 .findReferences(userService, IJavaSearchConstants.REFERENCES, 100);
-            boolean controllerUsesService = svcRefs.stream().anyMatch(m -> {
-                String path = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
-                return path.contains("UserController");
-            });
-            assertTrue(controllerUsesService,
-                "Expected UserController to reference UserService across the module boundary. " +
-                "Got " + svcRefs.size() + " matches");
+            List<String> svcRefFiles = svcRefs.stream()
+                .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
+                .toList();
+            assertEquals(4, svcRefs.size(),
+                "Expected exactly 4 UserService references (1 self-ref via .class literal in "
+                    + "UserService.java + 3 in UserController: import + field type + constructor). "
+                    + "Got " + svcRefs.size() + " matches in files: " + svcRefFiles);
+            assertEquals(1, svcRefFiles.stream().filter(f -> f.contains("UserService.java")).count(),
+                "Expected exactly 1 UserService self-reference (UserService.class on line 9); "
+                    + "files: " + svcRefFiles);
+            assertEquals(3, svcRefFiles.stream().filter(f -> f.contains("UserController")).count(),
+                "Expected 3 UserService refs in UserController.java (import + field-type + "
+                    + "constructor); files: " + svcRefFiles);
 
             // === Sanity: classpath contains the JRE container, all three module sources,
             //     and the generated source from :model ===
@@ -198,6 +231,33 @@ class EndToEndIntegrationTest {
         if (p.exitValue() != 0) {
             throw new RuntimeException("mvn " + String.join(" ", goals)
                 + " failed with exit code " + p.exitValue() + "\n" + captured);
+        }
+    }
+
+    /**
+     * Pull the registered container ids out of an {@link IFactoryPath} via reflection.
+     * Duplicated from {@code AnnotationProcessingTest} and {@code EndToEndGradleIntegrationTest}
+     * — third copy now exists; the fixtures audit pass should consolidate into
+     * {@code AptAssertions} or similar.
+     */
+    private static List<String> factoryPathContainerIds(IFactoryPath factoryPath) {
+        try {
+            Method getAllContainers = factoryPath.getClass().getMethod("getAllContainers");
+            Object result = getAllContainers.invoke(factoryPath);
+            if (!(result instanceof Map<?, ?> containers)) {
+                throw new AssertionError("getAllContainers returned non-Map: " + result);
+            }
+            List<String> ids = new java.util.ArrayList<>();
+            for (Object container : containers.keySet()) {
+                Method getId = container.getClass().getMethod("getId");
+                Object id = getId.invoke(container);
+                ids.add(id == null ? null : id.toString());
+            }
+            return ids;
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Could not introspect factory path containers — "
+                + "JDT internal API may have changed (impl class: "
+                + factoryPath.getClass().getName() + ")", e);
         }
     }
 
