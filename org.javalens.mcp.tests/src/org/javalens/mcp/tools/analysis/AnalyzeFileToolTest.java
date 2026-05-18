@@ -54,7 +54,10 @@ class AnalyzeFileToolTest {
         // File info
         @SuppressWarnings("unchecked")
         Map<String, Object> file = (Map<String, Object>) data.get("file");
-        assertNotNull(file.get("path"));
+        String path = (String) file.get("path");
+        assertNotNull(path, "file.path missing");
+        assertTrue(path.endsWith("Calculator.java"),
+            "file.path must end with Calculator.java; got: " + file);
         assertEquals("com.example", file.get("package"));
         assertTrue((Integer) file.get("lineCount") > 0);
 
@@ -65,8 +68,12 @@ class AnalyzeFileToolTest {
         assertEquals("Calculator", types.get(0).get("name"));
         assertEquals("class", types.get(0).get("kind"));
 
-        // Diagnostics included by default
-        assertNotNull(data.get("diagnostics"));
+        // Diagnostics included by default — map with errors/warnings keys
+        @SuppressWarnings("unchecked")
+        Map<String, Object> diagnostics = (Map<String, Object>) data.get("diagnostics");
+        assertNotNull(diagnostics, "diagnostics block missing");
+        assertTrue(diagnostics.containsKey("errors") || diagnostics.containsKey("warnings"),
+            "diagnostics must have errors or warnings; got: " + diagnostics);
     }
 
     @Test @DisplayName("controls optional output")
