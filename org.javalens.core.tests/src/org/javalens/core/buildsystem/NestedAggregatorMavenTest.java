@@ -8,6 +8,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -64,5 +66,28 @@ class NestedAggregatorMavenTest {
         assertNotNull(coreApi, "Expected CoreApi (under core/core-api) to resolve");
         IType simple = service.findType("com.example.simple.SimpleLeaf");
         assertNotNull(simple, "Expected SimpleLeaf (under direct leaf simple/) to resolve");
+
+        // Pin total count to 3. Fixture has exactly 3 leaf modules with src/main/java:
+        // core/core-lib, core/core-api, simple. The root and core/ are aggregators with
+        // no sources. If a regression scanned spurious dirs (e.g., target/classes as
+        // a source folder), this count would jump and the test would fail.
+        long mainJavaFolders = snapshot.sourceFolders().stream()
+            .filter(p -> p.toString().replace('\\', '/').endsWith("/src/main/java"))
+            .count();
+        assertEquals(3, mainJavaFolders,
+            "Expected exactly 3 src/main/java source folders (one per leaf module). "
+                + "Got: " + snapshot.sourceFolders());
+
+        // Aggregators themselves must NOT show up as source folders. Without an explicit
+        // check, a regression that incorrectly treated a packaging=pom module as a leaf
+        // would add e.g. `core/src/main/java` (which doesn't even exist) or silently
+        // claim the aggregator path. Verify negatively that core/ at the aggregator
+        // level isn't a source folder.
+        assertFalse(snapshot.sourceFolders().stream().anyMatch(p -> {
+            String s = p.toString().replace('\\', '/');
+            return s.endsWith("/nested-aggregator-maven/core/src/main/java")
+                || s.endsWith("/nested-aggregator-maven/src/main/java");
+        }), "Aggregator modules (root + core/) must not appear as source folders; got: "
+            + snapshot.sourceFolders());
     }
 }
