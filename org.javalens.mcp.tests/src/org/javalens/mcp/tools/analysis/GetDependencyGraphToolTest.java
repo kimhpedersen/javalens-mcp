@@ -45,9 +45,17 @@ class GetDependencyGraphToolTest {
         Map<String, Object> data = getData(r);
         assertEquals("type", data.get("scope"));
         assertEquals("com.example.service.UserService", data.get("root"));
-        assertNotNull(data.get("nodes"));
-        assertNotNull(data.get("edges"));
-        assertNotNull(data.get("summary"));
+        @SuppressWarnings("unchecked")
+        List<?> nodes = (List<?>) data.get("nodes");
+        @SuppressWarnings("unchecked")
+        List<?> edges = (List<?>) data.get("edges");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+        assertNotNull(nodes, "nodes list missing");
+        assertNotNull(edges, "edges list missing");
+        assertNotNull(summary, "summary block missing");
+        assertFalse(nodes.isEmpty(),
+            "UserService has dependencies; nodes must be non-empty");
     }
 
     @Test @DisplayName("analyzes package dependencies")

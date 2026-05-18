@@ -68,11 +68,22 @@ class GetDiRegistrationsToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        assertNotNull(data.get("summary"), "Should include summary");
-        assertNotNull(data.get("components"), "Should include components list");
-        assertNotNull(data.get("configurations"), "Should include configurations list");
-        assertNotNull(data.get("beans"), "Should include beans list");
-        assertNotNull(data.get("injectionPoints"), "Should include injectionPoints list");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+        assertNotNull(summary, "summary block missing");
+        assertFalse(summary.isEmpty(), "summary non-empty; got: " + data);
+        @SuppressWarnings("unchecked")
+        List<?> components = (List<?>) data.get("components");
+        @SuppressWarnings("unchecked")
+        List<?> configurations = (List<?>) data.get("configurations");
+        @SuppressWarnings("unchecked")
+        List<?> beans = (List<?>) data.get("beans");
+        @SuppressWarnings("unchecked")
+        List<?> injectionPoints = (List<?>) data.get("injectionPoints");
+        assertNotNull(components, "components list missing");
+        assertNotNull(configurations, "configurations list missing");
+        assertNotNull(beans, "beans list missing");
+        assertNotNull(injectionPoints, "injectionPoints list missing");
     }
 
     @Test

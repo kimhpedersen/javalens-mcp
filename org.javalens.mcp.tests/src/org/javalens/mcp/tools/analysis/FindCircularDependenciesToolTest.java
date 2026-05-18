@@ -39,10 +39,16 @@ class FindCircularDependenciesToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertNotNull(data.get("hasCycles"));
-        assertNotNull(data.get("cycleCount"));
-        assertNotNull(data.get("cycles"));
-        assertNotNull(data.get("affectedPackages"));
+        assertTrue(data.get("hasCycles") instanceof Boolean,
+            "hasCycles must be Boolean; got: " + data);
+        int cycleCount = ((Number) data.get("cycleCount")).intValue();
+        assertTrue(cycleCount >= 0, "cycleCount >= 0; got: " + data);
+        @SuppressWarnings("unchecked")
+        List<?> cycles = (List<?>) data.get("cycles");
+        assertNotNull(cycles, "cycles list missing");
+        assertEquals(cycleCount, cycles.size(),
+            "cycleCount must equal cycles list size; got: " + data);
+        assertNotNull(data.get("affectedPackages"), "affectedPackages missing");
     }
 
     @Test @DisplayName("supports filtering options")

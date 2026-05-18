@@ -87,8 +87,13 @@ class AnalyzeControlFlowToolTest {
         assertFalse(tryCatchBlocks.isEmpty(), "Should detect try-catch blocks");
 
         Map<String, Object> firstBlock = tryCatchBlocks.get(0);
-        assertNotNull(firstBlock.get("line"), "Should include line number");
-        assertNotNull(firstBlock.get("caughtTypes"), "Should include caught exception types");
+        assertTrue(((Number) firstBlock.get("line")).intValue() >= 0,
+            "line >= 0; got: " + firstBlock);
+        @SuppressWarnings("unchecked")
+        List<String> caughtTypes = (List<String>) firstBlock.get("caughtTypes");
+        assertNotNull(caughtTypes, "Should include caught exception types");
+        assertFalse(caughtTypes.isEmpty(),
+            "A try-catch block must catch at least one type; got: " + firstBlock);
     }
 
     // ========== Error Handling Tests ==========

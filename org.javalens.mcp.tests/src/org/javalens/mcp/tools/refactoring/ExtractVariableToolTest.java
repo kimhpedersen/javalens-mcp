@@ -66,17 +66,20 @@ class ExtractVariableToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify variable info
+        // Verify variable info — exact name and Java-valid type
         assertEquals("calculated", data.get("variableName"));
-        assertNotNull(data.get("variableType"));
+        String variableType = (String) data.get("variableType");
+        assertNotNull(variableType, "variableType missing");
+        assertFalse(variableType.isBlank(), "variableType non-blank; got: " + data);
 
-        // Verify edit structure
-        assertNotNull(data.get("edits"));
+        // Verify edit structure — non-empty
         List<Map<String, Object>> edits = getEdits(data);
-        assertFalse(edits.isEmpty());
+        assertFalse(edits.isEmpty(), "edits must be non-empty");
 
         Map<String, Object> firstEdit = edits.get(0);
-        assertNotNull(firstEdit.get("newText"));
+        String newText = (String) firstEdit.get("newText");
+        assertNotNull(newText, "newText missing on first edit");
+        assertFalse(newText.isBlank(), "newText non-blank on first edit; got: " + firstEdit);
     }
 
     // ========== Optional Parameter Tests ==========
@@ -96,7 +99,10 @@ class ExtractVariableToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(data.get("variableName"));
+        String autoName = (String) data.get("variableName");
+        assertNotNull(autoName, "variableName missing on auto-suggest");
+        assertFalse(autoName.isBlank(),
+            "auto-suggested variable name must be non-blank; got: " + data);
     }
 
     // ========== Required Parameter Tests ==========

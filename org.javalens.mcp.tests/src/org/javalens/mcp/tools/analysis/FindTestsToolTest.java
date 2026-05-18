@@ -40,20 +40,30 @@ class FindTestsToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Counts
-        assertNotNull(data.get("testClassCount"));
-        assertNotNull(data.get("testMethodCount"));
+        // Counts non-negative
+        assertTrue(((Number) data.get("testClassCount")).intValue() >= 0,
+            "testClassCount >= 0; got: " + data);
+        assertTrue(((Number) data.get("testMethodCount")).intValue() >= 0,
+            "testMethodCount >= 0; got: " + data);
 
         // Test classes structure
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> testClasses = (List<Map<String, Object>>) data.get("testClasses");
-        assertNotNull(testClasses);
+        assertNotNull(testClasses, "testClasses list missing");
 
         if (!testClasses.isEmpty()) {
             Map<String, Object> tc = testClasses.get(0);
-            assertNotNull(tc.get("className"));
-            assertNotNull(tc.get("filePath"));
-            assertNotNull(tc.get("testMethods"));
+            String cn = (String) tc.get("className");
+            assertNotNull(cn, "className missing: " + tc);
+            assertFalse(cn.isBlank(), "className non-blank; got: " + tc);
+            String fp = (String) tc.get("filePath");
+            assertNotNull(fp, "filePath missing: " + tc);
+            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + tc);
+            @SuppressWarnings("unchecked")
+            List<?> testMethods = (List<?>) tc.get("testMethods");
+            assertNotNull(testMethods, "testMethods list missing: " + tc);
+            assertFalse(testMethods.isEmpty(),
+                "test class with no methods wouldn't be enumerated; got: " + tc);
         }
     }
 

@@ -48,19 +48,27 @@ class GetCallHierarchyOutgoingToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertNotNull(data.get("method"));
-        assertNotNull(data.get("declaringClass"));
-        assertNotNull(data.get("signature"));
-        assertNotNull(data.get("totalCallees"));
-        assertNotNull(data.get("callees"));
+        String method = (String) data.get("method");
+        assertNotNull(method, "method missing");
+        assertFalse(method.isBlank(), "method non-blank; got: " + data);
+        String declaringClass = (String) data.get("declaringClass");
+        assertNotNull(declaringClass, "declaringClass missing");
+        assertTrue(declaringClass.contains("."), "declaringClass FQN; got: " + data);
+        assertNotNull(data.get("signature"), "signature missing");
 
+        int totalCallees = ((Number) data.get("totalCallees")).intValue();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> callees = (List<Map<String, Object>>) data.get("callees");
+        assertNotNull(callees, "callees list missing");
+        assertEquals(totalCallees, callees.size(),
+            "totalCallees must equal callees list size; got: " + data);
         if (!callees.isEmpty()) {
             Map<String, Object> callee = callees.get(0);
-            assertNotNull(callee.get("method"));
-            assertNotNull(callee.get("declaringClass"));
-            assertNotNull(callee.get("callType"));
+            String calleeMethod = (String) callee.get("method");
+            assertNotNull(calleeMethod, "callee method missing: " + callee);
+            assertFalse(calleeMethod.isBlank(), "callee method non-blank: " + callee);
+            assertNotNull(callee.get("declaringClass"), "callee declaringClass missing: " + callee);
+            assertNotNull(callee.get("callType"), "callee callType missing: " + callee);
         }
     }
 

@@ -59,13 +59,22 @@ class AnalyzeDataFlowToolTest {
         List<Map<String, Object>> variables = (List<Map<String, Object>>) data.get("variables");
         assertFalse(variables.isEmpty(), "Should detect variables");
 
-        // Verify variable structure
+        // Verify variable structure — exact-content checks
         Map<String, Object> firstVar = variables.get(0);
-        assertNotNull(firstVar.get("name"), "Should include variable name");
-        assertNotNull(firstVar.get("type"), "Should include variable type");
-        assertNotNull(firstVar.get("kind"), "Should include variable kind (parameter/local/field)");
-        assertNotNull(firstVar.get("read"), "Should include read flag");
-        assertNotNull(firstVar.get("written"), "Should include written flag");
+        String name = (String) firstVar.get("name");
+        assertNotNull(name, "name missing: " + firstVar);
+        assertFalse(name.isBlank(), "name non-blank: " + firstVar);
+        String type = (String) firstVar.get("type");
+        assertNotNull(type, "type missing: " + firstVar);
+        assertFalse(type.isBlank(), "type non-blank: " + firstVar);
+        String kind = (String) firstVar.get("kind");
+        assertNotNull(kind, "kind missing: " + firstVar);
+        assertTrue(List.of("parameter", "local", "field").contains(kind),
+            "kind in {parameter,local,field}; got: " + firstVar);
+        assertTrue(firstVar.get("read") instanceof Boolean,
+            "read must be Boolean; got: " + firstVar);
+        assertTrue(firstVar.get("written") instanceof Boolean,
+            "written must be Boolean; got: " + firstVar);
     }
 
     @Test

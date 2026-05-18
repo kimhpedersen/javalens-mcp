@@ -45,11 +45,19 @@ class FindPossibleBugsToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertNotNull(data.get("issues"));
-        assertNotNull(data.get("totalIssues"));
-        assertNotNull(data.get("highCount"));
-        assertNotNull(data.get("mediumCount"));
-        assertNotNull(data.get("lowCount"));
+        @SuppressWarnings("unchecked")
+        List<?> issues = (List<?>) data.get("issues");
+        assertNotNull(issues, "issues list missing");
+        int total = ((Number) data.get("totalIssues")).intValue();
+        int high = ((Number) data.get("highCount")).intValue();
+        int medium = ((Number) data.get("mediumCount")).intValue();
+        int low = ((Number) data.get("lowCount")).intValue();
+        assertTrue(total >= 0 && high >= 0 && medium >= 0 && low >= 0,
+            "all counts >= 0; got: " + data);
+        assertEquals(high + medium + low, total,
+            "high+medium+low must equal totalIssues; got: " + data);
+        assertEquals(total, issues.size(),
+            "totalIssues must equal issues list size; got: " + data);
     }
 
     @Test @DisplayName("supports severity filter")
