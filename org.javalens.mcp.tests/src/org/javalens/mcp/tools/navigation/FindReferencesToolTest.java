@@ -66,24 +66,29 @@ class FindReferencesToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Symbol info
+        // Symbol info — exact
         assertEquals("Calculator", data.get("symbol"));
         assertEquals("class", data.get("symbolKind"));
-        assertNotNull(data.get("totalCount"));
+        int totalCount = ((Number) data.get("totalCount")).intValue();
+        assertTrue(totalCount > 0, "Calculator is referenced in fixtures; totalCount must be > 0");
 
         // References list with location details
         List<Map<String, Object>> references = getReferences(data);
-        assertNotNull(references);
+        assertNotNull(references, "references must be present");
+        assertEquals(totalCount, references.size(),
+            "totalCount must equal references.size(); got: total=" + totalCount + " size=" + references.size());
         assertTrue(references.stream().anyMatch(ref ->
             ref.get("filePath") != null &&
-            ref.get("filePath").toString().contains("UserService")));
+            ref.get("filePath").toString().contains("UserService")),
+            "Calculator must be referenced in UserService.java; got: " + references);
 
-        if (!references.isEmpty()) {
-            Map<String, Object> ref = references.get(0);
-            assertNotNull(ref.get("filePath"));
-            assertNotNull(ref.get("line"));
-            assertNotNull(ref.get("column"));
-        }
+        // Each reference entry has a valid filePath, line, column
+        Map<String, Object> ref = references.get(0);
+        String filePath = (String) ref.get("filePath");
+        assertNotNull(filePath, "ref filePath missing: " + ref);
+        assertTrue(filePath.endsWith(".java"), "filePath must point to a .java file; got: " + ref);
+        assertTrue(((Number) ref.get("line")).intValue() >= 0, "line must be >= 0; got: " + ref);
+        assertTrue(((Number) ref.get("column")).intValue() >= 0, "column must be >= 0; got: " + ref);
     }
 
     @Test
@@ -284,10 +289,14 @@ class FindReferencesToolTest {
         List<Map<String, Object>> refs = getReferences(data);
         assertFalse(refs.isEmpty());
         Map<String, Object> ref = refs.get(0);
-        assertNotNull(ref.get("context"),
-            "Reference info must include the context line; got: " + ref);
-        assertNotNull(ref.get("line"));
-        assertNotNull(ref.get("column"));
+        String context = (String) ref.get("context");
+        assertNotNull(context, "Reference info must include the context line; got: " + ref);
+        assertFalse(context.isBlank(), "context must be non-blank source line; got: " + ref);
+        // For Calculator.add references, the context should literally include "add(" somewhere.
+        assertTrue(context.contains("add"),
+            "context for a Calculator.add reference must mention `add`; got: " + ref);
+        assertTrue(((Number) ref.get("line")).intValue() >= 0, "line must be >= 0; got: " + ref);
+        assertTrue(((Number) ref.get("column")).intValue() >= 0, "column must be >= 0; got: " + ref);
     }
 
     @Test

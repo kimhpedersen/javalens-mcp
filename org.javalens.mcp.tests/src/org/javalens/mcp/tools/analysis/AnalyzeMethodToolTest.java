@@ -54,19 +54,31 @@ class AnalyzeMethodToolTest {
         Map<String, Object> data = getData(r);
         Map<String, Object> method = getMethod(data);
 
-        // Method info
+        // Method info — exact contract
         assertEquals("add", method.get("name"));
-        assertNotNull(method.get("signature"));
+        assertEquals("add(int a, int b): int", method.get("signature"));
         assertEquals("com.example.Calculator", method.get("declaringType"));
         assertEquals("int", method.get("returnType"));
 
-        // Parameters
-        assertNotNull(data.get("parameters"));
+        // Parameters: Calculator.add(int a, int b) has exactly 2
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> parameters = (List<Map<String, Object>>) data.get("parameters");
+        assertNotNull(parameters, "parameters list missing");
+        assertEquals(2, parameters.size(),
+            "Calculator.add has 2 parameters; got: " + parameters);
 
-        // Call hierarchy
-        assertNotNull(data.get("callers"));
-        assertNotNull(data.get("callees"));
-        assertNotNull(data.get("overrides"));
+        // Call hierarchy — each block must be a structured map with a `list`
+        @SuppressWarnings("unchecked")
+        Map<String, Object> callers = (Map<String, Object>) data.get("callers");
+        assertNotNull(callers, "callers block missing");
+        assertNotNull(callers.get("list"), "callers.list missing; got: " + callers);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> callees = (Map<String, Object>) data.get("callees");
+        assertNotNull(callees, "callees block missing");
+        assertNotNull(callees.get("list"), "callees.list missing; got: " + callees);
+        // overrides may be a single map (if it overrides) or null/empty
+        // marker (if it doesn't); presence is the contract.
+        assertNotNull(data.get("overrides"), "overrides field missing (may be null/empty marker)");
     }
 
     @Test @DisplayName("respects max limits")
@@ -184,10 +196,11 @@ class AnalyzeMethodToolTest {
         List<Map<String, Object>> params = (List<Map<String, Object>>) getData(r).get("parameters");
         assertEquals(2, params.size(),
             "Calculator.add(int a, int b) has 2 parameters; got: " + params);
-        for (Map<String, Object> p : params) {
-            assertNotNull(p.get("name"));
-            assertNotNull(p.get("type"));
-        }
+        // Exact parameter shape: first is (int a), second is (int b).
+        assertEquals("a", params.get(0).get("name"), "first param name; got: " + params.get(0));
+        assertEquals("int", params.get(0).get("type"), "first param type; got: " + params.get(0));
+        assertEquals("b", params.get(1).get("name"), "second param name; got: " + params.get(1));
+        assertEquals("int", params.get(1).get("type"), "second param type; got: " + params.get(1));
     }
 
     @Test

@@ -118,18 +118,39 @@ class FindUnusedCodeToolTest {
     }
 
     @Test
-    @DisplayName("Each unused item carries name, kind, filePath, line, column")
+    @DisplayName("Each unused item carries name, kind, filePath, line, column — with valid values")
     void unusedEntry_shape() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "src/main/java/com/example/UnusedCode.java");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        for (Map<String, Object> i : itemsOf(r)) {
-            assertNotNull(i.get("name"), "name missing: " + i);
-            assertNotNull(i.get("kind"), "kind missing: " + i);
-            assertNotNull(i.get("filePath"), "filePath missing: " + i);
-            assertNotNull(i.get("line"), "line missing: " + i);
-            assertNotNull(i.get("column"), "column missing: " + i);
+        List<Map<String, Object>> items = itemsOf(r);
+        assertFalse(items.isEmpty(), "UnusedCode.java has known unused members; itemsOf must not be empty");
+        for (Map<String, Object> i : items) {
+            // name: non-blank string
+            String name = (String) i.get("name");
+            assertNotNull(name, "name missing: " + i);
+            assertFalse(name.isBlank(), "name must be non-blank; got: " + i);
+            // kind: one of the documented values
+            String kind = (String) i.get("kind");
+            assertNotNull(kind, "kind missing: " + i);
+            assertTrue(List.of("Field", "Method", "Class").contains(kind),
+                "kind must be Field/Method/Class; got: " + i);
+            // filePath: ends with .java
+            String filePath = (String) i.get("filePath");
+            assertNotNull(filePath, "filePath missing: " + i);
+            assertTrue(filePath.endsWith(".java"),
+                "filePath must point to a .java file; got: " + i);
+            assertTrue(filePath.endsWith("UnusedCode.java"),
+                "all items in this scoped query must come from UnusedCode.java; got: " + i);
+            // line: non-negative integer
+            Number line = (Number) i.get("line");
+            assertNotNull(line, "line missing: " + i);
+            assertTrue(line.intValue() >= 0, "line must be >= 0; got: " + i);
+            // column: non-negative integer
+            Number column = (Number) i.get("column");
+            assertNotNull(column, "column missing: " + i);
+            assertTrue(column.intValue() >= 0, "column must be >= 0; got: " + i);
         }
     }
 

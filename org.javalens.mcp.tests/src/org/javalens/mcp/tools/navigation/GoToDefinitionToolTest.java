@@ -64,10 +64,17 @@ class GoToDefinitionToolTest {
         assertEquals("com.example", data.get("package"));
 
         Map<String, Object> location = (Map<String, Object>) data.get("location");
-        assertNotNull(location);
-        assertNotNull(location.get("filePath"));
-        assertNotNull(location.get("line"));
-        assertNotNull(location.get("column"));
+        assertNotNull(location, "location block must be present");
+        String filePath = (String) location.get("filePath");
+        assertNotNull(filePath, "location.filePath must be present");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "Calculator is defined in Calculator.java; got: " + filePath);
+        // JDT reports the start of the source range, which includes leading Javadoc
+        // for documented types. line/column are non-negative coordinates into the file.
+        assertTrue(((Number) location.get("line")).intValue() >= 0,
+            "line must be >= 0; got: " + location);
+        assertTrue(((Number) location.get("column")).intValue() >= 0,
+            "column must be >= 0; got: " + location);
     }
 
     @Test
@@ -118,7 +125,12 @@ class GoToDefinitionToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("Calculator", data.get("symbol"));
-        assertNotNull(data.get("location"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> location = (Map<String, Object>) data.get("location");
+        assertNotNull(location, "location must be present");
+        String filePath = (String) location.get("filePath");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "Type reference must navigate to Calculator.java (different file from caller); got: " + filePath);
     }
 
     @Test
