@@ -19,6 +19,9 @@ package org.javalens.core.project.model;
  *       has not run {@code bazel build} recently.</li>
  *   <li>{@code COMPLIANCE_LEVEL_UNKNOWN} — could not determine the project's compiler
  *       source/target level; using JVM defaults.</li>
+ *   <li>{@code APT_PROCESSOR_JARS_MISSING} — annotation processors were declared but
+ *       every candidate jar was missing from disk at wiring time; APT is enabled with
+ *       an empty factory path so generated members will not resolve.</li>
  * </ul>
  *
  * @param code stable identifier (see list above)
@@ -33,6 +36,15 @@ public record LoadWarning(String code, String message, String remediation, Strin
     public static final String GRADLE_SUBPROCESS_FAILED = "GRADLE_SUBPROCESS_FAILED";
     public static final String BAZEL_NOT_BUILT = "BAZEL_NOT_BUILT";
     public static final String COMPLIANCE_LEVEL_UNKNOWN = "COMPLIANCE_LEVEL_UNKNOWN";
+    /**
+     * Annotation processors were declared by the project's build files but every candidate
+     * jar failed the {@code Files.isRegularFile} probe at APT wiring time. APT is left
+     * enabled with an empty factory path — analysis of processor-generated members will
+     * silently return wrong results. Typical cause: stale paths cached from a previous
+     * build, or {@code ~/.m2}/Gradle cache eviction between dependency resolution and
+     * project load.
+     */
+    public static final String APT_PROCESSOR_JARS_MISSING = "APT_PROCESSOR_JARS_MISSING";
 
     public LoadWarning(String code, String message, String remediation) {
         this(code, message, remediation, null);

@@ -160,7 +160,7 @@ public class ProjectImporter {
     private void applyAnnotationProcessing(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
         java.util.Set<java.nio.file.Path> processorJars = collectProcessorJars(projectPath, buildSystem);
         if (processorJars.isEmpty()) return;
-        wireApt(javaProject, processorJars);
+        wireApt(javaProject, processorJars, projectPath);
     }
 
     /**
@@ -200,21 +200,38 @@ public class ProjectImporter {
     /**
      * Register the given jars on the project's JDT APT factory path and enable processing.
      * Failures are logged but don't propagate — APT not wiring up is a degraded mode, not
-     * a fatal load error.
+     * a fatal load error. When every candidate jar fails the regular-file probe (e.g. a
+     * stale path no longer present on disk), a {@link LoadWarning#APT_PROCESSOR_JARS_MISSING}
+     * is recorded so the {@code load_project} response signals the silent-degradation
+     * state ("APT enabled, factory path empty") to MCP clients.
      */
-    private void wireApt(IJavaProject javaProject, java.util.Set<java.nio.file.Path> processorJars) {
+    private void wireApt(IJavaProject javaProject, java.util.Set<java.nio.file.Path> processorJars,
+            java.nio.file.Path projectPath) {
         try {
             AptConfig.setEnabled(javaProject, true);
             IFactoryPath factoryPath = AptConfig.getDefaultFactoryPath(javaProject);
             int registered = 0;
+            List<java.nio.file.Path> missing = new ArrayList<>();
             for (java.nio.file.Path jar : processorJars) {
                 if (Files.isRegularFile(jar)) {
                     factoryPath.addExternalJar(jar.toFile());
                     registered++;
+                } else {
+                    missing.add(jar);
                 }
             }
             AptConfig.setFactoryPath(javaProject, factoryPath);
             log.info("Enabled APT with {} processor jar(s)", registered);
+            if (registered == 0 && !processorJars.isEmpty()) {
+                warnings.add(new LoadWarning(
+                    LoadWarning.APT_PROCESSOR_JARS_MISSING,
+                    "Annotation processors were declared but none of the " + processorJars.size()
+                        + " candidate jar(s) were found on disk; APT is enabled with an empty "
+                        + "factory path. Missing: " + missing,
+                    "Run your build's dependency-resolution step (e.g. 'mvn dependency:resolve', "
+                        + "'gradle resolveDependencies') so the declared processor jars are present "
+                        + "in the local cache, then reload the project."));
+            }
         } catch (CoreException e) {
             log.warn("Failed to configure APT: {}", e.getMessage());
         }
@@ -223,11 +240,16 @@ public class ProjectImporter {
     /**
      * Returns true iff the jar declares at least one annotation processor via the standard
      * SPI descriptor at {@code META-INF/services/javax.annotation.processing.Processor}.
+     * A corrupted / truncated / unreadable jar logs a warning and returns false; this
+     * matches "no processor declared" externally but leaves a diagnostic trail so the
+     * silent-no-op case is investigable.
      */
     private boolean jarDeclaresAnnotationProcessor(java.nio.file.Path jar) {
         try (java.util.jar.JarFile jf = new java.util.jar.JarFile(jar.toFile())) {
             return jf.getEntry("META-INF/services/javax.annotation.processing.Processor") != null;
         } catch (IOException e) {
+            log.warn("Could not read jar {} while scanning for annotation processors: {}",
+                jar, e.getMessage());
             return false;
         }
     }
