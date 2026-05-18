@@ -68,9 +68,12 @@ class SearchSymbolsToolTest {
             .findFirst()
             .orElse(null);
 
-        assertNotNull(calcResult);
+        assertNotNull(calcResult, "Calculator must be in results");
         assertEquals("com.example.Calculator", calcResult.get("qualifiedName"));
-        assertNotNull(calcResult.get("filePath"));
+        String filePath = (String) calcResult.get("filePath");
+        assertNotNull(filePath, "filePath missing on result");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "Calculator result must point to Calculator.java; got: " + filePath);
     }
 
     @Test
@@ -149,10 +152,15 @@ class SearchSymbolsToolTest {
         assertTrue(results.size() <= 2);
 
         Map<String, Object> pagination = (Map<String, Object>) data.get("pagination");
-        assertNotNull(pagination);
+        assertNotNull(pagination, "pagination block must be present");
         assertEquals(0, pagination.get("offset"));
-        assertNotNull(pagination.get("returned"));
-        assertNotNull(pagination.get("hasMore"));
+        int returned = ((Number) pagination.get("returned")).intValue();
+        assertEquals(results.size(), returned,
+            "pagination.returned must equal results.size(); got: " + pagination);
+        // hasMore: boolean, true when total > returned. For maxResults=2 with many matches.
+        assertNotNull(pagination.get("hasMore"), "hasMore flag must be present");
+        assertTrue(pagination.get("hasMore") instanceof Boolean,
+            "hasMore must be a boolean; got: " + pagination.get("hasMore").getClass());
     }
 
     // ========== Parameter Validation Tests ==========

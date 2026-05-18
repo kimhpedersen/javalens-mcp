@@ -89,8 +89,12 @@ class GetMethodAtPositionToolTest {
         assertTrue(sig.contains("int"));
 
         // Location
-        assertNotNull(data.get("filePath"));
-        assertNotNull(data.get("line"));
+        String filePath = (String) data.get("filePath");
+        assertNotNull(filePath, "filePath must be present");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "Calculator.add is in Calculator.java; got: " + filePath);
+        assertTrue(((Number) data.get("line")).intValue() >= 0,
+            "line must be >= 0; got: " + data);
     }
 
     @Test

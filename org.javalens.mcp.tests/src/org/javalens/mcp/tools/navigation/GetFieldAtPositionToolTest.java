@@ -67,8 +67,12 @@ class GetFieldAtPositionToolTest {
         assertEquals("com.example.Calculator", data.get("declaringType"));
 
         // Location
-        assertNotNull(data.get("filePath"));
-        assertNotNull(data.get("line"));
+        String filePath = (String) data.get("filePath");
+        assertNotNull(filePath, "filePath must be present");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "Calculator.lastResult is in Calculator.java; got: " + filePath);
+        assertTrue(((Number) data.get("line")).intValue() >= 0,
+            "line must be >= 0; got: " + data);
 
         // Modifiers
         List<String> modifiers = (List<String>) data.get("modifiers");

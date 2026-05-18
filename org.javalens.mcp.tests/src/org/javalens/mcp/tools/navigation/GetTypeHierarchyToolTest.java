@@ -82,31 +82,36 @@ class GetTypeHierarchyToolTest {
 
         // Type info with location
         Map<String, Object> typeInfo = getTypeInfo(data);
-        assertNotNull(typeInfo);
+        assertNotNull(typeInfo, "typeInfo block must be present");
         assertEquals("Calculator", typeInfo.get("name"));
         assertEquals("com.example.Calculator", typeInfo.get("qualifiedName"));
         assertEquals("class", typeInfo.get("kind"));
-        assertNotNull(typeInfo.get("line"));
-        assertNotNull(typeInfo.get("filePath"));
+        assertTrue(((Number) typeInfo.get("line")).intValue() >= 0,
+            "typeInfo.line >= 0; got: " + typeInfo);
+        String filePath = (String) typeInfo.get("filePath");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "typeInfo.filePath must point to Calculator.java; got: " + typeInfo);
 
         // Superclasses including Object
         List<Map<String, Object>> superclasses = getSuperclasses(data);
-        assertNotNull(superclasses);
+        assertNotNull(superclasses, "superclasses list must be present");
         assertTrue(superclasses.stream().anyMatch(s -> "Object".equals(s.get("name"))));
+        int totalSuperclasses = ((Number) data.get("totalSuperclasses")).intValue();
+        assertEquals(superclasses.size(), totalSuperclasses,
+            "totalSuperclasses must equal superclasses list size; got: " + data);
 
-        // Subtypes (Calculator has none)
+        // Subtypes (Calculator has none — exact zero)
         List<Map<String, Object>> subtypes = getSubtypes(data);
-        assertNotNull(subtypes);
-        assertEquals(0, subtypes.size());
+        assertEquals(0, subtypes.size(), "Calculator has no subtypes; got: " + subtypes);
+        assertEquals(0, ((Number) data.get("totalSubtypes")).intValue(),
+            "totalSubtypes must equal 0; got: " + data);
 
-        // Interfaces (Calculator has none)
+        // Interfaces (Calculator implements none — exact zero)
         List<Map<String, Object>> interfaces = getInterfaces(data);
-        assertNotNull(interfaces);
-
-        // Counts
-        assertNotNull(data.get("totalSuperclasses"));
-        assertNotNull(data.get("totalInterfaces"));
-        assertNotNull(data.get("totalSubtypes"));
+        assertEquals(0, interfaces.size(),
+            "Calculator implements no interfaces; got: " + interfaces);
+        assertEquals(0, ((Number) data.get("totalInterfaces")).intValue(),
+            "totalInterfaces must equal 0; got: " + data);
     }
 
     @Test

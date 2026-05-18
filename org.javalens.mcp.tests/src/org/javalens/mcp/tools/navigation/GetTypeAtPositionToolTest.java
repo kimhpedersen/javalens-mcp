@@ -79,9 +79,12 @@ class GetTypeAtPositionToolTest {
         assertEquals(0, data.get("nestedTypeCount"));
 
         // Location
-        assertNotNull(data.get("filePath"));
-        assertTrue(data.get("filePath").toString().contains("Calculator.java"));
-        assertNotNull(data.get("line"));
+        String filePath = (String) data.get("filePath");
+        assertNotNull(filePath, "filePath must be present");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "Calculator type at position must report Calculator.java; got: " + filePath);
+        assertTrue(((Number) data.get("line")).intValue() >= 0,
+            "line must be >= 0; got: " + data);
 
         // Flags
         assertEquals(false, data.get("isAnonymous"));
