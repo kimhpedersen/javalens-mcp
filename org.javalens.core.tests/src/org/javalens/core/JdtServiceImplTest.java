@@ -433,4 +433,70 @@ class JdtServiceImplTest {
         assertTrue(timeout > 0,
             "Timeout must be a positive number of seconds; got: " + timeout);
     }
+
+    @Test
+    @DisplayName("executeWithTimeout raises a 'timed out' RuntimeException when the Callable exceeds the cap")
+    void executeWithTimeout_timeoutPath() {
+        // Use the package-private overload to pass a 1-second timeout against a Callable
+        // that sleeps 5 seconds. This exercises the TimeoutException branch which is not
+        // reachable through the public single-overload because the constructor-time
+        // timeoutSeconds is clamped to >= 5.
+        RuntimeException thrown = assertThrows(RuntimeException.class,
+            () -> service.executeWithTimeout(
+                () -> { Thread.sleep(5000); return "never"; },
+                "sleep-op", 1));
+        assertTrue(thrown.getMessage().contains("sleep-op"),
+            "Timeout exception must mention the operationName; got: " + thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("timed out"),
+            "Timeout exception message must say 'timed out'; got: " + thrown.getMessage());
+    }
+
+    // ========== Defensive null-javaProject guards (pre-loadProject state) ==========
+
+    @Test
+    @DisplayName("getCompilationUnit on a fresh (un-loaded) service returns null instead of throwing")
+    void getCompilationUnit_nullJavaProject_returnsNull() {
+        JdtServiceImpl fresh = new JdtServiceImpl();
+        // No loadProject — javaProject field is still null. The defensive guard must
+        // fire and return null rather than NPE.
+        Path anyPath = projectPath.resolve("src/main/java/com/example/Calculator.java");
+        assertNull(fresh.getCompilationUnit(anyPath),
+            "Pre-load getCompilationUnit must return null per the early-return guard");
+    }
+
+    @Test
+    @DisplayName("getClasspathEntryCount on a fresh (un-loaded) service returns 0 (defensive guard)")
+    void getClasspathEntryCount_nullJavaProject_returnsZero() {
+        JdtServiceImpl fresh = new JdtServiceImpl();
+        assertEquals(0, fresh.getClasspathEntryCount(),
+            "Pre-load getClasspathEntryCount must return 0, not throw NPE");
+    }
+
+    @Test
+    @DisplayName("getAllJavaFiles on a fresh (un-loaded) service returns an empty list")
+    void getAllJavaFiles_nullJavaProject_returnsEmpty() {
+        JdtServiceImpl fresh = new JdtServiceImpl();
+        var files = fresh.getAllJavaFiles();
+        assertNotNull(files,
+            "getAllJavaFiles must never return null (guard returns empty list)");
+        assertTrue(files.isEmpty(),
+            "Pre-load getAllJavaFiles must return [] per the early-return guard");
+    }
+
+    // ========== getTypeAtPosition: position outside any type ==========
+
+    @Test
+    @DisplayName("getTypeAtPosition at the package declaration line returns null (or empty type-less element)")
+    void getTypeAtPosition_packageLine_handledGracefully() {
+        // Line 0 col 0 of Calculator.java is the `package` keyword. The element at that
+        // position (if anything resolves) is the package declaration — not an IType and
+        // has no IType ancestor. getTypeAtPosition must therefore return null.
+        Path calc = projectPath.resolve("src/main/java/com/example/Calculator.java");
+        IType type = service.getTypeAtPosition(calc, 0, 0);
+        // Either null (no element at offset) or null (element is package-level with no
+        // type ancestor) — both branches of getTypeAtPosition must NOT crash and must
+        // return null for a position outside any class body.
+        assertNull(type,
+            "getTypeAtPosition at the package line must yield null; got: " + type);
+    }
 }

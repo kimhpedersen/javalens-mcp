@@ -174,15 +174,25 @@ public class JdtServiceImpl implements IJdtService {
 
     @Override
     public <T> T executeWithTimeout(Callable<T> operation, String operationName) {
+        return executeWithTimeout(operation, operationName, timeoutSeconds);
+    }
+
+    /**
+     * Test-friendly overload: lets unit tests pass a short timeout so the
+     * TimeoutException branch can be exercised without sleeping for 30+
+     * seconds. Production calls go through the {@link #executeWithTimeout(Callable, String)}
+     * variant which uses the configured timeout.
+     */
+    <T> T executeWithTimeout(Callable<T> operation, String operationName, int timeoutSec) {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         Future<T> future = executor.submit(operation);
 
         try {
-            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+            return future.get(timeoutSec, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
             throw new RuntimeException(
-                operationName + " timed out after " + timeoutSeconds + " seconds"
+                operationName + " timed out after " + timeoutSec + " seconds"
             );
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
