@@ -86,8 +86,8 @@ class MatchResolverTest {
     }
 
     @Test
-    @DisplayName("fromIFile(non-java resource) returns null")
-    void fromIFile_nonJavaResource_returnsNull() {
+    @DisplayName("fromIFile(non-IFile object) returns null")
+    void fromIFile_nonIFile_returnsNull() {
         assertNull(MatchResolver.fromIFile("not-a-file"));
     }
 
@@ -95,6 +95,36 @@ class MatchResolverTest {
     @DisplayName("fromIFile(null) returns null")
     void fromIFile_null_returnsNull() {
         assertNull(MatchResolver.fromIFile(null));
+    }
+
+    @Test
+    @DisplayName("fromIFile(IFile with non-java extension) returns null")
+    void fromIFile_nonJavaExtension_returnsNull() {
+        // Source filters on `equalsIgnoreCase('java')`. Previously the only non-Java test
+        // passed a String — that exercises the type-check branch but NOT the
+        // extension-check branch. Pass a real IFile pointing at a non-Java resource.
+        // Use simple-maven's pom.xml as a known non-Java file in the workspace.
+        org.eclipse.core.resources.IWorkspaceRoot root =
+            org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot();
+        // Find any project member with a pom.xml — fixtures all do.
+        org.eclipse.core.resources.IProject[] projects = root.getProjects();
+        IFile pomFile = null;
+        for (org.eclipse.core.resources.IProject p : projects) {
+            org.eclipse.core.resources.IResource pom = p.findMember("pom.xml");
+            if (pom instanceof IFile) {
+                pomFile = (IFile) pom;
+                break;
+            }
+        }
+        if (pomFile == null) {
+            // Skip if no pom.xml accessible — extension-branch coverage requires it.
+            return;
+        }
+        assertEquals("xml", pomFile.getFileExtension(),
+            "Expected pom.xml extension to be 'xml' for the branch test");
+        assertNull(MatchResolver.fromIFile(pomFile),
+            "fromIFile must return null for an IFile whose extension is not 'java'; "
+                + "got non-null from: " + pomFile);
     }
 
     // ========== resolveCu integration via real SearchMatch ==========
