@@ -70,12 +70,17 @@ class LoadProjectPersistenceTest {
         // Verify shared service was set
         assertNotNull(sharedService, "shared service should be set after load_project");
 
-        // Step 2: analyze_method on the same handler instance
+        // Step 2: analyze_method on the same handler instance.
+        // Position 14:16 (0-based) lands on the `add` method name in
+        // `    public int add(int a, int b) {` (Read line 15). Previous test used 10:15
+        // which is inside the Javadoc — the tool returned INVALID_PARAMETER ("Position
+        // is not on a method") and the not-PROJECT_NOT_LOADED assertion silently passed
+        // without proving the shared-service wiring works for a successful invocation.
         Path calcFile = projectPath.resolve("src/main/java/com/example/Calculator.java");
         String analyzeRequest = String.format("""
             {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
                 "name":"analyze_method",
-                "arguments":{"filePath":"%s","line":10,"column":15}
+                "arguments":{"filePath":"%s","line":14,"column":16}
             }}
             """, calcFile.toString().replace("\\", "\\\\"));
 
@@ -86,13 +91,16 @@ class LoadProjectPersistenceTest {
         String analyzeText = analyzeJson.get("result").get("content").get(0).get("text").asText();
         JsonNode analyzeResult = objectMapper.readTree(analyzeText);
 
-        // The critical assertion: PROJECT_NOT_LOADED must not appear
-        if (analyzeResult.has("error") && analyzeResult.get("error").has("code")) {
-            String errorCode = analyzeResult.get("error").get("code").asText();
-            assertNotEquals("PROJECT_NOT_LOADED", errorCode,
-                "analyze_method should not return PROJECT_NOT_LOADED after load_project succeeded. " +
-                "Full response: " + analyzeText);
-        }
+        // Strict: analyze_method MUST succeed. Previously the assertion was only
+        // "not PROJECT_NOT_LOADED", so any other error code (e.g. INVALID_COORDINATES,
+        // FILE_NOT_FOUND) would have silently passed — a regression that broke service
+        // wiring AND coincidentally surfaced a different error would have been missed.
+        assertTrue(analyzeResult.get("success").asBoolean(),
+            "analyze_method must succeed after load_project. Response: " + analyzeText);
+        // Belt-and-suspenders: error field absent too.
+        assertTrue(!analyzeResult.has("error")
+                || analyzeResult.get("error").isNull(),
+            "On success, error field must be null/absent. Response: " + analyzeText);
     }
 
 }
