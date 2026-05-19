@@ -184,9 +184,9 @@ class MaxResultsBoundaryContractTest {
                 + " (scale=" + scale + "); got returnedCount=" + returned);
     }
 
-    @ParameterizedTest(name = "{0}: maxResults=MAX_VALUE → no overflow, no crash")
+    @ParameterizedTest(name = "{0}: maxResults=MAX_VALUE → no truncation, returnedCount == totalCount")
     @MethodSource("provideToolArgs")
-    @DisplayName("maxResults=Integer.MAX_VALUE succeeds without overflow or crash")
+    @DisplayName("maxResults=Integer.MAX_VALUE succeeds, returnedCount equals totalCount, truncated=false")
     void maxValue_doesNotCrash(String toolName,
                                Function<TestContext, ObjectNode> argsBuilder,
                                Function<TestContext, Tool> toolBuilder,
@@ -199,9 +199,21 @@ class MaxResultsBoundaryContractTest {
             toolName + " must succeed at maxResults=MAX_VALUE without overflow; got: "
                 + describe(response));
         Integer returned = response.getMeta().getReturnedCount();
+        Integer total = response.getMeta().getTotalCount();
         assertNotNull(returned, toolName + ": returnedCount must be populated");
+        assertNotNull(total, toolName + ": totalCount must be populated");
         assertTrue(returned >= 0,
             toolName + ": returnedCount must be non-negative; got " + returned);
+        // The class Javadoc promises: at MAX_VALUE the cap is effectively infinite, so
+        // returnedCount equals totalCount (no truncation). Previously only the >= 0
+        // sanity-check was enforced — the contract claim was untested. Pin it now.
+        assertTrue(returned.equals(total),
+            toolName + ": at maxResults=MAX_VALUE the cap must not truncate; "
+                + "returnedCount=" + returned + " totalCount=" + total);
+        Boolean truncated = response.getMeta().getTruncated();
+        assertNotNull(truncated, toolName + ": truncated must be populated");
+        assertTrue(!truncated,
+            toolName + ": at maxResults=MAX_VALUE truncated must be false; got " + truncated);
     }
 
     private static String describe(org.javalens.mcp.models.ToolResponse r) {
