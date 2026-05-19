@@ -74,4 +74,27 @@ class TypeKindResolverTest {
         // through this resolver fixes that bug; this test prevents regression.
         assertEquals("annotation", TypeKindResolver.kindOf(t));
     }
+
+    @Test
+    @DisplayName("nested static class returns 'class' (no special branch — default case)")
+    void classKind_nestedStatic() {
+        // TypeKindsFixture.Inner is a nested static class. Source has no nested-specific
+        // branch — the default "return 'class'" applies. Pin this so a regression that
+        // accidentally branched on enclosingType would surface.
+        IType t = service.findType("com.example.TypeKindsFixture.Inner");
+        assertNotNull(t, "TypeKindsFixture.Inner nested class must resolve");
+        assertEquals("class", TypeKindResolver.kindOf(t));
+    }
+
+    @Test
+    @DisplayName("nested interface returns 'interface' (no annotation conflict in nested branch)")
+    void interfaceKind_nested() {
+        // TypeKindsFixture.DefaultMethodHolder is a nested interface. Critical case:
+        // isInterface() is true, isAnnotation() is FALSE — order check still matters
+        // to ensure the nested-branch handling matches top-level. Otherwise nested
+        // interfaces would risk falling through to "class".
+        IType t = service.findType("com.example.TypeKindsFixture.DefaultMethodHolder");
+        assertNotNull(t, "TypeKindsFixture.DefaultMethodHolder nested interface must resolve");
+        assertEquals("interface", TypeKindResolver.kindOf(t));
+    }
 }
