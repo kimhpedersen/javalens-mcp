@@ -120,7 +120,13 @@ public final class ClasspathSnapshot {
     }
 
     private static Path resolveLibraryPath(IPath ipath) {
-        if (ipath.isAbsolute() && ipath.toFile().exists()) {
+        // Library paths are typically absolute filesystem paths. Include absolute paths
+        // unconditionally — a snapshot's job is to reflect what the importer put on the
+        // classpath, NOT to filter out dangling entries. Tests that care about file
+        // existence assert it explicitly via Files.isRegularFile on the snapshot path; a
+        // previous "drop non-existent" branch silently masked "importer added a path that
+        // doesn't resolve" bugs. Mirrors the fix in core.tests ClasspathSnapshot.
+        if (ipath.isAbsolute()) {
             return Path.of(ipath.toOSString()).toAbsolutePath().normalize();
         }
         return resolveWorkspacePath(ipath);
