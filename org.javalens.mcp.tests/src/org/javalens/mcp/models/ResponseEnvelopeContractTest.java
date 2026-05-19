@@ -178,6 +178,28 @@ class ResponseEnvelopeContractTest {
             toolName + ": ResponseMeta.returnedCount must be set. Got meta: " + describe(meta));
         assertNotNull(meta.getTruncated(),
             toolName + ": ResponseMeta.truncated must be set. Got meta: " + describe(meta));
+
+        // Pin partial field-value invariants. The full contract
+        //   `truncated == (returnedCount < totalCount)`
+        // is currently violated by 14 of 18 tools — they set
+        //   totalCount = results.size() (post-clip)
+        //   truncated  = (results.size() == maxResults)
+        // which yields truncated=true even when nothing was actually clipped (real total
+        // happened to equal the cap). Fixing this requires each tool to track its
+        // pre-clip count or capacity; that's a focused refactor across ~14 tools and is
+        // intentionally NOT in scope here. Captured as B-15 follow-up. Until then this
+        // test pins only the universally-honored invariants:
+        int returned = meta.getReturnedCount();
+        int total = meta.getTotalCount();
+        assertTrue(returned >= 0,
+            toolName + ": returnedCount must be non-negative; got " + returned);
+        assertTrue(total >= 0,
+            toolName + ": totalCount must be non-negative; got " + total);
+        // returnedCount <= totalCount is the weakest part of the contract and it IS
+        // honored even by the buggy tools (both reflect post-clip size, so they're equal).
+        assertTrue(returned <= total,
+            toolName + ": returnedCount must be <= totalCount; got returnedCount="
+                + returned + " totalCount=" + total);
     }
 
     private static String describe(ResponseMeta meta) {
