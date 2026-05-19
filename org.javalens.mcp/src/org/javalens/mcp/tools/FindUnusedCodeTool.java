@@ -120,10 +120,10 @@ public class FindUnusedCodeTool extends AbstractTool {
             data.put("totalUnused", unusedItems.size());
 
             long unusedFields = unusedItems.stream()
-                .filter(m -> "Field".equals(m.get("kind")))
+                .filter(m -> "field".equals(m.get("kind")))
                 .count();
             long unusedMethods = unusedItems.stream()
-                .filter(m -> "Method".equals(m.get("kind")))
+                .filter(m -> "method".equals(m.get("kind")))
                 .count();
 
             data.put("unusedFieldCount", unusedFields);
@@ -216,7 +216,7 @@ public class FindUnusedCodeTool extends AbstractTool {
 
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("name", binding.getName());
-                item.put("kind", binding instanceof IMethodBinding ? "Method" : "Field");
+                item.put("kind", binding instanceof IMethodBinding ? "method" : "field");
                 item.put("filePath", service.getPathUtils().formatPath(file));
 
                 if (node instanceof VariableDeclarationFragment vdf) {

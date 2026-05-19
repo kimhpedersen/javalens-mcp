@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
@@ -237,11 +238,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             Map<String, Object> symbol = new LinkedHashMap<>();
             symbol.put("name", method.getElementName());
 
-            if (method.isConstructor()) {
-                symbol.put("kind", "Constructor");
-            } else {
-                symbol.put("kind", "Method");
-            }
+            symbol.put("kind", ElementKindResolver.kindOf(method));
 
             symbol.put("modifiers", ModifierFormatter.format(flags));
 
@@ -271,13 +268,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             Map<String, Object> symbol = new LinkedHashMap<>();
             symbol.put("name", field.getElementName());
 
-            if (field.isEnumConstant()) {
-                symbol.put("kind", "EnumConstant");
-            } else if (Flags.isStatic(flags) && Flags.isFinal(flags)) {
-                symbol.put("kind", "Constant");
-            } else {
-                symbol.put("kind", "Field");
-            }
+            symbol.put("kind", ElementKindResolver.fieldKindOf(field));
 
             symbol.put("modifiers", ModifierFormatter.format(flags));
 

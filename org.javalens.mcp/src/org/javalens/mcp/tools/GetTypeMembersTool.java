@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
@@ -224,11 +225,7 @@ public class GetTypeMembersTool extends AbstractTool {
             Map<String, Object> info = new LinkedHashMap<>();
             info.put("name", method.getElementName());
 
-            if (method.isConstructor()) {
-                info.put("kind", "Constructor");
-            } else {
-                info.put("kind", "Method");
-            }
+            info.put("kind", ElementKindResolver.kindOf(method));
 
             int flags = method.getFlags();
             info.put("modifiers", ModifierFormatter.format(flags));
@@ -260,13 +257,7 @@ public class GetTypeMembersTool extends AbstractTool {
             info.put("name", field.getElementName());
 
             int flags = field.getFlags();
-            if (field.isEnumConstant()) {
-                info.put("kind", "EnumConstant");
-            } else if (Flags.isStatic(flags) && Flags.isFinal(flags)) {
-                info.put("kind", "Constant");
-            } else {
-                info.put("kind", "Field");
-            }
+            info.put("kind", ElementKindResolver.fieldKindOf(field));
 
             info.put("modifiers", ModifierFormatter.format(flags));
             info.put("type", Signature.getSimpleName(Signature.toString(field.getTypeSignature())));

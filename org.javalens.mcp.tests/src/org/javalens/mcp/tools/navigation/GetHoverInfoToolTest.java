@@ -58,7 +58,7 @@ class GetHoverInfoToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("Calculator", data.get("name"));
-        assertEquals("Type", data.get("kind"));
+        assertEquals("class", data.get("kind"));
 
         assertNotNull(data.get("signature"));
         String sig = data.get("signature").toString();
@@ -80,7 +80,7 @@ class GetHoverInfoToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("add", data.get("name"));
-        assertEquals("Method", data.get("kind"));
+        assertEquals("method", data.get("kind"));
         assertEquals("com.example.Calculator", data.get("declaringType"));
         String fp = (String) data.get("filePath");
         assertNotNull(fp, "filePath missing");
@@ -115,7 +115,7 @@ class GetHoverInfoToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("lastResult", data.get("name"));
-        assertEquals("Field", data.get("kind"));
+        assertEquals("field", data.get("kind"));
 
         assertNotNull(data.get("signature"));
         String sig = data.get("signature").toString();
@@ -243,7 +243,8 @@ class GetHoverInfoToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("Marker", data.get("name"));
-        assertEquals("Type", data.get("kind"));
+        assertEquals("annotation", data.get("kind"),
+            "Marker is @interface — kind must be 'annotation' (delegates to TypeKindResolver)");
         String sig = (String) data.get("signature");
         assertNotNull(sig);
         assertTrue(sig.contains("@interface Marker"),

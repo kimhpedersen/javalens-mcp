@@ -104,7 +104,7 @@ class FindReferencesToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("add", data.get("symbol"));
-        assertEquals("Method", data.get("symbolKind"));
+        assertEquals("method", data.get("symbolKind"));
         assertEquals("Calculator", data.get("containingType"));
         assertNotNull(getReferences(data));
     }
@@ -122,7 +122,7 @@ class FindReferencesToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("lastResult", data.get("symbol"));
-        assertEquals("Field", data.get("symbolKind"));
+        assertEquals("field", data.get("symbolKind"));
 
         List<Map<String, Object>> references = getReferences(data);
         assertNotNull(references);
@@ -238,7 +238,7 @@ class FindReferencesToolTest {
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
 
         assertEquals("pet", data.get("symbol"));
-        assertEquals("Field", data.get("symbolKind"));
+        assertEquals("field", data.get("symbolKind"));
         assertEquals("FieldHolder", data.get("containingType"));
 
         List<Map<String, Object>> references = getReferences(data);

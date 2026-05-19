@@ -132,7 +132,7 @@ class GetDocumentSymbolsToolTest {
         List<Map<String, Object>> children = getChildren(helloSymbol);
 
         assertTrue(children.stream().anyMatch(c ->
-            "HelloWorld".equals(c.get("name")) && "Constructor".equals(c.get("kind"))));
+            "HelloWorld".equals(c.get("name")) && "constructor".equals(c.get("kind"))));
     }
 
     // ========== Optional Parameters Tests ==========
@@ -204,8 +204,8 @@ class GetDocumentSymbolsToolTest {
         Map<String, Object> maxSize = getChildren(rtSymbol).stream()
             .filter(c -> "MAX_SIZE".equals(c.get("name")))
             .findFirst().orElseThrow();
-        assertEquals("Constant", maxSize.get("kind"),
-            "static final field must be reported with kind='Constant'; got: " + maxSize);
+        assertEquals("constant", maxSize.get("kind"),
+            "static final field must be reported with kind='constant'; got: " + maxSize);
     }
 
     @Test
@@ -232,8 +232,8 @@ class GetDocumentSymbolsToolTest {
         Map<String, Object> red = getChildren(colorEnum).stream()
             .filter(c -> "RED".equals(c.get("name")))
             .findFirst().orElseThrow();
-        assertEquals("EnumConstant", red.get("kind"),
-            "Enum constant RED must report kind='EnumConstant'; got: " + red);
+        assertEquals("enumConstant", red.get("kind"),
+            "Enum constant RED must report kind='enumConstant'; got: " + red);
     }
 
     @Test
@@ -333,8 +333,8 @@ class GetDocumentSymbolsToolTest {
             .orElseThrow();
 
         List<Map<String, Object>> children = getChildren(calc);
-        long methods = children.stream().filter(c -> "Method".equals(c.get("kind"))).count();
-        long fields = children.stream().filter(c -> "Field".equals(c.get("kind"))).count();
+        long methods = children.stream().filter(c -> "method".equals(c.get("kind"))).count();
+        long fields = children.stream().filter(c -> "field".equals(c.get("kind"))).count();
         assertEquals(4L, methods,
             "Calculator declares exactly 4 methods (add, subtract, multiply, getLastResult); got: " + children);
         assertEquals(1L, fields,

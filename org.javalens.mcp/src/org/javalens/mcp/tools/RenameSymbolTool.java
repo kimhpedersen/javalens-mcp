@@ -10,7 +10,6 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeHierarchy;
-import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.dom.AST;
@@ -19,8 +18,8 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
-import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -328,20 +327,7 @@ public class RenameSymbolTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        if (element instanceof IType type) {
-            return TypeKindResolver.kindOf(type);
-        }
-        if (element instanceof IMethod method) {
-            try {
-                return method.isConstructor() ? "Constructor" : "Method";
-            } catch (JavaModelException e) {
-                return "Method";
-            }
-        }
-        if (element instanceof IField) return "Field";
-        if (element instanceof ILocalVariable) return "LocalVariable";
-        if (element instanceof ITypeParameter) return "TypeParameter";
-        return "Unknown";
+        return ElementKindResolver.kindOf(element);
     }
 
     private String findBindingKey(IJavaElement element, CompilationUnit ast, String name) {

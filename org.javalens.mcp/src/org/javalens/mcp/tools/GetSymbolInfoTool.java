@@ -13,6 +13,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
@@ -253,19 +254,7 @@ public class GetSymbolInfoTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> "Type";
-            case IJavaElement.METHOD -> "Method";
-            case IJavaElement.FIELD -> "Field";
-            case IJavaElement.LOCAL_VARIABLE -> "LocalVariable";
-            case IJavaElement.TYPE_PARAMETER -> "TypeParameter";
-            case IJavaElement.PACKAGE_FRAGMENT -> "Package";
-            case IJavaElement.COMPILATION_UNIT -> "CompilationUnit";
-            case IJavaElement.INITIALIZER -> "Initializer";
-            case IJavaElement.IMPORT_DECLARATION -> "Import";
-            case IJavaElement.PACKAGE_DECLARATION -> "PackageDeclaration";
-            default -> "Unknown";
-        };
+        return ElementKindResolver.kindOf(element);
     }
 
 }

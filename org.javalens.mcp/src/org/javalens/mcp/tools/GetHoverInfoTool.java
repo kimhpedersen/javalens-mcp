@@ -12,6 +12,7 @@ import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.mcp.models.ResponseMeta;
@@ -298,15 +299,7 @@ public class GetHoverInfoTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> "Type";
-            case IJavaElement.METHOD -> "Method";
-            case IJavaElement.FIELD -> "Field";
-            case IJavaElement.LOCAL_VARIABLE -> "LocalVariable";
-            case IJavaElement.TYPE_PARAMETER -> "TypeParameter";
-            case IJavaElement.PACKAGE_FRAGMENT -> "Package";
-            default -> "Unknown";
-        };
+        return ElementKindResolver.kindOf(element);
     }
 
 }

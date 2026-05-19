@@ -7,6 +7,7 @@ import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.JavaModelException;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -261,11 +262,6 @@ public class GetJavadocTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> "Type";
-            case IJavaElement.METHOD -> "Method";
-            case IJavaElement.FIELD -> "Field";
-            default -> "Unknown";
-        };
+        return ElementKindResolver.kindOf(element);
     }
 }

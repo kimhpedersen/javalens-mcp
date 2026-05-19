@@ -60,7 +60,8 @@ class GetSymbolInfoToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("Calculator", data.get("name"));
-        assertEquals("Type", data.get("kind"));
+        assertEquals("class", data.get("kind"),
+            "kind delegates to TypeKindResolver for type elements — lowercase per B-6 fix");
         assertEquals("com.example.Calculator", data.get("qualifiedName"));
         assertEquals("class", data.get("typeKind"));
         String filePath = (String) data.get("filePath");
@@ -87,7 +88,7 @@ class GetSymbolInfoToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("add", data.get("name"));
-        assertEquals("Method", data.get("kind"));
+        assertEquals("method", data.get("kind"));
         assertEquals("int", data.get("returnType"));
         assertEquals("com.example.Calculator", data.get("declaringType"));
 
@@ -118,7 +119,7 @@ class GetSymbolInfoToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("lastResult", data.get("name"));
-        assertEquals("Field", data.get("kind"));
+        assertEquals("field", data.get("kind"));
         assertEquals("int", data.get("type"));
         assertEquals(false, data.get("isEnumConstant"));
     }
@@ -206,7 +207,8 @@ class GetSymbolInfoToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("IShape", data.get("name"));
-        assertEquals("Type", data.get("kind"));
+        assertEquals("interface", data.get("kind"),
+            "kind delegates to TypeKindResolver — IShape is interface");
         assertEquals("interface", data.get("typeKind"),
             "typeKind must be lowercase 'interface'; got: " + data);
     }
@@ -362,7 +364,7 @@ class GetSymbolInfoToolTest {
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         Map<String, Object> data = getData(r);
         assertEquals("trimmed", data.get("name"));
-        assertEquals("LocalVariable", data.get("kind"));
+        assertEquals("variable", data.get("kind"));
         assertEquals(Boolean.FALSE, data.get("isParameter"),
             "trimmed is a local var, not a parameter; got: " + data);
         assertEquals("String", data.get("type"));
@@ -390,7 +392,7 @@ class GetSymbolInfoToolTest {
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         Map<String, Object> data = getData(r);
         assertEquals("a", data.get("name"));
-        assertEquals("LocalVariable", data.get("kind"));
+        assertEquals("variable", data.get("kind"));
         assertEquals(Boolean.TRUE, data.get("isParameter"),
             "a is a parameter; got: " + data);
     }
@@ -417,7 +419,7 @@ class GetSymbolInfoToolTest {
             "Position on type parameter N must succeed; got: " +
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         Map<String, Object> data = getData(r);
-        assertEquals("TypeParameter", data.get("kind"));
+        assertEquals("typeParameter", data.get("kind"));
         List<String> bounds = (List<String>) data.get("bounds");
         assertNotNull(bounds, "Type parameter with bounds must report bounds; got: " + data);
         assertEquals(List.of("Number"), bounds);

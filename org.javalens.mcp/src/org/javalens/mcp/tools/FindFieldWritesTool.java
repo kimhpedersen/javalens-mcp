@@ -6,6 +6,7 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
@@ -194,12 +195,6 @@ public class FindFieldWritesTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> "Type";
-            case IJavaElement.METHOD -> "Method";
-            case IJavaElement.FIELD -> "Field";
-            case IJavaElement.LOCAL_VARIABLE -> "Variable";
-            default -> "Unknown";
-        };
+        return ElementKindResolver.kindOf(element);
     }
 }

@@ -55,14 +55,14 @@ class FindUnusedCodeToolTest {
         noFields.put("includeFields", false);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items1 = (List<Map<String, Object>>) getData(tool.execute(noFields)).get("unusedItems");
-        assertFalse(items1.stream().anyMatch(i -> "Field".equals(i.get("kind"))));
+        assertFalse(items1.stream().anyMatch(i -> "field".equals(i.get("kind"))));
 
         ObjectNode noMethods = objectMapper.createObjectNode();
         noMethods.put("filePath", "src/main/java/com/example/UnusedCode.java");
         noMethods.put("includeMethods", false);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items2 = (List<Map<String, Object>>) getData(tool.execute(noMethods)).get("unusedItems");
-        assertFalse(items2.stream().anyMatch(i -> "Method".equals(i.get("kind"))));
+        assertFalse(items2.stream().anyMatch(i -> "method".equals(i.get("kind"))));
     }
 
     @Test @DisplayName("analyzes whole project")
@@ -134,8 +134,8 @@ class FindUnusedCodeToolTest {
             // kind: one of the documented values
             String kind = (String) i.get("kind");
             assertNotNull(kind, "kind missing: " + i);
-            assertTrue(List.of("Field", "Method", "Class").contains(kind),
-                "kind must be Field/Method/Class; got: " + i);
+            assertTrue(List.of("field", "method", "class").contains(kind),
+                "kind must be field/method/class (lowercase); got: " + i);
             // filePath: ends with .java
             String filePath = (String) i.get("filePath");
             assertNotNull(filePath, "filePath missing: " + i);
@@ -162,9 +162,9 @@ class FindUnusedCodeToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         for (Map<String, Object> i : itemsOf(r)) {
-            if ("Field".equals(i.get("kind"))) {
+            if ("field".equals(i.get("kind"))) {
                 assertNotNull(i.get("type"), "Field entry must carry `type`: " + i);
-            } else if ("Method".equals(i.get("kind"))) {
+            } else if ("method".equals(i.get("kind"))) {
                 assertNotNull(i.get("signature"), "Method entry must carry `signature`: " + i);
             }
         }

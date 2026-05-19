@@ -10,9 +10,9 @@ import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
-import org.javalens.core.TypeKindResolver;
 import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -54,7 +54,7 @@ public class SearchSymbolsTool extends AbstractTool {
             EXAMPLES:
             - search_symbols(query="Order*") - classes starting with Order
             - search_symbols(query="*Repository", kind="interface")
-            - search_symbols(query="get*", kind="Method")
+            - search_symbols(query="get*", kind="method")
 
             PAGINATION: Use offset parameter for large result sets
 
@@ -232,15 +232,7 @@ public class SearchSymbolsTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> element instanceof IType type
-                ? TypeKindResolver.kindOf(type)
-                : "class";
-            case IJavaElement.METHOD -> "Method";
-            case IJavaElement.FIELD -> "Field";
-            case IJavaElement.LOCAL_VARIABLE -> "Variable";
-            default -> "Unknown";
-        };
+        return ElementKindResolver.kindOf(element);
     }
 
     private String getMethodSignature(IMethod method) throws JavaModelException {

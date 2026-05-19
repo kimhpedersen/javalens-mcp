@@ -10,8 +10,8 @@ import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.ISourceReference;
 import org.eclipse.jdt.core.JavaModelException;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
-import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -143,16 +143,7 @@ public class GoToDefinitionTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> element instanceof IType type
-                ? TypeKindResolver.kindOf(type)
-                : "class";
-            case IJavaElement.METHOD -> "Method";
-            case IJavaElement.FIELD -> "Field";
-            case IJavaElement.LOCAL_VARIABLE -> "Variable";
-            case IJavaElement.TYPE_PARAMETER -> "TypeParameter";
-            default -> "Unknown";
-        };
+        return ElementKindResolver.kindOf(element);
     }
 
     private String getFilePath(IJavaElement element, IJdtService service) {

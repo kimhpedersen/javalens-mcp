@@ -5,12 +5,11 @@ import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
-import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
-import org.javalens.core.TypeKindResolver;
 import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -217,14 +216,6 @@ public class FindReferencesTool extends AbstractTool {
     }
 
     private String getElementKind(IJavaElement element) {
-        return switch (element.getElementType()) {
-            case IJavaElement.TYPE -> element instanceof IType type
-                ? TypeKindResolver.kindOf(type)
-                : "class";
-            case IJavaElement.METHOD -> "Method";
-            case IJavaElement.FIELD -> "Field";
-            case IJavaElement.LOCAL_VARIABLE -> "Variable";
-            default -> "Unknown";
-        };
+        return ElementKindResolver.kindOf(element);
     }
 }

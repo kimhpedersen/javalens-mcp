@@ -127,8 +127,8 @@ class SearchSymbolsToolTest {
         // Critical: every result's kind must equal "Method". A regression where the kind
         // filter is silently ignored would otherwise pass.
         for (Map<String, Object> result : results) {
-            assertEquals("Method", result.get("kind"),
-                "kind=Method filter must apply to every result; offending entry: " + result);
+            assertEquals("method", result.get("kind"),
+                "every result's emitted kind is lowercase 'method' (input filter can be any case); offending entry: " + result);
         }
     }
 
@@ -274,8 +274,8 @@ class SearchSymbolsToolTest {
         List<Map<String, Object>> results = getResults(getData(r));
         assertFalse(results.isEmpty());
         for (Map<String, Object> result : results) {
-            assertEquals("Field", result.get("kind"),
-                "Every kind=Field result must have kind='Field'; offending: " + result);
+            assertEquals("field", result.get("kind"),
+                "Every kind=Field result must have lowercase kind='field'; offending: " + result);
         }
     }
 

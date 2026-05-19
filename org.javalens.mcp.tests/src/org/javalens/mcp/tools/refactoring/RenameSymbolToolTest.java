@@ -69,7 +69,7 @@ class RenameSymbolToolTest {
         // Verify symbol info
         assertEquals("oldName", data.get("oldName"));
         assertEquals("newName", data.get("newName"));
-        assertEquals("LocalVariable", data.get("symbolKind"));
+        assertEquals("variable", data.get("symbolKind"));
 
         // Verify edit counts
         assertTrue((int) data.get("totalEdits") > 0);
@@ -108,7 +108,7 @@ class RenameSymbolToolTest {
         Map<String, Object> data = getData(response);
         assertEquals("userName", data.get("oldName"));
         assertEquals("userFullName", data.get("newName"));
-        assertEquals("Field", data.get("symbolKind"));
+        assertEquals("field", data.get("symbolKind"));
         // Field is used in multiple places
         assertTrue((int) data.get("totalEdits") >= 3);
     }
@@ -128,7 +128,7 @@ class RenameSymbolToolTest {
         Map<String, Object> data = getData(response);
         assertEquals("add", data.get("oldName"));
         assertEquals("sum", data.get("newName"));
-        assertEquals("Method", data.get("symbolKind"));
+        assertEquals("method", data.get("symbolKind"));
     }
 
     // ========== Validation Tests ==========
@@ -248,7 +248,7 @@ class RenameSymbolToolTest {
 
         assertEquals("pet", data.get("oldName"));
         assertEquals("companion", data.get("newName"));
-        assertEquals("Field", data.get("symbolKind"));
+        assertEquals("field", data.get("symbolKind"));
 
         int totalEdits = ((Number) data.get("totalEdits")).intValue();
         int filesAffected = ((Number) data.get("filesAffected")).intValue();

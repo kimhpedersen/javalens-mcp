@@ -90,7 +90,7 @@ class GoToDefinitionToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("add", data.get("symbol"));
-        assertEquals("Method", data.get("kind"));
+        assertEquals("method", data.get("kind"));
         assertEquals("com.example.Calculator", data.get("containingType"));
     }
 
@@ -107,7 +107,7 @@ class GoToDefinitionToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("lastResult", data.get("symbol"));
-        assertEquals("Field", data.get("kind"));
+        assertEquals("field", data.get("kind"));
     }
 
     // ========== Cross-File Navigation Tests ==========
@@ -146,7 +146,7 @@ class GoToDefinitionToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("add", data.get("symbol"));
-        assertEquals("Method", data.get("kind"));
+        assertEquals("method", data.get("kind"));
         assertEquals("com.example.Calculator", data.get("containingType"));
     }
 
@@ -312,7 +312,7 @@ class GoToDefinitionToolTest {
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         Map<String, Object> data = getData(r);
         assertEquals("trimmed", data.get("symbol"));
-        assertEquals("Variable", data.get("kind"));
+        assertEquals("variable", data.get("kind"));
     }
 
     // Type-parameter position lookup: JDT's getElementAtPosition / codeSelect does not
