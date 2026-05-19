@@ -208,6 +208,17 @@ class ErrorCodeContractTest {
         assertEquals(ErrorInfo.INVALID_PARAMETER, err.getCode(),
             toolName + ": missing required param must yield INVALID_PARAMETER; got code=" + err.getCode()
                 + ", message=" + err.getMessage());
+        // The AI consumer needs the message to identify what's missing — a regression that
+        // emitted code=INVALID_PARAMETER with a blank/null message would still satisfy the
+        // code check but leave callers unable to fix their request. Pin both.
+        assertNotNull(err.getMessage(),
+            toolName + ": error message must not be null on INVALID_PARAMETER response");
+        assertFalse(err.getMessage().isBlank(),
+            toolName + ": error message must not be blank on INVALID_PARAMETER response");
+        // Error response must NOT carry data — a stale success-payload leaked into an error
+        // response would mislead consumers. Pin null/absent.
+        assertEquals(null, response.getData(),
+            toolName + ": error response must not carry data; got: " + response.getData());
     }
 
     record TestContext(JdtServiceImpl service, Path projectPath, ObjectMapper objectMapper) {}
