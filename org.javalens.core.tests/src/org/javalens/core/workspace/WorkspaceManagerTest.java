@@ -273,4 +273,40 @@ class WorkspaceManagerTest {
         // Just verify refresh doesn't throw
         assertDoesNotThrow(() -> workspaceManager.refresh());
     }
+
+    @Test
+    @DisplayName("sweepStaleProjects only matches its own baseName — projects with other base names are preserved")
+    void sweepStaleProjects_scopedToBaseName() throws CoreException {
+        // Create a stale project under baseName "other-base". A subsequent
+        // createLinkedProject call with a DIFFERENT baseName must NOT sweep it
+        // — the regex must be scoped to the requested baseName, not any
+        // UUID-suffixed name.
+        WorkspaceManager priorOther = new WorkspaceManager();
+        priorOther.initialize();
+        IProject otherProject = priorOther.createLinkedProject("other-base", fixturePath);
+        String otherName = otherProject.getName();
+        assertTrue(otherProject.exists(), "Precondition: other-base project must exist");
+
+        // New session calls createLinkedProject with baseName "scope-test".
+        // The other-base-{hex} project must survive because its base name differs.
+        WorkspaceManager newSession = new WorkspaceManager();
+        newSession.initialize();
+        newSession.createLinkedProject("scope-test", fixturePath);
+
+        IProject preservedHandle = newSession.getRoot().getProject(otherName);
+        assertTrue(preservedHandle.exists(),
+            "sweepStaleProjects must scope to its baseName; the other-base project "
+                + "(" + otherName + ") should survive. Got: swept incorrectly.");
+    }
+
+    @Test
+    @DisplayName("getProject returns null when called on a non-existent name (defensive guard)")
+    void getProject_returnsNullForNonExistent() {
+        // Already covered by getProject_returnsNullForMissing, but pin the implementation
+        // contract: getProject(unknown).exists()==false is the underlying check; the
+        // method translates that to null. Catches a regression where it returned the
+        // empty IProject handle instead.
+        IProject p = workspaceManager.getProject("never-created");
+        assertNull(p);
+    }
 }
