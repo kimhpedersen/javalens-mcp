@@ -9,8 +9,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MethodFormatterTest {
 
@@ -55,17 +57,23 @@ class MethodFormatterTest {
     }
 
     @Test
-    @DisplayName("constructor omits the `: ReturnType` suffix")
+    @DisplayName("constructor omits `: ReturnType` and renders the parameter list")
     void constructor() throws Exception {
         IType target = service.findType("com.example.ConstructorTarget");
         assertNotNull(target, "ConstructorTarget fixture must resolve");
         IMethod ctor = findConstructor(target);
         assertNotNull(ctor, "ConstructorTarget should have an explicit constructor");
-        String sig = MethodFormatter.signature(ctor);
-        assertEquals(false, sig.contains(": "),
-            "constructor signature must not include return-type suffix; got: " + sig);
-        assertEquals(true, sig.startsWith("ConstructorTarget("),
-            "constructor signature must start with the type name; got: " + sig);
+        // findConstructor returns the first IMethod where isConstructor() is true, which by
+        // JDT's source order is `ConstructorTarget(String name)`. Pin the exact signature
+        // — the previous test only checked the absence of `: ` and the type-name prefix,
+        // which would have passed even if the parameter list was wrong.
+        assertEquals("ConstructorTarget(String name)", MethodFormatter.signature(ctor),
+            "constructor signature must include the parameter list; got: "
+                + MethodFormatter.signature(ctor));
+        assertFalse(MethodFormatter.signature(ctor).contains(": "),
+            "constructor signature must not include return-type suffix");
+        assertTrue(MethodFormatter.signature(ctor).startsWith("ConstructorTarget("),
+            "constructor signature must start with the type name");
     }
 
     @Test
@@ -82,5 +90,40 @@ class MethodFormatterTest {
         IMethod ctor = findConstructor(target);
         assertNotNull(ctor, "ConstructorTarget should have a constructor");
         assertNull(MethodFormatter.returnTypeSimpleName(ctor));
+    }
+
+    @Test
+    @DisplayName("generic return type preserves type arguments (List<String>)")
+    void genericReturnType_preservesTypeArguments() throws Exception {
+        // UserService.getUsers() returns List<String>. Signature.getSimpleName drops the
+        // PACKAGE prefix (java.util) but PRESERVES type arguments. This is the desired
+        // behavior — type-arg information is load-bearing for AI consumers reasoning
+        // about generic methods. Pinning so a future regression that strips type args
+        // (e.g. switching to a different Signature API call) fails loudly.
+        IMethod getUsers = findMethod("com.example.service.UserService", "getUsers");
+        assertEquals("getUsers(): List<String>", MethodFormatter.signature(getUsers),
+            "Generic return type must keep type arguments but drop the package prefix; got: "
+                + MethodFormatter.signature(getUsers));
+        assertEquals("List<String>", MethodFormatter.returnTypeSimpleName(getUsers));
+    }
+
+    @Test
+    @DisplayName("reference-typed parameter rendered as simple name (String, not java.lang.String)")
+    void referenceTypedParameter_renderedAsSimpleName() throws Exception {
+        IMethod addUser = findMethod("com.example.service.UserService", "addUser");
+        // Reference type "String" in the parameter list — must render as `String`, not
+        // `java.lang.String`. The simple-name behaviour is what JavaLens tools depend on
+        // to display compact informational signatures.
+        assertEquals("addUser(String username): boolean", MethodFormatter.signature(addUser),
+            "String-typed parameter must render as `String`, not the qualified name; got: "
+                + MethodFormatter.signature(addUser));
+    }
+
+    @Test
+    @DisplayName("boolean return type rendered correctly")
+    void booleanReturnType() throws Exception {
+        IMethod removeUser = findMethod("com.example.service.UserService", "removeUser");
+        assertEquals("removeUser(String username): boolean", MethodFormatter.signature(removeUser));
+        assertEquals("boolean", MethodFormatter.returnTypeSimpleName(removeUser));
     }
 }
