@@ -105,13 +105,13 @@ class MultiModuleScenariosTest {
         List<Map<String, Object>> implementations = (List<Map<String, Object>>) data.get("implementations");
         assertNotNull(implementations, "implementations list must be present; got: " + data);
 
-        boolean foundGreeterImpl = implementations.stream().anyMatch(impl -> {
-            Object qn = impl.get("qualifiedName");
-            return qn != null && qn.toString().equals("com.example.impl.GreeterImpl");
-        });
-        assertTrue(foundGreeterImpl,
-            "GreeterImpl in :impl must be returned as an implementation of Greeter declared in :api. "
-                + "Got: " + implementations);
+        // GreeterImpl is the ONLY implementor of Greeter in the fixture. Exact count
+        // catches regressions that leak stale matches into the implementations list.
+        assertEquals(1, implementations.size(),
+            "Expected exactly 1 implementor (GreeterImpl in :impl). Got: " + implementations);
+        Object qn = implementations.get(0).get("qualifiedName");
+        assertEquals("com.example.impl.GreeterImpl", qn,
+            "The single implementor must be com.example.impl.GreeterImpl; got: " + qn);
     }
 
     @Test
@@ -135,15 +135,25 @@ class MultiModuleScenariosTest {
                 + (r.getError() != null ? r.getError().getCode() : "n/a"));
         Map<String, Object> data = getData(r);
 
-        // The tool should report edits in both :api (declaration) and :impl
-        // (the @Override method must be renamed for the contract to hold).
-        // Edits/changes might be under various keys depending on the tool's output shape;
-        // accept "changes" or "edits" or a stringified content that mentions both files.
-        String repr = data.toString();
-        assertTrue(repr.contains("Greeter.java"),
-            "rename must touch Greeter.java (the declaration); got: " + repr);
-        assertTrue(repr.contains("GreeterImpl.java"),
-            "rename must propagate to GreeterImpl.java (the implementor); got: " + repr);
+        // The tool reports edits in a Map<filePath, List<edit>> under "editsByFile".
+        // Previously this test used `data.toString().contains("...")` which would match
+        // any coincidental string representation. Walk the structured map and pin both
+        // affected files.
+        Map<String, Object> editsByFile = (Map<String, Object>) data.get("editsByFile");
+        assertNotNull(editsByFile,
+            "editsByFile map must be present on a successful rename; got: " + data);
+        boolean touchesGreeter = editsByFile.keySet().stream()
+            .anyMatch(p -> p.replace('\\', '/')
+                .endsWith("api/src/main/java/com/example/api/Greeter.java"));
+        boolean touchesGreeterImpl = editsByFile.keySet().stream()
+            .anyMatch(p -> p.replace('\\', '/')
+                .endsWith("impl/src/main/java/com/example/impl/GreeterImpl.java"));
+        assertTrue(touchesGreeter,
+            "rename must produce edits in Greeter.java (the declaration); got: "
+                + editsByFile.keySet());
+        assertTrue(touchesGreeterImpl,
+            "rename must propagate to GreeterImpl.java (the implementor) for the "
+                + "@Override contract to hold; got: " + editsByFile.keySet());
     }
 
     @Test
