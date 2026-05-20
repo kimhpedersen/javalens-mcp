@@ -179,16 +179,28 @@ class GoToDefinitionToolTest {
     // ========== Edge Case Tests ==========
 
     @Test
-    @DisplayName("Position with no symbol handles gracefully")
-    void positionWithNoSymbol_handlesGracefully() {
+    @DisplayName("Position on a blank line (no symbol) returns SYMBOL_NOT_FOUND")
+    void positionOnBlankLine_returnsSymbolNotFound() {
+        // Calculator.java line 1 (0-based) is the blank line between the package
+        // declaration and the Javadoc. codeSelect at line 1 col 0 finds no
+        // IJavaElement → tool's `if (element == null)` branch fires → SYMBOL_NOT_FOUND.
+        // (line=0 was the earlier choice but it lands on the package keyword, which
+        // codeSelect resolves to IPackageDeclaration — that branch produces a partial
+        // success, not a failure. This blank-line position is the cleanest exercise
+        // of the no-symbol branch.)
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-        args.put("line", 0);
+        args.put("line", 1);
         args.put("column", 0);
 
         ToolResponse response = tool.execute(args);
-
-        assertNotNull(response);
+        assertFalse(response.isSuccess(),
+            "Position on a blank line must fail (no resolvable symbol); got success: "
+                + response.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND,
+            response.getError().getCode(),
+            "Expected SYMBOL_NOT_FOUND on blank-line position; got: "
+                + response.getError().getCode());
     }
 
     // ========== Semantic-grade tests (kind reported for interface/sealed/record) ==========
