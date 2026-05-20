@@ -214,8 +214,14 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 return ToolResponse.invalidParameter("method", "Cannot find method in AST");
             }
 
-            // Build new method signature
-            String newSignature = buildMethodSignature(newName, newReturnType, newParameters);
+            // Constructors are not method-name-prefixed by their "return type" — JDT
+            // surfaces `Signature.toString(method.getReturnType()) == "void"` for them,
+            // which would otherwise leak into newSignature as `void Foo(...)` (invalid
+            // Java). Skip the prefix for constructors.
+            boolean methodIsConstructor = method.isConstructor();
+            String newSignature = methodIsConstructor
+                ? buildMethodSignature(newName, null, newParameters)
+                : buildMethodSignature(newName, newReturnType, newParameters);
             int sigStart = getSignatureStart(methodDecl, ast);
             int sigEnd = getSignatureEnd(methodDecl);
 
@@ -255,8 +261,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("oldName", oldName);
             data.put("newName", newName);
-            data.put("oldReturnType", oldReturnType);
-            data.put("newReturnType", newReturnType);
+            if (!methodIsConstructor) {
+                data.put("oldReturnType", oldReturnType);
+                data.put("newReturnType", newReturnType);
+            }
             data.put("oldParameterCount", oldParamTypes.length);
             data.put("newParameterCount", newParameters.size());
             data.put("newParameters", newParameters.stream()
@@ -329,9 +337,16 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         return result[0];
     }
 
+    /**
+     * Pass {@code returnType == null} for constructors (which have no return type prefix
+     * in valid Java). Pass the explicit type string for methods.
+     */
     private String buildMethodSignature(String name, String returnType, List<ParameterInfo> params) {
         StringBuilder sig = new StringBuilder();
-        sig.append(returnType).append(" ").append(name).append("(");
+        if (returnType != null) {
+            sig.append(returnType).append(" ");
+        }
+        sig.append(name).append("(");
 
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) sig.append(", ");

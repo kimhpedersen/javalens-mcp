@@ -335,6 +335,35 @@ class ChangeMethodSignatureToolTest {
         assertTrue(callerEdits.size() >= 4,
             "Expected at least 4 edits in ConstructorCaller.java (one per call site); got: "
                 + callerEdits.size() + " edits: " + callerEdits);
+
+        // Constructor newSignature must be `Name(params)` with no return-type prefix.
+        // JDT returns `"V"` for IMethod.getReturnType() on constructors; without an
+        // explicit skip, `Signature.toString` flows that through as `"void"` and the
+        // emitted signature becomes `void ConstructorTarget(...)` — invalid Java.
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> declEdits = (List<Map<String, Object>>) editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorTarget.java"))
+            .map(Map.Entry::getValue)
+            .findFirst().orElseThrow();
+        Map<String, Object> declEdit = declEdits.stream()
+            .filter(e -> Boolean.TRUE.equals(e.get("isDeclaration")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "Expected an isDeclaration=true edit on ConstructorTarget.java; got: " + declEdits));
+        String newSig = (String) declEdit.get("newSignature");
+        assertNotNull(newSig);
+        assertFalse(newSig.startsWith("void "),
+            "Constructor signature must not start with `void`; got: " + newSig);
+        assertEquals("ConstructorTarget(String name, int count, String tag)", newSig,
+            "Constructor signature must be `Name(params)`; got: " + newSig);
+
+        // Constructors have no return type — top-level oldReturnType / newReturnType
+        // keys are meaningless and must be omitted (vs reported as the JDT-internal
+        // "void" placeholder).
+        assertFalse(data.containsKey("newReturnType"),
+            "newReturnType must be absent on a constructor signature change; got: " + data);
+        assertFalse(data.containsKey("oldReturnType"),
+            "oldReturnType must be absent on a constructor signature change; got: " + data);
     }
 
     // ========== Behavior-matrix coverage ==========
