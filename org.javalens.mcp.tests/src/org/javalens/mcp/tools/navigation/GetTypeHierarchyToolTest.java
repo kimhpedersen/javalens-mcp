@@ -153,37 +153,50 @@ class GetTypeHierarchyToolTest {
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing position and typeName returns error")
-    void missingParameters_returnsError() {
+    @DisplayName("Empty args returns SYMBOL_NOT_FOUND (no position, no typeName, no fallback)")
+    void missingParameters_returnsSymbolNotFound() {
+        // With no inputs at all: position-lookup skipped (filePath null), typeName-
+        // lookup skipped (null), targetType stays null → SYMBOL_NOT_FOUND.
         ObjectNode args = objectMapper.createObjectNode();
-
         ToolResponse response = tool.execute(args);
-
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND,
+            response.getError().getCode(),
+            "Empty args must return SYMBOL_NOT_FOUND; got: " + response.getError().getCode());
     }
 
     @Test
-    @DisplayName("Invalid type name returns error")
-    void invalidTypeName_returnsError() {
+    @DisplayName("Invalid type name returns SYMBOL_NOT_FOUND")
+    void invalidTypeName_returnsSymbolNotFound() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.NonExistent");
 
         ToolResponse response = tool.execute(args);
-
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND,
+            response.getError().getCode(),
+            "Unresolved typeName must return SYMBOL_NOT_FOUND; got: "
+                + response.getError().getCode());
     }
 
     @Test
-    @DisplayName("Negative line handled gracefully")
-    void negativeLine_handledGracefully() {
+    @DisplayName("Negative line bypasses position lookup; with no typeName fallback returns SYMBOL_NOT_FOUND")
+    void negativeLine_returnsSymbolNotFound() {
+        // Source: `if (filePath != null && !filePath.isBlank() && line >= 0 && column >= 0)`
+        // skips position lookup when line < 0. With no typeName fallback, targetType
+        // stays null → SYMBOL_NOT_FOUND. Pin the documented failure mode instead of a
+        // shape-only assertNotNull.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", -1);
         args.put("column", 10);
 
         ToolResponse response = tool.execute(args);
-
-        assertNotNull(response);
+        assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND,
+            response.getError().getCode(),
+            "Negative-line + no typeName fallback must return SYMBOL_NOT_FOUND; got: "
+                + response.getError().getCode());
     }
 
     // ========== Semantic-grade tests (exact-content assertions) ==========
@@ -369,6 +382,35 @@ class GetTypeHierarchyToolTest {
         assertNotNull(meta);
         assertEquals(Boolean.TRUE, meta.getTruncated(),
             "meta.truncated must be true when subtypes are capped");
+    }
+
+    @Test
+    @DisplayName("maxDepth=1 caps interfaces list AND triggers meta.truncated when more interfaces exist")
+    @SuppressWarnings("unchecked")
+    void maxDepth_capsInterfacesListAndSetsTruncated() {
+        // FilledCircle directly implements IFillable AND transitively implements
+        // IShape (via IFillable extends IShape). With maxDepth=1 the interfaces
+        // list must be capped at 1 element while the underlying total >= 2,
+        // exercising the `if (interfaceList.size() >= maxDepth) break;` branch
+        // (which has its own loop, parallel to but distinct from the superclass
+        // and subtype caps that are tested elsewhere).
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.FilledCircle");
+        args.put("maxDepth", 1);
+
+        ToolResponse r = tool.execute(args);
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        List<Map<String, Object>> interfaces = SemanticAssertions.getList(data, "interfaces");
+        assertEquals(1, interfaces.size(),
+            "maxDepth=1 must cap interfaces list to a single entry; got: " + interfaces);
+        int totalInterfaces = ((Number) data.get("totalInterfaces")).intValue();
+        assertTrue(totalInterfaces >= 2,
+            "FilledCircle has IFillable + IShape transitively — totalInterfaces >= 2; got: "
+                + totalInterfaces);
+        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
+        assertNotNull(meta);
+        assertEquals(Boolean.TRUE, meta.getTruncated(),
+            "meta.truncated must be true when interfaces list is capped; got: " + meta.getTruncated());
     }
 
     @Test
