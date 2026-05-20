@@ -263,4 +263,50 @@ class SuggestImportsToolTest {
         assertEquals(Boolean.FALSE, jUtilList.get("isClass"));
         assertEquals(Boolean.FALSE, jUtilList.get("isEnum"));
     }
+
+    @Test
+    @DisplayName("Negative maxResults returns INVALID_PARAMETER naming maxResults")
+    void negativeMaxResults_returnsInvalidParameter() {
+        // Source: `if (maxResults < 0) return invalidParameter("maxResults", ...)`.
+        // Pin the strict-rejection branch.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "List");
+        args.put("maxResults", -1);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("maxResults"),
+            "Error must name maxResults; got: " + r.getError().getMessage());
+    }
+
+    @Test
+    @DisplayName("Internal packages (sun.*, com.sun.*, *.internal.*, *.impl.*) are filtered from candidates")
+    void internalPackages_filteredFromResults() {
+        // Source skip-list in acceptTypeNameMatch:
+        //   if (packageName.contains(".internal.") || .contains(".impl.") ||
+        //       packageName.startsWith("sun.") || packageName.startsWith("com.sun.")) return;
+        // Search a common JDK name; assert NO candidate's packageName is in the skip-list.
+        // Without this guard the LLM consumer would see implementation-detail types in the
+        // import suggestion list — a real correctness problem.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "List");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> c : getCandidates(getData(r))) {
+            String pkg = (String) c.get("packageName");
+            assertNotNull(pkg, "packageName missing on candidate: " + c);
+            assertFalse(pkg.startsWith("sun."),
+                "sun.* packages must be filtered; got: " + c);
+            assertFalse(pkg.startsWith("com.sun."),
+                "com.sun.* packages must be filtered; got: " + c);
+            assertFalse(pkg.contains(".internal."),
+                "*.internal.* packages must be filtered; got: " + c);
+            assertFalse(pkg.contains(".impl."),
+                "*.impl.* packages must be filtered; got: " + c);
+        }
+    }
 }
