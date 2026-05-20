@@ -317,6 +317,17 @@ public class AnalyzeTypeTool extends AbstractTool {
             usages.put("typeArguments", typeArgs);
             total += typeArgs;
 
+            // Annotation usages (only meaningful for annotation types; @interface
+            // can't be instantiated/cast/etc., so the four categories above are all
+            // empty for it). Mirrors GetTypeUsageSummaryTool's annotation branch so
+            // the two analyzer tools surface the same vocabulary.
+            if (type.isAnnotation()) {
+                int annotations = search.findReferences(
+                    type, org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION, maxUsages).totalEncountered();
+                usages.put("annotationUsages", annotations);
+                total += annotations;
+            }
+
             usages.put("total", total);
 
         } catch (Exception e) {

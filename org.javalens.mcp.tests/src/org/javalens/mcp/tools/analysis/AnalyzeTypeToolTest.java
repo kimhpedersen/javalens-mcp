@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -233,5 +234,78 @@ class AnalyzeTypeToolTest {
             "field counts must agree; aggregate=" + aggregateFields + " detail=" + detailFields.size());
         assertEquals(aggregateNested, detailNested.size(),
             "nested-type counts must agree; aggregate=" + aggregateNested + " detail=" + detailNested.size());
+    }
+
+    @Test
+    @DisplayName("Annotation type's usages block includes the annotationUsages counter")
+    @SuppressWarnings("unchecked")
+    void annotationType_usagesIncludesAnnotationUsages() {
+        // Source line 126-128: when type.isAnnotation(), the usages aggregate also
+        // counts annotation references via SearchService.ReferenceKind.ANNOTATION.
+        // This branch is only reachable for annotation types — non-annotations skip it.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Marker");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        assertNotNull(usages, "usages map must be present by default");
+        assertTrue(usages.containsKey("annotationUsages"),
+            "Annotation type usages must include annotationUsages counter; got keys: "
+                + usages.keySet());
+    }
+
+    @Test
+    @DisplayName("Non-annotation type's usages block does NOT include annotationUsages")
+    @SuppressWarnings("unchecked")
+    void nonAnnotationType_usagesOmitsAnnotationUsages() {
+        // Calculator is a regular class; the isAnnotation() branch is skipped.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        assertNotNull(usages);
+        assertFalse(usages.containsKey("annotationUsages"),
+            "Non-annotation type must NOT have annotationUsages key; got: " + usages.keySet());
+    }
+
+    @Test
+    @DisplayName("Enum constant field carries enumConstant=true flag")
+    @SuppressWarnings("unchecked")
+    void enumConstantField_carriesFlag() {
+        // Source line 230-232 sets enumConstant=true only for fields where
+        // field.isEnumConstant() returns true. Color enum has RED/GREEN/BLUE constants.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.TypeKindsFixture.Color");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> members = (Map<String, Object>) getData(r).get("members");
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) members.get("fields");
+        Map<String, Object> red = fields.stream()
+            .filter(f -> "RED".equals(f.get("name")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("RED enum constant must be in fields; got: " + fields));
+        assertEquals(Boolean.TRUE, red.get("enumConstant"),
+            "RED must carry enumConstant=true; got: " + red);
+    }
+
+    @Test
+    @DisplayName("Regular field omits enumConstant flag (only set when true)")
+    @SuppressWarnings("unchecked")
+    void regularField_omitsEnumConstantFlag() {
+        // Calculator.lastResult is a regular int field. Source only emits the flag when
+        // isEnumConstant() returns true; non-enum fields must omit it.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> members = (Map<String, Object>) getData(r).get("members");
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) members.get("fields");
+        Map<String, Object> lastResult = fields.stream()
+            .filter(f -> "lastResult".equals(f.get("name")))
+            .findFirst()
+            .orElseThrow();
+        assertFalse(lastResult.containsKey("enumConstant"),
+            "Regular field must omit enumConstant; got: " + lastResult);
     }
 }
