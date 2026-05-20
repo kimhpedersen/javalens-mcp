@@ -202,7 +202,7 @@ class RenameSymbolToolTest {
     // ========== Error Handling Tests ==========
 
     @Test
-    @DisplayName("handles invalid line/column gracefully")
+    @DisplayName("Negative line/column returns INVALID_PARAMETER")
     void handlesInvalidLineColumn() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
@@ -211,22 +211,30 @@ class RenameSymbolToolTest {
         args.put("newName", "test");
 
         ToolResponse response = tool.execute(args);
-
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            response.getError().getCode(),
+            "Negative coords must surface as INVALID_PARAMETER; got: "
+                + response.getError().getCode());
     }
 
     @Test
-    @DisplayName("handles no symbol at position")
+    @DisplayName("Position with no symbol returns SYMBOL_NOT_FOUND")
     void handlesNoSymbolAtPosition() {
+        // Line 1 col 0 — blank line between `package` and class Javadoc.
+        // getElementAtPosition returns null → tool emits SYMBOL_NOT_FOUND.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
-        args.put("line", 1);  // Empty line after package
+        args.put("line", 1);
         args.put("column", 0);
         args.put("newName", "test");
 
         ToolResponse response = tool.execute(args);
-
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND,
+            response.getError().getCode(),
+            "Blank-line position must surface as SYMBOL_NOT_FOUND; got: "
+                + response.getError().getCode());
     }
 
     // ========== Semantic-grade tests (exact-content assertions) ==========
