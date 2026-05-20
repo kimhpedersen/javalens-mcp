@@ -250,4 +250,44 @@ class FindLargeClassesToolTest {
         assertEquals(4, thresholds.get("maxFields"));
         assertEquals(150, thresholds.get("maxLines"));
     }
+
+    @Test
+    @DisplayName("Line-count violation: maxLines=10 flags any class > 10 lines with 'lines:' violation")
+    @SuppressWarnings("unchecked")
+    void lineCountViolation_isFlagged() {
+        // Source line 98 emits the "lines: N > T" violation. Existing tests covered methods
+        // and fields violation entries but not lines (LargeClass is only 38 lines; default
+        // threshold is 300). Set maxLines very low so most classes fire it.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxMethods", 10000);   // disable method threshold
+        args.put("maxFields", 10000);    // disable field threshold
+        args.put("maxLines", 10);        // force line threshold violation
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("largeClasses");
+        assertFalse(classes.isEmpty(),
+            "At maxLines=10 most fixture classes must fire the lines threshold; got empty");
+
+        // At least one entry must have a violation prefixed with "lines:" and no methods/fields
+        // violation (since those are at 10000).
+        boolean anyLineViolation = classes.stream()
+            .flatMap(c -> ((List<String>) c.get("violations")).stream())
+            .anyMatch(v -> v.startsWith("lines:"));
+        assertTrue(anyLineViolation,
+            "Expected at least one 'lines:' violation entry across the result; got: "
+                + classes.stream()
+                    .map(c -> c.get("typeName") + ":" + c.get("violations"))
+                    .toList());
+
+        // And NO violation should be methods/fields (since their thresholds are sky-high).
+        boolean noMethodFieldViolations = classes.stream()
+            .flatMap(c -> ((List<String>) c.get("violations")).stream())
+            .noneMatch(v -> v.startsWith("methods:") || v.startsWith("fields:"));
+        assertTrue(noMethodFieldViolations,
+            "With maxMethods/Fields=10000, no entry should fire those violations; got: "
+                + classes.stream()
+                    .map(c -> c.get("typeName") + ":" + c.get("violations"))
+                    .toList());
+    }
 }
