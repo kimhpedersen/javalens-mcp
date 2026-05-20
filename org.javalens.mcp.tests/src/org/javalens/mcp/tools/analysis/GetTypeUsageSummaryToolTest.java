@@ -167,6 +167,52 @@ class GetTypeUsageSummaryToolTest {
     }
 
     @Test
+    @DisplayName("Annotation type (Marker): annotationUsages subcategory is added; kind='annotation'")
+    @SuppressWarnings("unchecked")
+    void annotationType_addsAnnotationUsagesSubcategory() {
+        // Source: `if (type.isAnnotation())` adds an `annotationUsages` subcategory
+        // that's absent for non-annotation types. Pin both the additive branch
+        // (Marker → key present, count >= 1 since AnnotationUsages.java applies it)
+        // and that kind is reported as the lowercase 'annotation'.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Marker");
+        args.put("maxPerCategory", 50);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("annotation", data.get("kind"),
+            "Marker is an annotation type — kind must be lowercase 'annotation'; got: " + data);
+
+        Map<String, Object> usages = (Map<String, Object>) data.get("usages");
+        Map<String, Object> annotationUsages = (Map<String, Object>) usages.get("annotationUsages");
+        assertNotNull(annotationUsages,
+            "annotationUsages subcategory MUST be added for annotation types; got: " + usages);
+        int count = ((Number) annotationUsages.get("count")).intValue();
+        assertTrue(count >= 1,
+            "Marker is applied in AnnotationUsages.java — count must be >= 1; got: " + annotationUsages);
+        assertNotNull(annotationUsages.get("locations"),
+            "annotationUsages locations list missing; got: " + annotationUsages);
+    }
+
+    @Test
+    @DisplayName("Non-annotation type (Calculator): annotationUsages subcategory is OMITTED")
+    @SuppressWarnings("unchecked")
+    void nonAnnotationType_omitsAnnotationUsagesSubcategory() {
+        // Mirror of the previous test: the `if (type.isAnnotation())` guard means
+        // a class/interface/enum/record must NOT carry an annotationUsages key.
+        // Pins the absence-of-key contract.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        assertFalse(usages.containsKey("annotationUsages"),
+            "Non-annotation types must NOT carry annotationUsages key; got: " + usages);
+    }
+
+    @Test
     @DisplayName("Animal: typeArgument count=0, cast count=0, instanceof count=0; instantiation count=1 (FieldHolder)")
     @SuppressWarnings("unchecked")
     void animal_isolation_counts() {
