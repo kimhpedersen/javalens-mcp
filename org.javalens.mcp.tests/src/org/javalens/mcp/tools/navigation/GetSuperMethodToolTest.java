@@ -83,17 +83,50 @@ class GetSuperMethodToolTest {
         }
     }
 
-    @Test @DisplayName("requires filePath, line, column parameters")
+    @Test @DisplayName("requires filePath, line, column parameters (each rejected as INVALID_PARAMETER)")
     void requiresParameters() {
+        // Missing filePath
         ObjectNode noFile = objectMapper.createObjectNode();
         noFile.put("line", 22);
         noFile.put("column", 16);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse rNoFile = tool.execute(noFile);
+        assertFalse(rNoFile.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rNoFile.getError().getCode());
 
+        // Missing line (defaults to -1)
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", animalPath);
         noLine.put("column", 16);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse rNoLine = tool.execute(noLine);
+        assertFalse(rNoLine.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rNoLine.getError().getCode());
+        assertTrue(rNoLine.getError().getMessage().contains("line"),
+            "Error must name `line`; got: " + rNoLine.getError().getMessage());
+
+        // Missing column — independent guard from line. Without this assertion a
+        // future reorder of the validation block (e.g., moving column check above
+        // line) could silently shadow the failure mode.
+        ObjectNode noColumn = objectMapper.createObjectNode();
+        noColumn.put("filePath", animalPath);
+        noColumn.put("line", 22);
+        ToolResponse rNoColumn = tool.execute(noColumn);
+        assertFalse(rNoColumn.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rNoColumn.getError().getCode());
+        assertTrue(rNoColumn.getError().getMessage().contains("column"),
+            "Error must name `column`; got: " + rNoColumn.getError().getMessage());
+
+        // Blank filePath ("") is a separate branch from null filePath.
+        ObjectNode blankFp = objectMapper.createObjectNode();
+        blankFp.put("filePath", "");
+        blankFp.put("line", 22);
+        blankFp.put("column", 16);
+        ToolResponse rBlank = tool.execute(blankFp);
+        assertFalse(rBlank.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rBlank.getError().getCode());
     }
 
     @Test @DisplayName("handles non-method position gracefully")
