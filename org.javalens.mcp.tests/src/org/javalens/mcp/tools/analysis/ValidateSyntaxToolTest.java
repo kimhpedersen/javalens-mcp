@@ -170,6 +170,43 @@ class ValidateSyntaxToolTest {
     }
 
     @Test
+    @DisplayName("filePath takes precedence when BOTH filePath and content are supplied")
+    void filePath_winsOverContent_whenBothProvided() {
+        // Source: `if (filePath != null && !filePath.isBlank())` runs FIRST. content
+        // is only consulted in the else branch. Pin that precedence by providing a
+        // valid filePath plus deliberately broken inline content — the result must
+        // reflect the FILE (valid=true), not the content.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("content", "this is not java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(Boolean.TRUE, data.get("valid"),
+            "filePath takes precedence — Calculator is valid; got: " + data);
+        assertEquals("Calculator.java", data.get("fileName"),
+            "fileName must come from the CU (filePath path), not the content path; got: " + data);
+    }
+
+    @Test
+    @DisplayName("Blank filePath falls back to content")
+    void blankFilePath_fallsBackToContent() {
+        // The dual-source check is `(filePath null OR blank) AND (content null OR blank)`.
+        // Blank filePath ("") with valid content must NOT error — must use the content.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "");
+        args.put("content", "public class X {}");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Blank filePath must fall through to content path; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "ok"));
+        Map<String, Object> data = getData(r);
+        assertEquals(Boolean.TRUE, data.get("valid"));
+        // Without a fileName parameter the default is Untitled.java.
+        assertEquals("Untitled.java", data.get("fileName"));
+    }
+
+    @Test
     @DisplayName("Warnings (e.g., unused-import) are NOT counted as syntax errors")
     void warnings_notReportedBySyntaxValidator() {
         // RefactoringTarget.java has 4 unused-import WARNINGS but no syntax errors.
