@@ -233,7 +233,7 @@ class GetTypeMembersToolTest {
     }
 
     @Test
-    @DisplayName("includeInherited=true: inherited members carry declaredIn pointing to the source type")
+    @DisplayName("includeInherited=true: inherited members carry declaredIn; binary members omit `line`")
     @SuppressWarnings("unchecked")
     void includeInherited_declaredInIsSetToSourceType() {
         ObjectNode args = objectMapper.createObjectNode();
@@ -250,6 +250,51 @@ class GetTypeMembersToolTest {
             .orElseThrow();
         assertEquals("java.lang.Object", toString.get("declaredIn"),
             "Inherited toString must carry declaredIn=java.lang.Object; got: " + toString);
+        // Object.toString is a BINARY method (no source available). createMethodInfo
+        // guards `if (cu != null)` and skips populating `line`. Pins that contract
+        // so a future regression that emits line=0 or line=-1 for binary methods
+        // would surface here.
+        assertFalse(toString.containsKey("line"),
+            "Binary inherited method must NOT carry a `line` key (no compilation unit); got: "
+                + toString);
+        // Direct overrides (draw, fill) come from FilledCircle.java — they DO carry a line.
+        Map<String, Object> draw = methods.stream()
+            .filter(m -> "draw".equals(m.get("name")))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(draw.containsKey("line"),
+            "Direct source-resident method `draw` must carry a `line` key; got: " + draw);
+        assertNull(draw.get("declaredIn"),
+            "Direct (non-inherited) methods must NOT carry `declaredIn`; got: " + draw);
+    }
+
+    @Test
+    @DisplayName("memberKind='unknown' filter (not method/field/type) returns no member lists, only the type block + totalMembers=0")
+    @SuppressWarnings("unchecked")
+    void memberKindUnknown_returnsZeroMembersAndOmitsLists() {
+        // Source: the three `if (memberKind == null || "method".equals(memberKind))` /
+        // ...field/type guards collectively cover ONLY the documented values. An
+        // unknown kind passes through, no collectXxx runs, and no data.put for the
+        // lists fires. The tool returns success with `type` and `totalMembers=0`.
+        // Pin this contract so a regression that silently fell through to "all"
+        // (or returned an error) would surface here.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("memberKind", "unknown");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Unknown memberKind currently returns success (silent no-op), not an error.");
+        Map<String, Object> data = getData(r);
+        assertNotNull(data.get("type"), "type block must still be present; got: " + data);
+        assertFalse(data.containsKey("methods"),
+            "methods key must be omitted for unknown memberKind; got: " + data);
+        assertFalse(data.containsKey("fields"),
+            "fields key must be omitted for unknown memberKind; got: " + data);
+        assertFalse(data.containsKey("nestedTypes"),
+            "nestedTypes key must be omitted for unknown memberKind; got: " + data);
+        assertEquals(0, ((Number) data.get("totalMembers")).intValue(),
+            "totalMembers must be 0 when no list was populated; got: " + data);
     }
 
     @Test
