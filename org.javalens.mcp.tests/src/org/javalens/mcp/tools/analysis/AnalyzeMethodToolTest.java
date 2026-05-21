@@ -328,4 +328,36 @@ class AnalyzeMethodToolTest {
             "Methods without throws must omit the exceptions field entirely (not emit []); got: "
                 + data.get("exceptions"));
     }
+
+    @Test
+    @DisplayName("Method-reference callee: analyzing MethodRefUser.use must list MethodRefTarget.formatId among callees")
+    @SuppressWarnings("unchecked")
+    void methodReferenceInBody_appearsAsCallee() {
+        // MethodRefUser.use(int) captures `MethodRefTarget::formatId` as an IntFunction.
+        // The reference is a deferred dispatch — when the functional interface is
+        // applied, formatId runs. The callees list must therefore include formatId
+        // alongside any direct invocations.
+        String userPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/MethodRefUser.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", userPath);
+        // 0-based line 14: `    public String use(int id) {` — "use" at column 18.
+        args.put("line", 14);
+        args.put("column", 18);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on MethodRefUser.use must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> callees = (Map<String, Object>) getData(r).get("callees");
+        assertNotNull(callees);
+        List<Map<String, Object>> calleeList = (List<Map<String, Object>>) callees.get("list");
+        boolean hasFormatId = calleeList.stream()
+            .anyMatch(c -> "formatId".equals(c.get("name"))
+                && c.get("qualifiedType") != null
+                && c.get("qualifiedType").toString().endsWith("MethodRefTarget"));
+        assertTrue(hasFormatId,
+            "MethodRefTarget::formatId in MethodRefUser.use's body must appear in callees " +
+                "(deferred-invocation dispatch site); got: " + calleeList);
+    }
 }

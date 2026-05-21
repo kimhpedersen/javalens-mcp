@@ -13,12 +13,19 @@ import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ConstructorInvocation;
+import org.eclipse.jdt.core.dom.CreationReference;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.MethodReference;
 import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
@@ -302,6 +309,60 @@ public class AnalyzeMethodTool extends AbstractTool {
                                 ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                         }
                         return true;
+                    }
+
+                    @Override
+                    public boolean visit(ConstructorInvocation node) {
+                        if (callees.size() >= maxCallees) return false;
+                        IMethodBinding binding = node.resolveConstructorBinding();
+                        if (binding != null) {
+                            addCallee(binding, "THIS_CONSTRUCTOR", binding.getDeclaringClass().getName(),
+                                ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
+                        }
+                        return true;
+                    }
+
+                    @Override
+                    public boolean visit(SuperConstructorInvocation node) {
+                        if (callees.size() >= maxCallees) return false;
+                        IMethodBinding binding = node.resolveConstructorBinding();
+                        if (binding != null) {
+                            addCallee(binding, "SUPER_CONSTRUCTOR", binding.getDeclaringClass().getName(),
+                                ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
+                        }
+                        return true;
+                    }
+
+                    // Method references and constructor references are deferred-invocation
+                    // dispatch sites. They belong in the callee list as METHOD_REFERENCE.
+                    @Override
+                    public boolean visit(ExpressionMethodReference node) {
+                        visitMethodReference(node);
+                        return true;
+                    }
+                    @Override
+                    public boolean visit(TypeMethodReference node) {
+                        visitMethodReference(node);
+                        return true;
+                    }
+                    @Override
+                    public boolean visit(SuperMethodReference node) {
+                        visitMethodReference(node);
+                        return true;
+                    }
+                    @Override
+                    public boolean visit(CreationReference node) {
+                        visitMethodReference(node);
+                        return true;
+                    }
+
+                    private void visitMethodReference(MethodReference node) {
+                        if (callees.size() >= maxCallees) return;
+                        IMethodBinding binding = node.resolveMethodBinding();
+                        if (binding != null) {
+                            addCallee(binding, "METHOD_REFERENCE", binding.getName(),
+                                ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
+                        }
                     }
                 });
             }
