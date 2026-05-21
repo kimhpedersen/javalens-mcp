@@ -205,4 +205,39 @@ class GetCallHierarchyOutgoingToolTest {
         assertEquals(0, ((Number) data.get("totalCallees")).intValue(),
             "Calculator.getLastResult has no method/constructor calls; got: " + data);
     }
+
+    @Test
+    @DisplayName("Method reference (MethodRefTarget::formatId) in body must appear as a callee of MethodRefUser.use")
+    @SuppressWarnings("unchecked")
+    void methodReferenceInBody_surfacesAsCallee() {
+        // MethodRefUser.use(int id) captures `MethodRefTarget::formatId` as an
+        // IntFunction. The reference is the dispatch target — any code that
+        // invokes the function will run formatId. The outgoing call hierarchy
+        // for `use` must list formatId as a callee, otherwise the dispatch
+        // graph is incomplete.
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String userPath = projectPath
+            .resolve("src/main/java/com/example/MethodRefUser.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", userPath);
+        // 0-based line 14: `    public String use(int id) {` — "use" at column 18.
+        args.put("line", 14);
+        args.put("column", 18);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on MethodRefUser.use must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        List<Map<String, Object>> callees = (List<Map<String, Object>>) data.get("callees");
+        assertNotNull(callees);
+        boolean hasFormatId = callees.stream()
+            .anyMatch(c -> "formatId".equals(c.get("method"))
+                && c.get("declaringClass") != null
+                && c.get("declaringClass").toString().endsWith("MethodRefTarget"));
+        assertTrue(hasFormatId,
+            "MethodRefTarget::formatId reference in MethodRefUser.use's body must surface " +
+                "as a callee — method references are deferred-invocation dispatch sites; " +
+                "got: " + callees);
+    }
 }

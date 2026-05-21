@@ -13,13 +13,18 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
+import org.eclipse.jdt.core.dom.CreationReference;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.MethodReference;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -38,12 +43,21 @@ import java.util.function.Supplier;
 /**
  * Find all methods called by a method (outgoing calls).
  *
- * Parses the method body AST and collects all invocation nodes including:
+ * Parses the method body AST and collects all dispatch-graph nodes including:
  * - MethodInvocation (regular method calls)
  * - SuperMethodInvocation (super.method() calls)
  * - ClassInstanceCreation (new Foo() constructor calls)
  * - ConstructorInvocation (this() calls)
  * - SuperConstructorInvocation (super() calls)
+ * - ExpressionMethodReference (instance::method)
+ * - TypeMethodReference (Foo::method)
+ * - SuperMethodReference (super::method)
+ * - CreationReference (Foo::new)
+ *
+ * Method-reference callees carry callType="METHOD_REFERENCE" — they are
+ * deferred dispatches (the method is invoked when the functional interface
+ * is later applied, not at the reference site itself) but still part of the
+ * dispatch graph.
  */
 public class GetCallHierarchyOutgoingTool extends AbstractTool {
 
@@ -243,9 +257,60 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
                 }
                 return true;
             }
+
+            // Method references (Foo::method, instance::method, super::method, Foo::new)
+            // are deferred-invocation dispatch sites: at the position of the reference,
+            // the method is not called, but at the position where the functional
+            // interface is invoked, this method runs. From the call-hierarchy
+            // perspective, the referenced method IS a callee of the enclosing
+            // method — the dispatch graph includes it.
+            @Override
+            public boolean visit(ExpressionMethodReference node) {
+                addMethodReferenceCallee(node, callees, seenMethods, ast, filePath, service);
+                return true;
+            }
+
+            @Override
+            public boolean visit(TypeMethodReference node) {
+                addMethodReferenceCallee(node, callees, seenMethods, ast, filePath, service);
+                return true;
+            }
+
+            @Override
+            public boolean visit(SuperMethodReference node) {
+                addMethodReferenceCallee(node, callees, seenMethods, ast, filePath, service);
+                return true;
+            }
+
+            @Override
+            public boolean visit(CreationReference node) {
+                addMethodReferenceCallee(node, callees, seenMethods, ast, filePath, service);
+                return true;
+            }
         });
 
         return callees;
+    }
+
+    private void addMethodReferenceCallee(MethodReference node,
+                                          List<Map<String, Object>> callees,
+                                          Set<String> seenMethods, CompilationUnit ast,
+                                          Path filePath, IJdtService service) {
+        IMethodBinding binding = node.resolveMethodBinding();
+        if (binding == null) return;
+        String key = binding.getKey();
+        if (!seenMethods.add(key)) return;
+        Map<String, Object> callee = new LinkedHashMap<>();
+        callee.put("method", binding.getName());
+        ITypeBinding declaring = binding.getDeclaringClass();
+        callee.put("declaringClass", declaring != null ? declaring.getQualifiedName() : "Unknown");
+        callee.put("signature", buildSignature(binding));
+        ITypeBinding returnType = binding.getReturnType();
+        callee.put("returnType", returnType != null ? returnType.getName() : "");
+        callee.put("callType", "METHOD_REFERENCE");
+        callee.put("isFromSource", declaring != null && declaring.isFromSource());
+        callee.put("callLocation", buildCallLocation(node, ast, filePath, service));
+        callees.add(callee);
     }
 
     private void addMethodCallee(MethodInvocation node, IMethodBinding binding,

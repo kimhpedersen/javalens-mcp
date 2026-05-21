@@ -230,4 +230,38 @@ class GetCallHierarchyIncomingToolTest {
         assertTrue(hasSelf,
             "Recursive method must list itself among callers; got: " + callers);
     }
+
+    @Test
+    @DisplayName("Method referenced only via method reference (Foo::method) surfaces its enclosing method as a caller")
+    @SuppressWarnings("unchecked")
+    void methodReferenceCallSite_surfacesAsCaller() {
+        // MethodRefTarget.formatId is used only as `MethodRefTarget::formatId` inside
+        // MethodRefUser.use(int). No direct invocation. The incoming-call hierarchy
+        // must include MethodRefUser.use as a caller, otherwise method-reference
+        // dispatch sites are missing from the call graph.
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String targetPath = projectPath
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", targetPath);
+        // 0-based line 8: `    public static String formatId(int id) {`
+        // "formatId" starts at column 25.
+        args.put("line", 8);
+        args.put("column", 25);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on MethodRefTarget.formatId must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        List<Map<String, Object>> callers = (List<Map<String, Object>>) data.get("callers");
+        assertNotNull(callers);
+        boolean hasUseCaller = callers.stream()
+            .anyMatch(c -> "use".equals(c.get("callerMethod"))
+                && c.get("callerClass") != null
+                && c.get("callerClass").toString().endsWith("MethodRefUser"));
+        assertTrue(hasUseCaller,
+            "MethodRefUser.use uses MethodRefTarget::formatId — must surface as a caller " +
+                "in the incoming hierarchy; got: " + callers);
+    }
 }
