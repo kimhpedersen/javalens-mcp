@@ -462,6 +462,76 @@ class ChangeMethodSignatureToolTest {
             "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
     }
 
+    @Test
+    @DisplayName("adding a parameter to ConstructorTarget(String, int) propagates to a subclass's super(name, count) delegation")
+    void addParam_propagatesToSuperConstructorDelegation() {
+        // ConstructorSubclass extends ConstructorTarget and calls super(name, count)
+        // in its own constructor. When the 2-arg ConstructorTarget constructor gets a
+        // third parameter, the super() site must be updated to super(name, count, "").
+        // SuperConstructorInvocation is a distinct AST node from MethodInvocation and
+        // from ConstructorInvocation; like ConstructorInvocation it is a Statement,
+        // so the edit covers the full statement including the trailing semicolon.
+        String constructorTargetPath = projectPath
+            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", constructorTargetPath);
+        args.put("line", 11);
+        args.put("column", 11);
+
+        ArrayNode params = objectMapper.createArrayNode();
+        ObjectNode p1 = objectMapper.createObjectNode();
+        p1.put("name", "name");
+        p1.put("type", "String");
+        params.add(p1);
+        ObjectNode p2 = objectMapper.createObjectNode();
+        p2.put("name", "count");
+        p2.put("type", "int");
+        params.add(p2);
+        ObjectNode p3 = objectMapper.createObjectNode();
+        p3.put("name", "tag");
+        p3.put("type", "String");
+        p3.put("defaultValue", "\"\"");
+        params.add(p3);
+        args.set("newParameters", params);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "Constructor signature change must succeed; got error: " +
+                (response.getError() != null ? response.getError().getMessage() : "n/a"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> editsByFile =
+            (Map<String, List<Map<String, Object>>>) getData(response).get("editsByFile");
+
+        List<Map<String, Object>> subclassEdits = editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorSubclass.java"))
+            .map(Map.Entry::getValue)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "ConstructorSubclass.java must appear in edits — it has a super(...) call site " +
+                    "that needs updating; got files: " + editsByFile.keySet()));
+
+        Map<String, Object> superEdit = subclassEdits.stream()
+            .filter(e -> {
+                String oldText = (String) e.get("oldText");
+                return oldText != null && oldText.trim().startsWith("super(");
+            })
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "Expected an edit whose oldText starts with `super(` in ConstructorSubclass.java; " +
+                    "got edits: " + subclassEdits));
+        String newText = (String) superEdit.get("newText");
+        assertNotNull(newText, "super() edit newText must be present; got: " + superEdit);
+        assertEquals("super(name, count, \"\");", newText,
+            "super() delegation edit must include the defaulted new arg AND the trailing " +
+                "semicolon (the edit replaces the full Statement); got: " + newText);
+        // Offsets must be a valid range.
+        int startOffset = ((Number) superEdit.get("startOffset")).intValue();
+        int endOffset = ((Number) superEdit.get("endOffset")).intValue();
+        assertTrue(startOffset >= 0 && endOffset > startOffset,
+            "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @Test
