@@ -14,9 +14,11 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
+import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
@@ -231,13 +233,39 @@ public class AnalyzeDataFlowTool extends AbstractTool {
             VariableInfo info = variables.get(name);
             if (info == null) return true;
 
-            // Determine if this is a write or read
-            if (parent instanceof Assignment assignment && assignment.getLeftHandSide() == node) {
-                info.writeCount++;
-            } else if (parent instanceof PostfixExpression) {
+            // Determine the "effective expression" for write/read classification.
+            // When the SimpleName is the name part of a qualified-field-access form —
+            // `this.x`, `super.x`, `Outer.x`, or `obj.x` — the AST wraps it in a
+            // FieldAccess / SuperFieldAccess / QualifiedName parent. The assignment
+            // / postfix / prefix checks should target THAT wrapper, not the bare
+            // SimpleName. Otherwise `this.x = 5` mis-classifies `x` as a read
+            // (the SimpleName's immediate parent is FieldAccess, not Assignment).
+            ASTNode effective = node;
+            if (parent instanceof FieldAccess fa && fa.getName() == node) {
+                effective = parent;
+            } else if (parent instanceof SuperFieldAccess sfa && sfa.getName() == node) {
+                effective = parent;
+            } else if (parent instanceof QualifiedName qn && qn.getName() == node) {
+                effective = parent;
+            }
+            ASTNode effectiveParent = effective.getParent();
+
+            // Determine if this is a write or read.
+            if (effectiveParent instanceof Assignment assignment
+                    && assignment.getLeftHandSide() == effective) {
+                Assignment.Operator op = assignment.getOperator();
+                if (op == Assignment.Operator.ASSIGN) {
+                    info.writeCount++;
+                } else {
+                    // Compound assignment (+=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=, >>>=)
+                    // reads the current value, combines with RHS, writes back.
+                    info.writeCount++;
+                    info.readCount++;
+                }
+            } else if (effectiveParent instanceof PostfixExpression) {
                 info.writeCount++;
                 info.readCount++;
-            } else if (parent instanceof PrefixExpression prefix) {
+            } else if (effectiveParent instanceof PrefixExpression prefix) {
                 PrefixExpression.Operator op = prefix.getOperator();
                 if (op == PrefixExpression.Operator.INCREMENT || op == PrefixExpression.Operator.DECREMENT) {
                     info.writeCount++;

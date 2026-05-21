@@ -263,4 +263,74 @@ class AnalyzeDataFlowToolTest {
                 "Variables must include " + expected + "; got: " + names);
         }
     }
+
+    @Test
+    @DisplayName("Field write via `this.field = value` (FieldAccess on LHS) is counted as a write, not a read")
+    @SuppressWarnings("unchecked")
+    void thisQualifiedAssignment_countedAsWrite() {
+        // DataFlowFieldAccess.writeViaThisQualifier has:
+        //     this.counter = 42;
+        //     this.label = "initialized";
+        // The SimpleName `counter` has parent FieldAccess, whose parent is Assignment.
+        // The current visitor only checks the IMMEDIATE parent; since `counter`'s
+        // immediate parent is FieldAccess (not Assignment), the assignment-LHS check
+        // doesn't fire and the visitor falls through to "else → readCount++". That
+        // misclassifies a write as a read.
+        String dfPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/DataFlowFieldAccess.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", dfPath);
+        // 0-based line 13: `    public void writeViaThisQualifier() {`
+        args.put("line", 13);
+        args.put("column", 17);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "analyze_data_flow on writeViaThisQualifier must succeed; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        List<Map<String, Object>> vars = (List<Map<String, Object>>) getData(r).get("variables");
+        Map<String, Object> counter = vars.stream()
+            .filter(v -> "counter".equals(v.get("name")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "field `counter` must appear among tracked variables; got: " + vars));
+        int writeCount = ((Number) counter.get("writeCount")).intValue();
+        assertTrue(writeCount >= 1,
+            "`this.counter = 42` is a write to counter — writeCount must be >= 1; " +
+                "got: " + counter);
+        assertEquals(Boolean.TRUE, counter.get("written"),
+            "`written` boolean must reflect the write; got: " + counter);
+    }
+
+    @Test
+    @DisplayName("Compound assignment via `this.field += value` counts as BOTH a write and a read")
+    @SuppressWarnings("unchecked")
+    void thisQualifiedCompoundAssignment_countedAsReadAndWrite() {
+        // DataFlowFieldAccess.compoundAssignViaThis has `this.counter += 5;`.
+        // Compound assignment (+=, -=, *=, etc.) reads the old value, combines
+        // with the RHS, and writes back. Data-flow classification must count it
+        // as BOTH a read and a write. The current visitor counts compound under
+        // the same branch as `=` (assignment LHS) — which only increments writeCount,
+        // missing the read.
+        String dfPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/DataFlowFieldAccess.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", dfPath);
+        // 0-based line 18: `    public void compoundAssignViaThis() {`
+        args.put("line", 18);
+        args.put("column", 17);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> vars = (List<Map<String, Object>>) getData(r).get("variables");
+        Map<String, Object> counter = vars.stream()
+            .filter(v -> "counter".equals(v.get("name")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "field `counter` must appear; got: " + vars));
+        assertTrue(((Number) counter.get("writeCount")).intValue() >= 1,
+            "Compound assignment is a write — writeCount must be >= 1; got: " + counter);
+        assertTrue(((Number) counter.get("readCount")).intValue() >= 1,
+            "Compound assignment is also a read — readCount must be >= 1; got: " + counter);
+    }
 }
