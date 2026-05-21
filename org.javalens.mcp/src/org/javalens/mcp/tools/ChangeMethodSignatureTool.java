@@ -14,12 +14,16 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
+import org.eclipse.jdt.core.dom.CreationReference;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
@@ -244,10 +248,11 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
             // Edit 2: Update all call sites
             boolean isConstructor = method.isConstructor();
+            List<Map<String, Object>> methodReferences = new ArrayList<>();
             for (SearchMatch match : references) {
                 try {
                     updateCallSite(match, oldName, newName, oldParamNames, newParameters,
-                        paramMapping, service, editsByFile, isConstructor);
+                        paramMapping, service, editsByFile, methodReferences, isConstructor);
                 } catch (Exception e) {
                     log.debug("Error updating call site: {}", e.getMessage());
                 }
@@ -273,6 +278,26 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             data.put("totalEdits", totalEdits);
             data.put("filesAffected", editsByFile.size());
             data.put("editsByFile", editsByFile);
+
+            // Method references cannot be automatically rewritten because the
+            // functional-interface signature they bind to would no longer match.
+            // Surface them as informational entries plus top-level warnings so the
+            // AI consumer knows manual rewrite is required.
+            if (!methodReferences.isEmpty()) {
+                data.put("methodReferences", methodReferences);
+                java.util.Set<String> affectedFiles = new java.util.LinkedHashSet<>();
+                for (Map<String, Object> ref : methodReferences) {
+                    Object filePathObj = ref.get("filePath");
+                    if (filePathObj != null) affectedFiles.add(filePathObj.toString());
+                }
+                List<String> warnings = new ArrayList<>();
+                for (String f : affectedFiles) {
+                    warnings.add(f + " has method-reference call sites that cannot be " +
+                        "automatically updated. Replace each with a lambda or refactor " +
+                        "the functional-interface signature.");
+                }
+                data.put("warnings", warnings);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(totalEdits)
@@ -394,6 +419,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                                 String[] oldParamNames, List<ParameterInfo> newParams,
                                 int[] paramMapping, IJdtService service,
                                 Map<String, List<Map<String, Object>>> editsByFile,
+                                List<Map<String, Object>> methodReferences,
                                 boolean isConstructor)
             throws JavaModelException {
 
@@ -417,8 +443,11 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         final ASTNode[] callNode = {null};
 
         if (isConstructor) {
-            // For constructors, the call site can be a `new Foo(...)` ClassInstanceCreation,
-            // a `this(...)` ConstructorInvocation, or a `super(...)` SuperConstructorInvocation.
+            // For constructors the call site can be:
+            //   ClassInstanceCreation: `new Foo(...)`
+            //   ConstructorInvocation: `this(...)`
+            //   SuperConstructorInvocation: `super(...)`
+            //   CreationReference: `Foo::new` — cannot be textually rewritten.
             ast.accept(new ASTVisitor() {
                 @Override
                 public boolean visit(ClassInstanceCreation node) {
@@ -444,11 +473,58 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     }
                     return true;
                 }
+                @Override
+                public boolean visit(CreationReference node) {
+                    if (offsetWithin(node, matchOffset)) {
+                        callNode[0] = node;
+                        return false;
+                    }
+                    return true;
+                }
             });
         } else {
+            // For regular methods, MethodInvocation is the textually-rewritable form.
+            // The three MethodReference subtypes (Expression / Type / Super) bind to
+            // the method too — they are call sites that cannot be textually rewritten
+            // because the surrounding functional-interface assignment would no longer
+            // type-check. We capture them so the response can surface them to the
+            // consumer; we do not emit replace edits for them.
             ast.accept(new ASTVisitor() {
                 @Override
                 public boolean visit(MethodInvocation node) {
+                    if (node.getName().getStartPosition() == matchOffset ||
+                        offsetWithin(node, matchOffset)) {
+                        if (oldName.equals(node.getName().getIdentifier())) {
+                            callNode[0] = node;
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                @Override
+                public boolean visit(ExpressionMethodReference node) {
+                    if (node.getName().getStartPosition() == matchOffset ||
+                        offsetWithin(node, matchOffset)) {
+                        if (oldName.equals(node.getName().getIdentifier())) {
+                            callNode[0] = node;
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                @Override
+                public boolean visit(TypeMethodReference node) {
+                    if (node.getName().getStartPosition() == matchOffset ||
+                        offsetWithin(node, matchOffset)) {
+                        if (oldName.equals(node.getName().getIdentifier())) {
+                            callNode[0] = node;
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                @Override
+                public boolean visit(SuperMethodReference node) {
                     if (node.getName().getStartPosition() == matchOffset ||
                         offsetWithin(node, matchOffset)) {
                         if (oldName.equals(node.getName().getIdentifier())) {
@@ -462,6 +538,31 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         }
 
         if (callNode[0] == null) {
+            return;
+        }
+
+        // Method references and constructor references cannot be textually rewritten
+        // (replacing `Foo::method` with anything keeps it a method reference, and the
+        // functional-interface signature it binds to would now be wrong). Record the
+        // location as informational; do not emit a replace edit.
+        ASTNode found = callNode[0];
+        if (found instanceof ExpressionMethodReference
+            || found instanceof TypeMethodReference
+            || found instanceof SuperMethodReference
+            || found instanceof CreationReference) {
+            String refFilePath = service.getPathUtils().formatPath(
+                Path.of(cu.getResource().getLocation().toOSString()));
+            Map<String, Object> ref = new LinkedHashMap<>();
+            ref.put("filePath", refFilePath);
+            ref.put("line", ast.getLineNumber(found.getStartPosition()) - 1);
+            ref.put("column", ast.getColumnNumber(found.getStartPosition()));
+            ref.put("startOffset", found.getStartPosition());
+            ref.put("endOffset", found.getStartPosition() + found.getLength());
+            ref.put("text", found.toString().trim());
+            ref.put("reason", "Method reference cannot be automatically rewritten; the " +
+                "functional-interface signature would no longer match. Replace with a " +
+                "lambda or refactor manually.");
+            methodReferences.add(ref);
             return;
         }
 

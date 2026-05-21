@@ -532,6 +532,81 @@ class ChangeMethodSignatureToolTest {
             "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
     }
 
+    @Test
+    @DisplayName("adding a parameter to a method that is consumed via method-reference (Foo::method) must surface that reference site — either as an edit, a warning, or a refusal")
+    void addParam_methodReferenceCallSite_isSurfaced() {
+        // MethodRefTarget.formatId(int) is consumed by MethodRefUser via the form
+        //     IntFunction<String> formatter = MethodRefTarget::formatId;
+        // (a TypeMethodReference AST node). Adding a parameter to formatId breaks the
+        // functional-interface assignment compatibility — IntFunction expects (int)
+        // not (int, String). An automatic textual rewrite cannot fix this; the user
+        // must replace the method reference with a lambda OR change the functional
+        // interface.
+        //
+        // The tool must not be SILENT about this. Acceptable contracts:
+        //   (a) the response includes MethodRefUser.java in editsByFile with the
+        //       reference site recorded (informational; the consumer rewrites manually)
+        //   (b) the response carries a `warnings` block naming MethodRefUser.java
+        //   (c) the response is an INVALID_PARAMETER error refusing the change
+        // Silent skip — response omits any mention of the reference site — is the bug.
+        String methodRefTargetPath = projectPath
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", methodRefTargetPath);
+        // 0-based line 8: `    public static String formatId(int id) {`
+        // "formatId" starts at column 25 (4 indent + "public static String " = 25).
+        args.put("line", 8);
+        args.put("column", 25);
+
+        ArrayNode params = objectMapper.createArrayNode();
+        ObjectNode p1 = objectMapper.createObjectNode();
+        p1.put("name", "id");
+        p1.put("type", "int");
+        params.add(p1);
+        ObjectNode p2 = objectMapper.createObjectNode();
+        p2.put("name", "prefix");
+        p2.put("type", "String");
+        p2.put("defaultValue", "\"\"");
+        params.add(p2);
+        args.set("newParameters", params);
+
+        ToolResponse response = tool.execute(args);
+
+        // Three acceptable shapes; assert at least one of them holds.
+        boolean refusedWithInvalidParam = !response.isSuccess()
+            && response.getError() != null
+            && "INVALID_PARAMETER".equals(response.getError().getCode())
+            && response.getError().getMessage() != null
+            && (response.getError().getMessage().toLowerCase().contains("method reference")
+                || response.getError().getMessage().toLowerCase().contains("methodrefuser"));
+
+        boolean editsListReferenceFile = false;
+        boolean warningsNameReferenceFile = false;
+        if (response.isSuccess()) {
+            Map<String, Object> data = getData(response);
+            @SuppressWarnings("unchecked")
+            Map<String, List<Map<String, Object>>> editsByFile =
+                (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
+            if (editsByFile != null) {
+                editsListReferenceFile = editsByFile.keySet().stream()
+                    .anyMatch(k -> k.replace('\\', '/').endsWith("MethodRefUser.java"));
+            }
+            Object warningsObj = data.get("warnings");
+            if (warningsObj instanceof List<?> warnings) {
+                warningsNameReferenceFile = warnings.stream()
+                    .anyMatch(w -> w != null && w.toString().contains("MethodRefUser"));
+            }
+        }
+
+        assertTrue(refusedWithInvalidParam || editsListReferenceFile || warningsNameReferenceFile,
+            "Adding a parameter to a method that has method-reference call sites must NOT " +
+                "silently succeed. Expected one of: (a) editsByFile lists MethodRefUser.java, " +
+                "(b) data.warnings names MethodRefUser, (c) INVALID_PARAMETER mentioning the " +
+                "reference site. Got success=" + response.isSuccess() +
+                ", error=" + (response.getError() != null ? response.getError().getCode() : "n/a") +
+                ", data=" + (response.isSuccess() ? getData(response).keySet() : "n/a"));
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @Test
