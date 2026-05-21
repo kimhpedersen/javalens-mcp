@@ -317,4 +317,40 @@ class ApplyQuickFixToolTest {
             assertNotNull(r.getError());
         }
     }
+
+    @Test
+    @DisplayName("add_throws on a constructor with this(...) delegation: throws is added to that constructor's signature")
+    @SuppressWarnings("unchecked")
+    void addThrows_onConstructorWithThisDelegation_addsToTargetConstructor() {
+        // ConstructorTarget(String name) at 0-based line 7 delegates to
+        // ConstructorTarget(String name, int count) via `this(name, 0)`. Applying
+        // add_throws:IOException to the 1-arg constructor's declaration should add
+        // the throws clause to its signature. The this() call site does NOT need
+        // updating — calling this(args) only requires throws on the CALLER (if the
+        // delegated-to constructor's body throws). This test pins that the operation
+        // succeeds and produces a single insert edit for the throws clause.
+        String constructorTargetPath = projectPath
+            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", constructorTargetPath);
+        args.put("fixId", "add_throws:java.io.IOException");
+        args.put("line", 7);  // 0-based line of the 1-arg ConstructorTarget declaration
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "add_throws on a constructor with this() delegation must succeed; got error: "
+                + (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("add_throws", data.get("fixType"));
+
+        List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("edits");
+        assertEquals(1, edits.size(),
+            "add_throws emits exactly one insert edit for the throws clause; got: " + edits);
+        Map<String, Object> edit = edits.get(0);
+        assertEquals("insert", edit.get("type"));
+        String newText = (String) edit.get("newText");
+        assertNotNull(newText);
+        assertTrue(newText.contains("throws") && newText.contains("java.io.IOException"),
+            "Insert text must contain `throws java.io.IOException`; got: " + newText);
+    }
 }
