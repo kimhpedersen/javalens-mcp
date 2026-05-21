@@ -607,6 +607,72 @@ class ChangeMethodSignatureToolTest {
                 ", data=" + (response.isSuccess() ? getData(response).keySet() : "n/a"));
     }
 
+    @Test
+    @DisplayName("adding a parameter to SuperMethodParent.greet propagates to the super.greet(name) call site in SuperMethodChild")
+    void addParam_propagatesToSuperMethodInvocation() {
+        // SuperMethodChild.enthusiasticGreet calls super.greet(name). That is a
+        // SuperMethodInvocation AST node — a distinct node type from MethodInvocation
+        // (regular `obj.foo()` calls) and from SuperMethodReference (`super::foo`).
+        // When SuperMethodParent.greet's signature gains a parameter, the
+        // super.greet(name) call site must be updated to super.greet(name, "").
+        String parentPath = projectPath
+            .resolve("src/main/java/com/example/SuperMethodParent.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", parentPath);
+        // 0-based line 8: `    public String greet(String name) {`
+        // "greet" starts at column 18 (4 indent + "public String " = 18).
+        args.put("line", 8);
+        args.put("column", 18);
+
+        ArrayNode params = objectMapper.createArrayNode();
+        ObjectNode p1 = objectMapper.createObjectNode();
+        p1.put("name", "name");
+        p1.put("type", "String");
+        params.add(p1);
+        ObjectNode p2 = objectMapper.createObjectNode();
+        p2.put("name", "suffix");
+        p2.put("type", "String");
+        p2.put("defaultValue", "\"\"");
+        params.add(p2);
+        args.set("newParameters", params);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "Method signature change must succeed; got error: " +
+                (response.getError() != null ? response.getError().getMessage() : "n/a"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> editsByFile =
+            (Map<String, List<Map<String, Object>>>) getData(response).get("editsByFile");
+
+        List<Map<String, Object>> childEdits = editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("SuperMethodChild.java"))
+            .map(Map.Entry::getValue)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "SuperMethodChild.java must appear in edits — it has a super.greet(name) " +
+                    "call site that needs updating; got files: " + editsByFile.keySet()));
+
+        Map<String, Object> superCallEdit = childEdits.stream()
+            .filter(e -> {
+                String oldText = (String) e.get("oldText");
+                return oldText != null && oldText.trim().contains("super.greet");
+            })
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "Expected an edit whose oldText contains `super.greet` in " +
+                    "SuperMethodChild.java; got edits: " + childEdits));
+        String newText = (String) superCallEdit.get("newText");
+        assertNotNull(newText, "super.greet() edit newText must be present; got: " + superCallEdit);
+        assertEquals("super.greet(name, \"\")", newText,
+            "super.greet call must include the defaulted new arg; got: " + newText);
+        // Offsets must be a valid range.
+        int startOffset = ((Number) superCallEdit.get("startOffset")).intValue();
+        int endOffset = ((Number) superCallEdit.get("endOffset")).intValue();
+        assertTrue(startOffset >= 0 && endOffset > startOffset,
+            "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @Test

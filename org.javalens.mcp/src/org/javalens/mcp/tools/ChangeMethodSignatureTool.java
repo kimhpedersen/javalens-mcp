@@ -22,6 +22,7 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
@@ -502,6 +503,17 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     return true;
                 }
                 @Override
+                public boolean visit(SuperMethodInvocation node) {
+                    if (node.getName().getStartPosition() == matchOffset ||
+                        offsetWithin(node, matchOffset)) {
+                        if (oldName.equals(node.getName().getIdentifier())) {
+                            callNode[0] = node;
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                @Override
                 public boolean visit(ExpressionMethodReference node) {
                     if (node.getName().getStartPosition() == matchOffset ||
                         offsetWithin(node, matchOffset)) {
@@ -594,6 +606,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
         // Build the replacement call text. The header differs by node type:
         //   MethodInvocation: optional qualifier + "." + methodName + "(args)"
+        //   SuperMethodInvocation: optional qualifier + "super." + methodName + "(args)"
         //   ClassInstanceCreation: "new " + typeName + "(args)"
         //   ConstructorInvocation: "this(args)"
         //   SuperConstructorInvocation: optional qualifier + "super(args)"
@@ -603,6 +616,11 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 newCall.append(methodInv.getExpression().toString()).append(".");
             }
             newCall.append(newName);
+        } else if (mi instanceof SuperMethodInvocation smi) {
+            if (smi.getQualifier() != null) {
+                newCall.append(smi.getQualifier().toString()).append(".");
+            }
+            newCall.append("super.").append(newName);
         } else if (mi instanceof ClassInstanceCreation cic) {
             if (cic.getExpression() != null) {
                 newCall.append(cic.getExpression().toString()).append(".");
@@ -649,6 +667,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
     private static List<?> callArguments(ASTNode node) {
         if (node instanceof MethodInvocation mi) return mi.arguments();
+        if (node instanceof SuperMethodInvocation smi) return smi.arguments();
         if (node instanceof ClassInstanceCreation cic) return cic.arguments();
         if (node instanceof ConstructorInvocation ci) return ci.arguments();
         if (node instanceof SuperConstructorInvocation sci) return sci.arguments();
