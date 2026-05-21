@@ -281,6 +281,53 @@ class RenameSymbolToolTest {
         assertTrue(hasWidgetHelper, "edits must include WidgetHelper.java; got: " + editsByFile.keySet());
     }
 
+    @Test
+    @DisplayName("renaming MethodRefTarget.formatId propagates to MethodRefTarget::formatId method-reference call site")
+    void renameMethod_propagatesToTypeMethodReference() {
+        // MethodRefUser holds `IntFunction<String> formatter = MethodRefTarget::formatId;`
+        // (a TypeMethodReference). Renaming formatId must update that reference; the
+        // formatter's binding doesn't change at the binding-key level (still IMethodBinding
+        // for the same method), but the textual identifier `formatId` in the call site
+        // must be rewritten to the new name.
+        String methodRefTargetPath = projectPath
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", methodRefTargetPath);
+        // 0-based line 8: `    public static String formatId(int id) {`
+        // "formatId" starts at column 25 (4 indent + "public static String " = 25).
+        args.put("line", 8);
+        args.put("column", 25);
+        args.put("newName", "formatIdentifier");
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "Rename must succeed; got error: " +
+                (response.getError() != null ? response.getError().getMessage() : "n/a"));
+
+        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(getData(response));
+        // The declaration update is in MethodRefTarget.java; the method-reference
+        // update must be in MethodRefUser.java.
+        boolean hasUserFile = editsByFile.keySet().stream()
+            .anyMatch(k -> k.replace('\\', '/').endsWith("MethodRefUser.java"));
+        assertTrue(hasUserFile,
+            "MethodRefUser.java must appear in edits — it has a `MethodRefTarget::formatId` " +
+                "method-reference that must be rewritten to ::formatIdentifier; got files: "
+                + editsByFile.keySet());
+
+        // The edit's oldText must be `formatId` (the identifier inside the method
+        // reference); newText `formatIdentifier`.
+        List<Map<String, Object>> userEdits = editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("MethodRefUser.java"))
+            .map(Map.Entry::getValue)
+            .findFirst().orElseThrow();
+        boolean hasFormatIdRewrite = userEdits.stream()
+            .anyMatch(e -> "formatId".equals(e.get("oldText"))
+                && "formatIdentifier".equals(e.get("newText")));
+        assertTrue(hasFormatIdRewrite,
+            "Expected an edit in MethodRefUser.java rewriting `formatId` to `formatIdentifier`; " +
+                "got: " + userEdits);
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @Test
