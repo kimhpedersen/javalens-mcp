@@ -154,6 +154,79 @@ class InlineMethodToolTest {
         assertFalse(response.isSuccess());
     }
 
+    @Test
+    @DisplayName("inlining a method whose body contains super.X() at a call site in a SUBCLASS must NOT silently produce semantically-wrong code")
+    void inlineMethod_withSuperCallInBody_isSurfaced() {
+        // SuperInlineTarget.label() returns `super.toString() + ":labeled"`. The super
+        // there points to Object. SuperInlineConsumer extends SuperInlineTarget and
+        // invokes this.label() in useIt(). Inlining label() at that call site would
+        // textually substitute `super.toString()` into the subclass's scope, where
+        // `super` means SuperInlineTarget, not Object. That changes the call's
+        // dispatch target — semantically wrong.
+        //
+        // Acceptable contracts for the tool:
+        //   (a) the response is INVALID_PARAMETER / refusal mentioning super
+        //   (b) the response carries a warnings entry naming `super`
+        //   (c) some other explicit signal in the response
+        // Silent inlining is the bug.
+        String consumerPath = projectPath
+            .resolve("src/main/java/com/example/SuperInlineConsumer.java").toString();
+        // SuperInlineConsumer.java 0-based line 13: `        return this.label() + "!";`
+        // "label" identifier starts at column 21 (8 indent + "return this." = 20; +1 for 0-based of "l").
+        // Locate via source-text scan to avoid column drift.
+        String source;
+        try {
+            source = java.nio.file.Files.readString(java.nio.file.Path.of(consumerPath));
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+        int idx = source.indexOf("this.label()");
+        assertTrue(idx >= 0, "Fixture must contain `this.label()`");
+        int labelIdx = source.indexOf("label", idx);
+        int lineNum = (int) source.substring(0, labelIdx).chars().filter(c -> c == '\n').count();
+        int col = labelIdx - (source.lastIndexOf('\n', labelIdx) + 1);
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", consumerPath);
+        args.put("line", lineNum);
+        args.put("column", col);
+
+        ToolResponse response = tool.execute(args);
+
+        // The tool must NOT succeed silently with an inlined edit that contains `super`.
+        boolean refusedWithError = !response.isSuccess()
+            && response.getError() != null
+            && response.getError().getMessage() != null
+            && response.getError().getMessage().toLowerCase().contains("super");
+
+        boolean surfacedAsWarning = false;
+        boolean leakedSuperIntoInlinedCode = false;
+        if (response.isSuccess()) {
+            Map<String, Object> data = getData(response);
+            Object warningsObj = data.get("warnings");
+            if (warningsObj instanceof List<?> warnings) {
+                surfacedAsWarning = warnings.stream()
+                    .anyMatch(w -> w != null && w.toString().toLowerCase().contains("super"));
+            }
+            // Check whether the inlined code body leaked super textually.
+            Object inlined = data.get("inlinedCode");
+            if (inlined != null && inlined.toString().contains("super.")) {
+                leakedSuperIntoInlinedCode = true;
+            }
+        }
+
+        // Silent leak is the bug — the inlined code shouldn't contain `super.` in a
+        // form that changes meaning. Either a refusal or an explicit warning is
+        // acceptable. Bare leak with no signal is not.
+        assertTrue(refusedWithError || surfacedAsWarning,
+            "Inlining a method with super.X() in its body at a subclass call site must " +
+                "either refuse with a `super`-mentioning error OR carry a `super`-mentioning " +
+                "warning. Got success=" + response.isSuccess() +
+                ", error=" + (response.getError() != null ? response.getError().getMessage() : "n/a") +
+                ", leakedSuperIntoInlined=" + leakedSuperIntoInlinedCode +
+                ", data=" + (response.isSuccess() ? getData(response).keySet() : "n/a"));
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     private ObjectNode doubleValueArgs() {

@@ -22,6 +22,10 @@ import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.ThisExpression;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -252,6 +256,14 @@ public class InlineMethodTool extends AbstractTool {
             if (countReturnStatements(body) > 1) {
                 warnings.add("Method has multiple return statements - review needed");
             }
+            if (bodyUsesSuper(methodDecl)) {
+                warnings.add("Method body references `super` (super.method(), super.field, " +
+                    "super(), or super::method). Inlining substitutes the body textually, but " +
+                    "`super` in the inlined code will resolve against the CALL SITE's class " +
+                    "hierarchy, not the original declaring class. If the call site is in a " +
+                    "different class than the declaration, the dispatch target changes. " +
+                    "Review carefully and replace `super.X` with the explicit target if needed.");
+            }
             if (!warnings.isEmpty()) {
                 data.put("warnings", warnings);
             }
@@ -323,6 +335,43 @@ public class InlineMethodTool extends AbstractTool {
         });
 
         return usesThis[0];
+    }
+
+    /**
+     * Returns true if the method body references {@code super} in any AST form —
+     * SuperMethodInvocation (super.foo()), SuperFieldAccess (super.field),
+     * SuperConstructorInvocation (super()), or SuperMethodReference (super::foo).
+     * Inlining a body containing any of these into a call site in a different
+     * class changes the dispatch target of `super`, which is rarely the user's
+     * intent. The tool emits a warning when this is detected.
+     */
+    private boolean bodyUsesSuper(MethodDeclaration method) {
+        final boolean[] usesSuper = {false};
+
+        method.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(SuperMethodInvocation node) {
+                usesSuper[0] = true;
+                return false;
+            }
+            @Override
+            public boolean visit(SuperFieldAccess node) {
+                usesSuper[0] = true;
+                return false;
+            }
+            @Override
+            public boolean visit(SuperConstructorInvocation node) {
+                usesSuper[0] = true;
+                return false;
+            }
+            @Override
+            public boolean visit(SuperMethodReference node) {
+                usesSuper[0] = true;
+                return false;
+            }
+        });
+
+        return usesSuper[0];
     }
 
     private int countReturnStatements(Block body) {
