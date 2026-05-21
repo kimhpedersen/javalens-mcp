@@ -328,6 +328,48 @@ class RenameSymbolToolTest {
                 "got: " + userEdits);
     }
 
+    @Test
+    @DisplayName("renaming SuperMethodParent.greet propagates to the super.greet(name) call site in SuperMethodChild")
+    void renameMethod_propagatesToSuperMethodInvocation() {
+        // SuperMethodChild.enthusiasticGreet calls super.greet(name). Renaming
+        // SuperMethodParent.greet → salute must rewrite super.greet to super.salute.
+        // SuperMethodInvocation's name is a SimpleName whose binding matches the
+        // rename target.
+        String parentPath = projectPath
+            .resolve("src/main/java/com/example/SuperMethodParent.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", parentPath);
+        // 0-based line 8: `    public String greet(String name) {`
+        // "greet" starts at column 18.
+        args.put("line", 8);
+        args.put("column", 18);
+        args.put("newName", "salute");
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "Rename must succeed; got error: " +
+                (response.getError() != null ? response.getError().getMessage() : "n/a"));
+
+        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(getData(response));
+        boolean hasChild = editsByFile.keySet().stream()
+            .anyMatch(k -> k.replace('\\', '/').endsWith("SuperMethodChild.java"));
+        assertTrue(hasChild,
+            "SuperMethodChild.java must appear in edits — it has a super.greet(name) call " +
+                "site that must be rewritten to super.salute(name); got files: " +
+                editsByFile.keySet());
+
+        List<Map<String, Object>> childEdits = editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("SuperMethodChild.java"))
+            .map(Map.Entry::getValue)
+            .findFirst().orElseThrow();
+        boolean hasGreetRewrite = childEdits.stream()
+            .anyMatch(e -> "greet".equals(e.get("oldText"))
+                && "salute".equals(e.get("newText")));
+        assertTrue(hasGreetRewrite,
+            "Expected an edit in SuperMethodChild.java rewriting `greet` → `salute`; got: "
+                + childEdits);
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @Test
