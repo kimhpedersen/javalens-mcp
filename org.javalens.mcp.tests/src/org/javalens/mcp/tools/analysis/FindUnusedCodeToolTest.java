@@ -187,6 +187,27 @@ class FindUnusedCodeToolTest {
     }
 
     @Test
+    @DisplayName("Private method referenced only via method reference (this::format) is NOT reported as unused")
+    void privateMethodReferencedOnlyViaMethodReference_isNotUnused() {
+        // MethodRefOnlyConsumer has a private `format(int)` method that is used ONLY
+        // via `this::format` in `formatAll(...).stream().map(this::format)`. There is
+        // no direct invocation `format(n)` anywhere. The usage-detection visitor must
+        // recognize ExpressionMethodReference (and TypeMethodReference, SuperMethodReference)
+        // as usages, or this private method gets flagged as unused.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/MethodRefOnlyConsumer.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> items = itemsOf(r);
+        boolean formatFlagged = items.stream()
+            .anyMatch(i -> "format".equals(i.get("name")) && "method".equals(i.get("kind")));
+        assertFalse(formatFlagged,
+            "format() is used via this::format method reference — must NOT be reported " +
+                "as unused; got items: " + items);
+    }
+
+    @Test
     @DisplayName("includeFields=false and includeMethods=false → totalUnused=0")
     void bothFlagsFalse_returnsEmpty() {
         ObjectNode args = objectMapper.createObjectNode();
