@@ -152,7 +152,13 @@ public class FindUnusedCodeTool extends AbstractTool {
         Map<IBinding, ASTNode> privateMembers = new HashMap<>();
         Set<IBinding> usedBindings = new HashSet<>();
 
-        // First pass: collect private members
+        // First pass: collect private members. Canonicalize every binding
+        // to its declaration form. Without this, a field/method declared in
+        // a generic class produces one IBinding instance here, and the
+        // SimpleName / MethodInvocation visitors below produce a DIFFERENT
+        // IBinding instance for the same member when seen through a
+        // parameterized-member access context. Set.contains then returns
+        // false and the member is mis-flagged as unused (issue #17).
         ast.accept(new ASTVisitor() {
             @Override
             public boolean visit(FieldDeclaration node) {
@@ -161,7 +167,7 @@ public class FindUnusedCodeTool extends AbstractTool {
                         VariableDeclarationFragment vdf = (VariableDeclarationFragment) fragment;
                         IVariableBinding binding = vdf.resolveBinding();
                         if (binding != null) {
-                            privateMembers.put(binding, vdf);
+                            privateMembers.put(binding.getVariableDeclaration(), vdf);
                         }
                     }
                 }
@@ -173,14 +179,15 @@ public class FindUnusedCodeTool extends AbstractTool {
                 if (includeMethods && isPrivate(node.getModifiers()) && !node.isConstructor()) {
                     IMethodBinding binding = node.resolveBinding();
                     if (binding != null) {
-                        privateMembers.put(binding, node);
+                        privateMembers.put(binding.getMethodDeclaration(), node);
                     }
                 }
                 return true;
             }
         });
 
-        // Second pass: find usages
+        // Second pass: find usages — bindings here are also canonicalized
+        // to declaration form so they compare equal to the keys above.
         ast.accept(new ASTVisitor() {
             @Override
             public boolean visit(SimpleName node) {
@@ -192,7 +199,13 @@ public class FindUnusedCodeTool extends AbstractTool {
                                           || (parent instanceof MethodDeclaration md && md.getName() == node);
 
                     if (!isDeclaration) {
-                        usedBindings.add(binding);
+                        if (binding instanceof IVariableBinding vb) {
+                            usedBindings.add(vb.getVariableDeclaration());
+                        } else if (binding instanceof IMethodBinding mb) {
+                            usedBindings.add(mb.getMethodDeclaration());
+                        } else {
+                            usedBindings.add(binding);
+                        }
                     }
                 }
                 return true;
@@ -202,7 +215,7 @@ public class FindUnusedCodeTool extends AbstractTool {
             public boolean visit(MethodInvocation node) {
                 IMethodBinding binding = node.resolveMethodBinding();
                 if (binding != null) {
-                    usedBindings.add(binding);
+                    usedBindings.add(binding.getMethodDeclaration());
                 }
                 return true;
             }

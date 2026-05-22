@@ -218,4 +218,33 @@ class FindUnusedCodeToolTest {
         assertTrue(r.isSuccess());
         assertEquals(0, ((Number) getData(r).get("totalUnused")).intValue());
     }
+
+    @Test
+    @DisplayName("Private fields read in generic and non-generic declaring classes are NOT flagged unused")
+    @SuppressWarnings("unchecked")
+    void privateFieldsRead_inGenericClass_areNotReportedUnused() {
+        // The genericunused/ fixture establishes a 2x2 matrix:
+        //   PlainClass (concrete, non-generic) — control
+        //   AbstractPlainClass (abstract, non-generic) — control
+        //   GenericClass<T> (concrete, generic) — issue #17 surface
+        //   AbstractGenericClass<T> (abstract, generic) — issue #17 surface
+        // Every file's private field IS read in a method body. Tool must
+        // report zero unused fields for every file.
+        for (String name : List.of(
+                "PlainClass", "AbstractPlainClass",
+                "GenericClass", "AbstractGenericClass")) {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("filePath", "src/main/java/com/example/genericunused/" + name + ".java");
+            ToolResponse r = tool.execute(args);
+            assertTrue(r.isSuccess(), name + " analysis must succeed");
+            List<Map<String, Object>> items = (List<Map<String, Object>>) getData(r).get("unusedItems");
+            assertNotNull(items, name + ": unusedItems missing");
+            java.util.List<String> fieldNames = items.stream()
+                .filter(i -> "field".equals(i.get("kind")))
+                .map(i -> (String) i.get("name"))
+                .toList();
+            assertTrue(fieldNames.isEmpty(),
+                name + ": private field is read in a method body and must not be flagged unused; got: " + items);
+        }
+    }
 }
