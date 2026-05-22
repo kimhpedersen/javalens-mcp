@@ -178,10 +178,10 @@ public class FindCircularDependenciesTool extends AbstractTool {
 
                 for (ICompilationUnit cu : pkg.getCompilationUnits()) {
                     for (IImportDeclaration imp : cu.getImports()) {
-                        String importPkg = extractPackage(imp.getElementName());
+                        String importPkg = resolveImportPackage(imp.getElementName(), projectPackages);
 
                         // Only track dependencies to other project packages
-                        if (projectPackages.contains(importPkg) && !importPkg.equals(pkgName)) {
+                        if (importPkg != null && !importPkg.equals(pkgName)) {
                             graph.get(pkgName).add(importPkg);
                         }
                     }
@@ -301,8 +301,32 @@ public class FindCircularDependenciesTool extends AbstractTool {
         return false;
     }
 
-    private String extractPackage(String typeName) {
-        int lastDot = typeName.lastIndexOf('.');
-        return lastDot > 0 ? typeName.substring(0, lastDot) : "";
+    /**
+     * Walk progressively shorter prefixes of an import name until one
+     * matches a known project package. Handles:
+     * <ul>
+     *   <li>regular type imports — {@code com.foo.Bar} -> {@code com.foo}</li>
+     *   <li>on-demand imports — {@code com.foo.*} -> {@code com.foo}</li>
+     *   <li>static imports — {@code com.foo.Bar.method} -> {@code com.foo}</li>
+     *   <li>static on-demand — {@code com.foo.Bar.*} -> {@code com.foo}</li>
+     *   <li>nested-class imports — {@code com.foo.Outer.Inner} -> {@code com.foo}</li>
+     * </ul>
+     * Returns null when no prefix matches.
+     */
+    private String resolveImportPackage(String importName, Set<String> projectPackages) {
+        String current = importName;
+        if (current.endsWith(".*")) {
+            current = current.substring(0, current.length() - 2);
+        }
+        while (true) {
+            if (projectPackages.contains(current)) {
+                return current;
+            }
+            int lastDot = current.lastIndexOf('.');
+            if (lastDot <= 0) {
+                return null;
+            }
+            current = current.substring(0, lastDot);
+        }
     }
 }

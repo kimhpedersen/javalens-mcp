@@ -138,18 +138,30 @@ class FindCircularDependenciesToolTest {
     }
 
     @Test
-    @DisplayName("default (project-wide) scan finds the cycledemo cycle as the only cycle in simple-maven")
+    @DisplayName("default (project-wide) scan finds the cycledemo and staticcycle cycles")
     void projectWide_findsCycledemoCycle() {
         ToolResponse r = tool.execute(objectMapper.createObjectNode());
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // With the cycledemo fixture added, the project-wide scan must surface exactly
-        // that cycle and no others (no other fixture introduces a package cycle).
+        // The simple-maven fixture has two distinct package cycles:
+        // - com.example.cycledemo.a <-> com.example.cycledemo.b (type imports)
+        // - com.example.staticcycle.x <-> com.example.staticcycle.y (static imports)
+        // A project-wide scan must surface both.
         assertEquals(true, data.get("hasCycles"),
-            "simple-maven now contains the cycledemo cycle; project-wide scan must detect it");
-        assertEquals(1, ((Number) data.get("cycleCount")).intValue(),
-            "Expected exactly 1 cycle project-wide (only cycledemo); got: " + data);
+            "simple-maven contains package cycles; project-wide scan must detect them");
+        assertEquals(2, ((Number) data.get("cycleCount")).intValue(),
+            "Expected exactly 2 cycles project-wide (cycledemo + staticcycle); got: " + data);
+
+        @SuppressWarnings("unchecked")
+        java.util.Set<String> affected = new java.util.HashSet<>(
+            (List<String>) data.get("affectedPackages"));
+        assertEquals(
+            java.util.Set.of(
+                "com.example.cycledemo.a", "com.example.cycledemo.b",
+                "com.example.staticcycle.x", "com.example.staticcycle.y"),
+            affected,
+            "affectedPackages must be exactly the four cycle members; got: " + affected);
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -199,6 +211,32 @@ class FindCircularDependenciesToolTest {
             assertFalse(suggestions.isEmpty(),
                 "Suggestions must be non-empty when cycles exist");
         }
+    }
+
+    @Test
+    @DisplayName("Static-import cycle between staticcycle.x and staticcycle.y is detected")
+    void staticImportCycle_isDetected() {
+        // The fixture establishes a cycle staticcycle.x <-> staticcycle.y
+        // purely through `import static`. The dependency-extraction step
+        // must recognise that a static import points at a package, not at
+        // a type or member, and walk past the member and declaring class
+        // to reach the package name.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("packageFilter", "com.example.staticcycle");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(true, data.get("hasCycles"),
+            "staticcycle.x and staticcycle.y mutually `import static`; the tool must "
+                + "report a cycle. Got: " + data);
+
+        @SuppressWarnings("unchecked")
+        java.util.Set<String> affected = new java.util.HashSet<>(
+            (List<String>) data.get("affectedPackages"));
+        assertEquals(
+            java.util.Set.of("com.example.staticcycle.x", "com.example.staticcycle.y"),
+            affected,
+            "Cycle members must be exactly the two staticcycle subpackages; got: " + affected);
     }
 
     @Test
