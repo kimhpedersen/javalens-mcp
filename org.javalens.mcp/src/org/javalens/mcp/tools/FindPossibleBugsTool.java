@@ -6,18 +6,23 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.CatchClause;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IfStatement;
 import org.eclipse.jdt.core.dom.InfixExpression;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.NullLiteral;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SynchronizedStatement;
 import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.TryStatement;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -208,6 +213,17 @@ public class FindPossibleBugsTool extends AbstractTool {
                 return true;
             }
 
+            // Check for null-initialized local that is dereferenced without
+            // reassignment in the same method. Conservative detector — only
+            // fires when the variable's sole assignment is the literal null
+            // initializer.
+            @Override
+            public boolean visit(MethodDeclaration method) {
+                if (method.getBody() == null) return true;
+                checkNullInitDereferenceInMethod(method, ast, file, service, issues, severityFilter);
+                return true;
+            }
+
             // Check for synchronization issues
             @Override
             public boolean visit(SynchronizedStatement node) {
@@ -218,6 +234,64 @@ public class FindPossibleBugsTool extends AbstractTool {
                         addIssue("SYNC_ON_STRING", "Synchronizing on String (interned strings are shared)",
                                 "high", node, ast, file, service, issues, severityFilter);
                     }
+                }
+                return true;
+            }
+        });
+    }
+
+    /**
+     * Conservative null-deref detector: a local variable whose ONLY assignment
+     * is a NullLiteral initializer is dereferenced (as the receiver of a
+     * MethodInvocation or FieldAccess) somewhere in the method body.
+     * Variables that are reassigned anywhere are excluded — without flow
+     * analysis we can't tell whether the reassignment dominates the deref,
+     * and the conservative choice is to skip those (avoid false positives).
+     */
+    private void checkNullInitDereferenceInMethod(MethodDeclaration method, CompilationUnit ast,
+                                                   Path file, IJdtService service,
+                                                   List<Map<String, Object>> issues, String severityFilter) {
+        java.util.Set<String> nullOnly = new java.util.HashSet<>();
+
+        method.getBody().accept(new ASTVisitor() {
+            @Override
+            public boolean visit(VariableDeclarationFragment frag) {
+                if (frag.getInitializer() instanceof NullLiteral) {
+                    nullOnly.add(frag.getName().getIdentifier());
+                }
+                return true;
+            }
+            @Override
+            public boolean visit(Assignment assign) {
+                if (assign.getLeftHandSide() instanceof SimpleName lhs) {
+                    nullOnly.remove(lhs.getIdentifier());
+                }
+                return true;
+            }
+        });
+
+        if (nullOnly.isEmpty()) return;
+
+        method.getBody().accept(new ASTVisitor() {
+            @Override
+            public boolean visit(MethodInvocation mi) {
+                if (mi.getExpression() instanceof SimpleName recv
+                        && nullOnly.contains(recv.getIdentifier())) {
+                    addIssue("NULL_DEREFERENCE",
+                        "Variable `" + recv.getIdentifier() + "` is initialized to null and "
+                            + "dereferenced without reassignment",
+                        "high", mi, ast, file, service, issues, severityFilter);
+                }
+                return true;
+            }
+            @Override
+            public boolean visit(FieldAccess fa) {
+                if (fa.getExpression() instanceof SimpleName recv
+                        && nullOnly.contains(recv.getIdentifier())) {
+                    addIssue("NULL_DEREFERENCE",
+                        "Variable `" + recv.getIdentifier() + "` is initialized to null and "
+                            + "dereferenced without reassignment",
+                        "high", fa, ast, file, service, issues, severityFilter);
                 }
                 return true;
             }

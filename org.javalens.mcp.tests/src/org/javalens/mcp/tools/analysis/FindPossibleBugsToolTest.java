@@ -200,6 +200,45 @@ class FindPossibleBugsToolTest {
     }
 
     @Test
+    @DisplayName("Detects null-initialized local that is later dereferenced (documented null-pointer risk)")
+    void detectsNullInitializedDereference() {
+        // NullDerefPatterns.derefereneAfterAssignedNull declares `String s = null;`
+        // and then returns `s.length()`. The contract claims null-pointer risk
+        // detection — this deterministic case (NullLiteral initializer, no
+        // intervening reassignment, then deref) must be flagged.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/NullDerefPatterns.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        boolean found = issuesOf(r).stream().anyMatch(i ->
+            "NULL_DEREFERENCE".equals(i.get("code")));
+        assertTrue(found,
+            "Tool documents null-pointer risk detection; a null-initialized local "
+                + "dereferenced without reassignment must be flagged with NULL_DEREFERENCE. "
+                + "Got: " + issuesOf(r));
+    }
+
+    @Test
+    @DisplayName("Properly null-checked local is NOT flagged as null-dereference")
+    void safeNullCheck_isNotFlagged() {
+        // NullDerefPatterns.safeNullCheck guards with `if (s == null) return 0;`
+        // before calling `s.length();`. The detector must not flag this.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/NullDerefPatterns.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        boolean falsePositiveOnSafe = issuesOf(r).stream().anyMatch(i -> {
+            int line = ((Number) i.get("line")).intValue();
+            // Line 17 (0-based) = source line 18 = `return s.length();` in safeNullCheck
+            return "NULL_DEREFERENCE".equals(i.get("code")) && line == 17;
+        });
+        assertFalse(falsePositiveOnSafe,
+            "Null-checked dereference must not be flagged; got: " + issuesOf(r));
+    }
+
+    @Test
     @DisplayName("Calculator.java (clean) returns zero issues + zero highCount")
     void cleanFile_zeroCounts() {
         ObjectNode args = objectMapper.createObjectNode();
