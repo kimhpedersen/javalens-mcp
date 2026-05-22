@@ -359,6 +359,39 @@ class InlineVariableToolTest {
     }
 
     @Test
+    @DisplayName("Method-reference initializer inlines into the usage site")
+    @SuppressWarnings("unchecked")
+    void methodReferenceInitializer_inlined() {
+        // MethodRefUser.use declares `IntFunction<String> formatter = MethodRefTarget::formatId;`
+        // and calls `formatter.apply(id)`. Inlining `formatter` must produce a replacement
+        // that includes the method-reference expression. The tool's needsParentheses logic
+        // is responsible for safe substitution.
+        String path = projectPath.resolve("src/main/java/com/example/MethodRefUser.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", path);
+        args.put("line", 15);
+        args.put("column", 28);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Inlining a method-reference-initialized variable must succeed; got: "
+                + (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("formatter", data.get("variableName"));
+        assertEquals("MethodRefTarget::formatId", data.get("initializerText"));
+
+        // At least one replace edit must substitute the method-reference text.
+        boolean substituted = getEdits(data).stream()
+            .filter(e -> "replace".equals(e.get("type")))
+            .map(e -> (String) e.get("newText"))
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(t -> t.contains("MethodRefTarget::formatId"));
+        assertTrue(substituted,
+            "At least one replace edit must substitute the method-reference text; got: "
+                + getEdits(data));
+    }
+
+    @Test
     @DisplayName("Refuses inlining a variable declared inside a for-loop init clause")
     void forInitDeclaration_isRefused() {
         // `for (int i = 0; i < n; i++)` — the variable i is declared inside
