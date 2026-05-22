@@ -6,14 +6,29 @@ import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.BodyDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.IBinding;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.IVariableBinding;
+import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.QualifiedName;
+import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -22,6 +37,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -144,6 +160,17 @@ public class ExtractConstantTool extends AbstractTool {
 
             if (expression == null) {
                 return ToolResponse.invalidParameter("selection", "No extractable expression at selection");
+            }
+
+            // A static final field initializer runs at class-load time with no
+            // enclosing instance. The expression must not reference anything
+            // that only exists at runtime in an instance method body: `this`,
+            // `super`, method parameters, locals, instance fields, or implicit-
+            // this calls to instance methods.
+            String unsafeReason = describeStaticContextViolation(expression);
+            if (unsafeReason != null) {
+                return ToolResponse.invalidParameter("selection",
+                    "Expression cannot be extracted to a static final constant: " + unsafeReason);
             }
 
             // Get the type of the expression
@@ -296,6 +323,107 @@ public class ExtractConstantTool extends AbstractTool {
             log.debug("Error getting indentation: {}", e.getMessage());
             return "    ";
         }
+    }
+
+    /**
+     * Returns null when the expression is safe to lift into a static final
+     * field initializer; otherwise returns a short human-readable description
+     * of the first violation found. Walks the expression looking for any
+     * reference that requires the enclosing instance to exist at runtime.
+     */
+    private String describeStaticContextViolation(Expression expression) {
+        // Pre-pass: collect bindings declared inside the expression itself
+        // (lambda parameters, locals in nested blocks). References that
+        // resolve to these bindings are safe — they don't reach outside.
+        final Set<IBinding> localDeclarations = new HashSet<>();
+        expression.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(SingleVariableDeclaration node) {
+                IVariableBinding b = node.resolveBinding();
+                if (b != null) localDeclarations.add(b.getVariableDeclaration());
+                return true;
+            }
+            @Override
+            public boolean visit(VariableDeclarationFragment node) {
+                IVariableBinding b = node.resolveBinding();
+                if (b != null) localDeclarations.add(b.getVariableDeclaration());
+                return true;
+            }
+        });
+
+        final String[] reason = {null};
+        expression.accept(new ASTVisitor() {
+            private void flag(String r) {
+                if (reason[0] == null) reason[0] = r;
+            }
+            @Override
+            public boolean visit(ThisExpression node) {
+                flag("references `this` (no enclosing instance at static-init time)");
+                return false;
+            }
+            @Override
+            public boolean visit(SuperFieldAccess node) {
+                flag("uses `super` field access (requires an instance)");
+                return false;
+            }
+            @Override
+            public boolean visit(SuperMethodInvocation node) {
+                flag("uses `super` method invocation (requires an instance)");
+                return false;
+            }
+            @Override
+            public boolean visit(SuperMethodReference node) {
+                flag("uses `super` method reference (requires an instance)");
+                return false;
+            }
+            @Override
+            public boolean visit(MethodInvocation node) {
+                if (node.getExpression() == null) {
+                    IMethodBinding mb = node.resolveMethodBinding();
+                    if (mb != null && !Modifier.isStatic(mb.getModifiers())) {
+                        flag("calls instance method `" + node.getName().getIdentifier()
+                            + "` via implicit `this`");
+                        return false;
+                    }
+                }
+                return true;
+            }
+            @Override
+            public boolean visit(SimpleName node) {
+                ASTNode parent = node.getParent();
+                // Skip name parts of qualified constructs and declarations —
+                // they're either validated by their parent's visitor or are
+                // declaration sites, not references.
+                if (parent instanceof FieldAccess fa && fa.getName() == node) return true;
+                if (parent instanceof QualifiedName qn && qn.getName() == node) return true;
+                if (parent instanceof MethodInvocation mi && mi.getName() == node) return true;
+                if (parent instanceof SuperMethodInvocation smi && smi.getName() == node) return true;
+                if (parent instanceof SuperFieldAccess sfa && sfa.getName() == node) return true;
+                if (parent instanceof SingleVariableDeclaration svd && svd.getName() == node) return true;
+                if (parent instanceof VariableDeclarationFragment vdf && vdf.getName() == node) return true;
+
+                IBinding binding = node.resolveBinding();
+                if (binding instanceof IVariableBinding vb) {
+                    IVariableBinding decl = vb.getVariableDeclaration();
+                    if (decl != null && localDeclarations.contains(decl)) {
+                        return true;
+                    }
+                    if (vb.isField()) {
+                        if (!Modifier.isStatic(vb.getModifiers())) {
+                            flag("references instance field `" + node.getIdentifier() + "`");
+                            return false;
+                        }
+                    } else {
+                        flag("references local variable or parameter `"
+                            + node.getIdentifier() + "`");
+                        return false;
+                    }
+                }
+                return true;
+            }
+        });
+
+        return reason[0];
     }
 
     private boolean isValidConstantName(String name) {

@@ -293,4 +293,84 @@ class ExtractConstantToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
     }
+
+    // ========== Static-context extractability ==========
+
+    @Test
+    @DisplayName("Refuses extraction when expression references a method parameter")
+    void refusesExtractionReferencingParameter() {
+        // A static final field initializer runs at class load and cannot
+        // reference method parameters. Selecting `input` (the parameter of
+        // processData) would yield `private static final String X = input;`
+        // which does not compile. Tool must refuse, not produce broken edits.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 31);
+        args.put("startColumn", 21);
+        args.put("endLine", 31);
+        args.put("endColumn", 26);
+        args.put("constantName", "INPUT_REF");
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Expression referencing a method parameter must not be extracted to a static "
+                + "final constant; got: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Refuses extraction when expression references a local variable")
+    void refusesExtractionReferencingLocalVariable() {
+        // oldName is a local variable in localVariableRename(); it cannot
+        // appear in a static initializer.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 90);
+        args.put("startColumn", 22);
+        args.put("endLine", 90);
+        args.put("endColumn", 29);
+        args.put("constantName", "LOCAL_REF");
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Expression referencing a local variable must not be extracted to a static "
+                + "final constant; got: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Refuses extraction when expression references an instance field")
+    void refusesExtractionReferencingInstanceField() {
+        // userName is a non-static field; `private static final ... = userName;`
+        // does not compile.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 107);
+        args.put("startColumn", 15);
+        args.put("endLine", 107);
+        args.put("endColumn", 23);
+        args.put("constantName", "FIELD_REF");
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Expression referencing an instance field must not be extracted to a static "
+                + "final constant; got: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Refuses extraction when expression calls an instance method")
+    void refusesExtractionCallingInstanceMethod() {
+        // formatMessage is an instance method; calling it from a static
+        // initializer requires an instance and won't compile.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 79);
+        args.put("startColumn", 24);
+        args.put("endLine", 79);
+        args.put("endColumn", 49);
+        args.put("constantName", "METHOD_CALL");
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Expression calling an instance method must not be extracted to a static "
+                + "final constant; got: " + r.getData());
+    }
 }
