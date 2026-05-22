@@ -378,6 +378,65 @@ class ExtractInterfaceToolTest {
             "Filtering to a non-existent method yields zero eligible methods and must error");
     }
 
+    // ========== Generics propagation ==========
+
+    @Test
+    @DisplayName("Method-level type parameters appear in the extracted signature (`<U extends ...> U identity(U)`)")
+    void interfaceContent_includesMethodLevelTypeParameters() {
+        // A generic method's `<U extends Comparable<U>>` clause is part of
+        // the method signature. Dropping it produces uncompilable Java —
+        // the bare `U` references an undeclared type variable.
+        String generic = projectPath.resolve("src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", generic);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", "IGeneric");
+        args.set("methodNames", objectMapper.createArrayNode().add("identity"));
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String content = (String) getData(r).get("interfaceContent");
+        assertTrue(content.contains("<U"),
+            "Extracted interface body must include the method's `<U` type-parameter clause; got: " + content);
+        assertTrue(content.contains("U identity(U "),
+            "identity signature must use U in return type and parameter; got: " + content);
+    }
+
+    @Test
+    @DisplayName("Class-level type parameters propagate to the interface declaration (`public interface IGeneric<T extends Number>`)")
+    void interfaceDeclaration_propagatesClassTypeParameters() {
+        // A class `Foo<T extends Number>` whose methods reference T cannot
+        // be extracted into a non-generic interface — the interface's
+        // method signatures would reference an undeclared T. The new
+        // interface must carry the same type-parameter list (with bounds),
+        // and the class's implements clause must apply the type arguments.
+        String generic = projectPath.resolve("src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", generic);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", "IGeneric");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        String content = (String) data.get("interfaceContent");
+        assertTrue(content.contains("public interface IGeneric<T extends Number>"),
+            "Interface declaration must propagate the class's bounded type parameter; got: " + content);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("classEdits");
+        assertFalse(edits.isEmpty(), "classEdits must include an implements edit");
+        boolean parameterized = edits.stream()
+            .map(e -> (String) e.get("newText"))
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(t -> t.contains("IGeneric<T>"));
+        assertTrue(parameterized,
+            "implements clause must apply the type argument `IGeneric<T>`, not bare `IGeneric`; got: " + edits);
+    }
+
     @Test
     @DisplayName("Extraction from an enum source is rejected with INVALID_PARAMETER")
     void positionOnEnum_isRejected() {

@@ -5,6 +5,7 @@ import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
@@ -168,6 +169,14 @@ public class ExtractInterfaceTool extends AbstractTool {
             // Get package name
             String packageName = type.getPackageFragment().getElementName();
 
+            // Type parameters declared on the class must propagate to the
+            // extracted interface (and as type arguments on the new
+            // implements clause). Otherwise extracted method signatures
+            // reference an undeclared type variable.
+            ITypeParameter[] classTypeParams = type.getTypeParameters();
+            String classTypeParamClause = formatTypeParameterDeclaration(classTypeParams);
+            String classTypeArguments = formatTypeArgumentList(classTypeParams);
+
             // Build interface content
             StringBuilder interfaceContent = new StringBuilder();
 
@@ -177,7 +186,8 @@ public class ExtractInterfaceTool extends AbstractTool {
             }
 
             // Interface declaration
-            interfaceContent.append("public interface ").append(interfaceName).append(" {\n\n");
+            interfaceContent.append("public interface ").append(interfaceName)
+                .append(classTypeParamClause).append(" {\n\n");
 
             // Method signatures
             List<Map<String, Object>> extractedMethods = new ArrayList<>();
@@ -221,6 +231,7 @@ public class ExtractInterfaceTool extends AbstractTool {
                         Map<String, Object> implementsEdit = new LinkedHashMap<>();
                         implementsEdit.put("type", "insert");
 
+                        String implementsRef = interfaceName + classTypeArguments;
                         if (hasImplements) {
                             // Add to existing implements list
                             // Find the last interface and insert after it
@@ -228,13 +239,13 @@ public class ExtractInterfaceTool extends AbstractTool {
                             implementsEdit.put("offset", insertPos);
                             implementsEdit.put("line", ast.getLineNumber(insertPos) - 1);
                             implementsEdit.put("column", ast.getColumnNumber(insertPos));
-                            implementsEdit.put("newText", ", " + interfaceName);
+                            implementsEdit.put("newText", ", " + implementsRef);
                         } else {
                             // Add new implements clause before '{'
                             implementsEdit.put("offset", classBodyStart);
                             implementsEdit.put("line", ast.getLineNumber(classBodyStart) - 1);
                             implementsEdit.put("column", ast.getColumnNumber(classBodyStart));
-                            implementsEdit.put("newText", " implements " + interfaceName);
+                            implementsEdit.put("newText", " implements " + implementsRef);
                         }
 
                         edits.add(implementsEdit);
@@ -291,6 +302,14 @@ public class ExtractInterfaceTool extends AbstractTool {
 
     private String buildMethodSignature(IMethod method) throws JavaModelException {
         StringBuilder sig = new StringBuilder();
+
+        // Method-level type parameters: `<T extends Bound>` if present.
+        // Dropping this clause leaves T undeclared in the extracted signature.
+        ITypeParameter[] methodTypeParams = method.getTypeParameters();
+        String methodTypeParamClause = formatTypeParameterDeclaration(methodTypeParams);
+        if (!methodTypeParamClause.isEmpty()) {
+            sig.append(methodTypeParamClause).append(" ");
+        }
 
         // Return type
         String returnType = Signature.toString(method.getReturnType());
@@ -365,6 +384,47 @@ public class ExtractInterfaceTool extends AbstractTool {
             return t.getStartPosition() + t.getLength();
         }
         return -1;
+    }
+
+    /**
+     * Formats a declaration-form type parameter list like
+     * {@code <T extends Number, U extends Comparable<U>>}.
+     * Returns the empty string when there are no parameters.
+     */
+    private String formatTypeParameterDeclaration(ITypeParameter[] params) throws JavaModelException {
+        if (params == null || params.length == 0) return "";
+        StringBuilder sb = new StringBuilder("<");
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(params[i].getElementName());
+            String[] bounds = params[i].getBounds();
+            if (bounds != null && bounds.length > 0) {
+                sb.append(" extends ");
+                for (int b = 0; b < bounds.length; b++) {
+                    if (b > 0) sb.append(" & ");
+                    sb.append(bounds[b]);
+                }
+            }
+        }
+        sb.append(">");
+        return sb.toString();
+    }
+
+    /**
+     * Formats an invocation-form type argument list like {@code <T, U>} —
+     * just the parameter names, no bounds. Used on the extracted interface's
+     * implements clause so the class continues to bind concrete type
+     * arguments when it implements the new generic interface.
+     */
+    private String formatTypeArgumentList(ITypeParameter[] params) {
+        if (params == null || params.length == 0) return "";
+        StringBuilder sb = new StringBuilder("<");
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(params[i].getElementName());
+        }
+        sb.append(">");
+        return sb.toString();
     }
 
     private boolean isValidJavaIdentifier(String name) {
