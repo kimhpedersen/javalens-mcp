@@ -335,6 +335,26 @@ class GoToDefinitionToolTest {
     // the position resolves correctly for a bounded type parameter.
 
     @Test
+    @DisplayName("Position inside a string literal returns SYMBOL_NOT_FOUND (not a spurious enclosing symbol)")
+    void positionInsideStringLiteral_returnsSymbolNotFound() {
+        // BugPatterns.java line 16 contains `Integer.parseInt("not a number");`.
+        // Column 35 sits inside the string literal. The tool must not resolve
+        // a symbol there — silent success that returns the enclosing method
+        // would mislead an AI consumer.
+        String bugPatterns = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/BugPatterns.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", bugPatterns);
+        args.put("line", 15);
+        args.put("column", 35);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Position inside a string literal must not resolve to an enclosing element; got: "
+                + r.getData());
+    }
+
+    @Test
     @DisplayName("Method on a class with same name across files: containingType is exact FQN")
     @SuppressWarnings("unchecked")
     void methodDefinition_containingTypeIsExactFqn() {

@@ -336,6 +336,17 @@ public class JdtServiceImpl implements IJdtService {
                 return elements[0];
             }
 
+            // codeSelect returned no element. Before falling back to
+            // cu.getElementAt(offset) — which returns the smallest enclosing
+            // IMember — verify the offset is not inside a string/char
+            // literal or a comment. Those positions have no symbol, and the
+            // fallback would otherwise mis-classify them as the enclosing
+            // method/class (a misleading silent success).
+            if (isOffsetInsideLiteralOrComment(cu, offset)) {
+                log.debug("Offset {} is inside a literal/comment; not consulting getElementAt fallback", offset);
+                return null;
+            }
+
             // Fallback: try to find element at offset using getElementAt
             IJavaElement element = cu.getElementAt(offset);
             if (element != null) {
@@ -348,6 +359,46 @@ public class JdtServiceImpl implements IJdtService {
         } catch (JavaModelException e) {
             log.warn("Error getting element at position: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Returns true when {@code offset} sits inside a Java string literal,
+     * character literal, or any comment (line, block, or Javadoc) in the
+     * given compilation unit. Such positions have no resolvable symbol
+     * and the fallback to {@link ICompilationUnit#getElementAt(int)} would
+     * misleadingly return the smallest enclosing IMember.
+     */
+    private boolean isOffsetInsideLiteralOrComment(ICompilationUnit cu, int offset) {
+        try {
+            String source = cu.getSource();
+            if (source == null || offset < 0 || offset >= source.length()) return false;
+            org.eclipse.jdt.core.dom.ASTParser parser =
+                org.eclipse.jdt.core.dom.ASTParser.newParser(org.eclipse.jdt.core.dom.AST.getJLSLatest());
+            parser.setSource(cu);
+            parser.setResolveBindings(false);
+            org.eclipse.jdt.core.dom.CompilationUnit ast =
+                (org.eclipse.jdt.core.dom.CompilationUnit) parser.createAST(null);
+            // Comments: scan ast.getCommentList() and check ranges.
+            @SuppressWarnings("unchecked")
+            java.util.List<org.eclipse.jdt.core.dom.Comment> comments = ast.getCommentList();
+            if (comments != null) {
+                for (org.eclipse.jdt.core.dom.Comment c : comments) {
+                    int s = c.getStartPosition();
+                    int e = s + c.getLength();
+                    if (offset >= s && offset < e) return true;
+                }
+            }
+            // Literals: find covering node and check its type.
+            org.eclipse.jdt.core.dom.NodeFinder finder =
+                new org.eclipse.jdt.core.dom.NodeFinder(ast, offset, 0);
+            org.eclipse.jdt.core.dom.ASTNode covering = finder.getCoveringNode();
+            if (covering instanceof org.eclipse.jdt.core.dom.StringLiteral) return true;
+            if (covering instanceof org.eclipse.jdt.core.dom.CharacterLiteral) return true;
+            if (covering instanceof org.eclipse.jdt.core.dom.TextBlock) return true;
+            return false;
+        } catch (Exception e) {
+            return false;
         }
     }
 
