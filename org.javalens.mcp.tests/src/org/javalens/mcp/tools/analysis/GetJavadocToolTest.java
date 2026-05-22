@@ -67,8 +67,8 @@ class GetJavadocToolTest {
     void handlesUndocumentedSymbol() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-        args.put("line", 10);  // Class declaration (may not have javadoc)
-        args.put("column", 13);
+        args.put("line", 6);    // 0-based; file line 7 is `private int lastResult;` (no Javadoc)
+        args.put("column", 16); // on `lastResult` identifier
 
         ToolResponse r = tool.execute(args);
 
@@ -76,6 +76,8 @@ class GetJavadocToolTest {
         Map<String, Object> data = getData(r);
         assertTrue(data.get("hasDocumentation") instanceof Boolean,
             "hasDocumentation must be Boolean; got: " + data);
+        assertEquals(false, data.get("hasDocumentation"),
+            "lastResult has no Javadoc; hasDocumentation must be false");
     }
 
     @Test @DisplayName("requires filePath, line, column parameters")

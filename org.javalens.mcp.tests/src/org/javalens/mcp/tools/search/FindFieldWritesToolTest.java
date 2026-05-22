@@ -42,7 +42,7 @@ class FindFieldWritesToolTest {
     void findsFieldWritesComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
-        args.put("line", 13);  // userName field
+        args.put("line", 15);  // 0-based; file line 16 is `private String userName;`
         args.put("column", 19);
 
         ToolResponse r = tool.execute(args);
@@ -67,7 +67,7 @@ class FindFieldWritesToolTest {
     void supportsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
-        args.put("line", 13);
+        args.put("line", 15);  // 0-based; file line 16 is `private String userName;`
         args.put("column", 19);
         args.put("maxResults", 1);
 
