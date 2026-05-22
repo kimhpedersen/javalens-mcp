@@ -1,23 +1,27 @@
-package org.javalens.core.fixtures;
+package org.javalens.mcp.fixtures;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Generates a synthetic 1000-class Maven project on demand for scale-sensitivity tests.
+ * Generates a synthetic 1000-class Maven project on demand for scale-sensitivity
+ * tests in the MCP tests fragment.
  *
- * <p>The fixture has one {@code com.example.scale.hub.Hub} class declaring
- * {@code public int counter}, plus {@code PACKAGES * CLASSES_PER_PACKAGE} leaf
- * classes that each reference {@code Hub.counter}. The leaf references give
- * {@code rename_symbol}, {@code find_references}, and {@code find_unused_code}
- * a non-trivial cross-class graph to operate on under JDT index pressure that
- * smaller fixtures cannot reproduce.
+ * <p>This is a co-located duplicate of
+ * {@code org.javalens.core.fixtures.ScaleFixtureGenerator}. OSGi fragments do not
+ * share classloaders across host bundles, so each test fragment that needs the
+ * scale fixture maintains its own copy. The two copies must stay in lockstep on
+ * generated content shape; the {@link ScaleFixtureGeneratorTest} smoke checks
+ * in each fragment pin that shape.
  *
- * <p>The fixture is built into a temporary directory the first time
- * {@link #getOrCreate()} is called in the JVM, then cached. The directory
- * lives for the JVM's lifetime — callers that need a fresh copy should
- * {@link #copyFixtureTo(Path)} into their own temp space.
+ * <p>Fixture content: one {@code com.example.scale.Marker} interface, one
+ * {@code com.example.scale.hub.Hub} class declaring {@code public int counter},
+ * and {@link #LEAF_CLASS_COUNT} leaf classes split across {@link #PACKAGES}
+ * packages. Each leaf implements {@code Marker} and has a {@code touch(Hub)}
+ * method that reads and writes {@code Hub.counter}, giving SearchEngine and
+ * rename_symbol a meaningful 2000+-reference graph to operate on under JDT
+ * index pressure.
  */
 public final class ScaleFixtureGenerator {
 
@@ -29,10 +33,6 @@ public final class ScaleFixtureGenerator {
 
     private ScaleFixtureGenerator() {}
 
-    /**
-     * Return the cached scale-fixture root, generating it the first time
-     * this method is called in the current JVM.
-     */
     public static synchronized Path getOrCreate() throws IOException {
         if (cached != null && Files.exists(cached)) {
             return cached;
@@ -46,10 +46,6 @@ public final class ScaleFixtureGenerator {
         return root;
     }
 
-    /**
-     * Deep-copy the cached fixture into {@code destination}. Useful for tests
-     * that modify source files and need an isolated copy.
-     */
     public static Path copyFixtureTo(Path destination) throws IOException {
         Path src = getOrCreate();
         Files.walk(src).forEach(p -> {

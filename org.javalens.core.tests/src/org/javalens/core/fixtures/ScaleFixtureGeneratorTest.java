@@ -27,10 +27,26 @@ class ScaleFixtureGeneratorTest {
         try (Stream<Path> walk = Files.walk(sourceDir)) {
             long javaFileCount = walk.filter(p -> p.toString().endsWith(".java")).count();
             assertEquals(
-                ScaleFixtureGenerator.LEAF_CLASS_COUNT + 1,
+                ScaleFixtureGenerator.LEAF_CLASS_COUNT + 2,
                 javaFileCount,
-                "Source-file count must equal LEAF_CLASS_COUNT (1000 leafs) + 1 (Hub)");
+                "Source-file count must equal LEAF_CLASS_COUNT (1000 leafs) + Hub + Marker");
         }
+    }
+
+    @Test
+    @DisplayName("Marker interface is present and every leaf class implements it")
+    void markerInterface_implementedByAllLeafs() throws IOException {
+        Path root = ScaleFixtureGenerator.getOrCreate();
+        Path marker = root.resolve("src/main/java/com/example/scale/Marker.java");
+        assertTrue(Files.exists(marker), "Marker.java must be present at " + marker);
+        String markerSrc = Files.readString(marker);
+        assertTrue(markerSrc.contains("public interface Marker"),
+            "Marker must be a public interface; got: " + markerSrc);
+
+        Path leaf = root.resolve("src/main/java/com/example/scale/pkg007/Class3.java");
+        String leafSrc = Files.readString(leaf);
+        assertTrue(leafSrc.contains("implements Marker"),
+            "Every leaf must implement Marker; got: " + leafSrc);
     }
 
     @Test
