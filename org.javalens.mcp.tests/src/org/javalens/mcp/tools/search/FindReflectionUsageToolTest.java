@@ -254,6 +254,43 @@ class FindReflectionUsageToolTest {
     }
 
     @Test
+    @DisplayName("All four documented detection categories (Class.* lookup, Class.constructor lookup, Method/Field/Constructor invocation, Class.forName/newInstance) yield at least one match against the fixture")
+    void allDocumentedCategoriesPresent() {
+        // The tool's getDescription enumerates four categories. The fixture
+        // DiAndReflectionPatterns exercises at least one API per category.
+        // This guard pins that no future change to REFLECTION_METHODS drops a
+        // documented category by accident.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", 100);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) getData(r).get("summary");
+        assertNotNull(summary);
+
+        // Category 1: Class.forName() / Class.newInstance()
+        assertTrue(summary.containsKey("Class.forName"),
+            "Documented category 'Class.forName/newInstance' must yield matches; got: " + summary.keySet());
+
+        // Category 2: Class.getMethod / getDeclaredMethod / getField / getDeclaredField
+        assertTrue(summary.containsKey("Class.getMethod") || summary.containsKey("Class.getDeclaredField"),
+            "Documented category 'Class.getMethod/getField family' must yield matches; got: " + summary.keySet());
+
+        // Category 3: Class.getConstructor / getDeclaredConstructor
+        assertTrue(summary.containsKey("Class.getDeclaredConstructor") || summary.containsKey("Class.getConstructor"),
+            "Documented category 'Class.getConstructor family' must yield matches; got: " + summary.keySet());
+
+        // Category 4: Method.invoke / Field.get/set / Constructor.newInstance
+        assertTrue(
+            summary.containsKey("Method.invoke")
+                || summary.containsKey("Field.get")
+                || summary.containsKey("Field.set")
+                || summary.containsKey("Constructor.newInstance"),
+            "Documented category 'reflective invocation' must yield matches; got: " + summary.keySet());
+    }
+
+    @Test
     @DisplayName("Detected APIs include the expected categories from the fixture: Class.forName, Class.getMethod, Method.invoke, Class.getDeclaredField, Class.getDeclaredConstructor, Field.get")
     void detectedCategoriesCoverFixture() {
         ObjectNode args = objectMapper.createObjectNode();
