@@ -352,4 +352,44 @@ class GetTypeMembersToolTest {
             .orElseThrow();
         assertEquals("class", inner.get("kind"));
     }
+
+    @Test
+    @DisplayName("Generic-class member signatures preserve type-variable references")
+    @SuppressWarnings("unchecked")
+    void genericClass_memberSignatures_preserveTypeVariables() {
+        // GenericClass<T> declares:
+        //   - field `private T value;`      → type must surface as "T"
+        //   - method `public T read()`      → signature must include T as return type
+        //   - method `public void set(T v)` → signature must include T as parameter type
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.genericunused.GenericClass");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) data.get("fields");
+        Map<String, Object> valueField = fields.stream()
+            .filter(f -> "value".equals(f.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("T", valueField.get("type"),
+            "Field `value` is declared as T; type must report T literally; got: " + valueField);
+
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) data.get("methods");
+        Map<String, Object> readMethod = methods.stream()
+            .filter(m -> "read".equals(m.get("name")))
+            .findFirst().orElseThrow();
+        String readSig = (String) readMethod.get("signature");
+        assertNotNull(readSig);
+        assertTrue(readSig.endsWith(": T"),
+            "read() returns T; signature must end with `: T`; got: " + readSig);
+
+        Map<String, Object> setMethod = methods.stream()
+            .filter(m -> "set".equals(m.get("name")))
+            .findFirst().orElseThrow();
+        String setSig = (String) setMethod.get("signature");
+        assertNotNull(setSig);
+        assertTrue(setSig.contains("T "),
+            "set(T v) parameter must reference T in signature; got: " + setSig);
+    }
 }
