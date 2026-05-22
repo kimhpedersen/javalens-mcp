@@ -357,4 +357,24 @@ class InlineVariableToolTest {
         assertTrue(newText.contains("+ 10"),
             "Wrapped text must include the addition; got: " + newText);
     }
+
+    @Test
+    @DisplayName("Refuses inlining a variable declared inside a for-loop init clause")
+    void forInitDeclaration_isRefused() {
+        // `for (int i = 0; i < n; i++)` — the variable i is declared inside
+        // the for-init clause, not as a standalone VariableDeclarationStatement.
+        // Inlining replaces every usage of i with 0; but the declaration
+        // delete-edit is silently skipped (the parent is a
+        // VariableDeclarationExpression, not a Statement). Resulting code
+        // `for (int 0 = 0; 0 < n; 0++)` is uncompilable. Tool must refuse.
+        String cfp = projectPath.resolve("src/main/java/com/example/ControlFlowPatterns.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", cfp);
+        args.put("line", 49);
+        args.put("column", 17);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Inlining a for-init-declared variable must be refused; got success: " + r.getData());
+    }
 }
