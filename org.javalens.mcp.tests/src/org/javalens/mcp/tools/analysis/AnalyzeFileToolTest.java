@@ -274,4 +274,47 @@ class AnalyzeFileToolTest {
             "TypeKindsFixture has 5 nested types (Color, GenericContainer, Inner, " +
                 "DefaultMethodHolder, BoundedBox); got: " + nestedCount);
     }
+
+    @Test
+    @DisplayName("File with multiple top-level types (NamingViolationFixtures.java): typeCount=2")
+    @SuppressWarnings("unchecked")
+    void multipleTopLevelTypes_typeCountIs2() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/NamingViolationFixtures.java").toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(2, ((Number) data.get("typeCount")).intValue(),
+            "NamingViolationFixtures.java declares two top-level types "
+                + "(@interface bad_annotation and record bad_record); got: " + data.get("typeCount"));
+        List<Map<String, Object>> types = (List<Map<String, Object>>) data.get("types");
+        java.util.Set<String> kinds = types.stream()
+            .map(t -> (String) t.get("kind"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of("annotation", "record"), kinds,
+            "Both kinds must be classified correctly; got: " + types);
+    }
+
+    @Test
+    @DisplayName("File containing a sealed interface (Vehicle.java): kind=interface, modifiers include sealed")
+    @SuppressWarnings("unchecked")
+    void sealedInterface_modifiersIncludeSealed() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Vehicle.java").toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> types = (List<Map<String, Object>>) getData(r).get("types");
+        Map<String, Object> vehicle = types.stream()
+            .filter(t -> "Vehicle".equals(t.get("name")))
+            .findFirst().orElseThrow();
+        assertEquals("interface", vehicle.get("kind"));
+        List<String> modifiers = (List<String>) vehicle.get("modifiers");
+        assertNotNull(modifiers);
+        assertTrue(modifiers.contains("sealed"),
+            "Vehicle is a sealed interface — modifiers must include `sealed`; got: " + modifiers);
+    }
 }

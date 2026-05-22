@@ -37,6 +37,8 @@ public final class ModifierFormatter {
         if (Flags.isStrictfp(flags))     modifiers.add("strictfp");
         if (Flags.isTransient(flags))    modifiers.add("transient");
         if (Flags.isVolatile(flags))     modifiers.add("volatile");
+        if (Flags.isSealed(flags))       modifiers.add("sealed");
+        if (Flags.isNonSealed(flags))    modifiers.add("non-sealed");
         return modifiers;
     }
 }
