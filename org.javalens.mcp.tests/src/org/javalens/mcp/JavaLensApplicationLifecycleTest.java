@@ -1,0 +1,86 @@
+package org.javalens.mcp;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Field;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Lifecycle invariants for {@link JavaLensApplication}'s shutdown path.
+ *
+ * <p>The message loop is single-threaded — tool invocations are dispatched
+ * sequentially from stdin. {@link JavaLensApplication#stop()} sets a volatile
+ * {@code running} flag; the loop re-checks it at the top of every iteration.
+ * A tool call already in progress when {@code stop()} fires completes
+ * naturally and writes its response before the loop exits — there is no
+ * mid-call cancellation surface, so half-written tool output is not a
+ * reachable state.
+ *
+ * <p>JDT workspace metadata is persisted transactionally by Eclipse's
+ * resource framework. JavaLens itself does not write workspace metadata
+ * outside JDT's APIs, so the "half-written workspace metadata" concern in
+ * the C2-2 plan item has no path to occur from JavaLens code.
+ */
+class JavaLensApplicationLifecycleTest {
+
+    @Test
+    @DisplayName("stop() sets the running flag to false")
+    void stop_setsRunningFalse() throws Exception {
+        JavaLensApplication app = new JavaLensApplication();
+        assertTrue(readRunning(app),
+            "running must be true on a freshly constructed application");
+
+        app.stop();
+
+        assertFalse(readRunning(app),
+            "stop() must set running=false so the message loop exits at its next iteration boundary");
+    }
+
+    @Test
+    @DisplayName("stop() is idempotent — second call does not throw or flip the flag back")
+    void stop_isIdempotent() throws Exception {
+        JavaLensApplication app = new JavaLensApplication();
+        app.stop();
+        app.stop(); // must not throw or change state
+        assertFalse(readRunning(app),
+            "running must stay false across repeated stop() calls");
+    }
+
+    @Test
+    @DisplayName("Two application instances have independent running flags (no shared state)")
+    void runningFlag_isInstanceScoped() throws Exception {
+        JavaLensApplication a = new JavaLensApplication();
+        JavaLensApplication b = new JavaLensApplication();
+
+        a.stop();
+
+        assertFalse(readRunning(a), "a.running must be false after a.stop()");
+        assertTrue(readRunning(b),
+            "b.running must remain true — running is per-instance, not static");
+    }
+
+    @Test
+    @DisplayName("Loading state is independent per instance (constructor default is NOT_LOADED)")
+    void loadingState_perInstanceDefault() throws Exception {
+        JavaLensApplication a = new JavaLensApplication();
+        JavaLensApplication b = new JavaLensApplication();
+        assertEquals(ProjectLoadingState.NOT_LOADED, readLoadingState(a));
+        assertEquals(ProjectLoadingState.NOT_LOADED, readLoadingState(b));
+    }
+
+    private static boolean readRunning(JavaLensApplication app) throws Exception {
+        Field f = JavaLensApplication.class.getDeclaredField("running");
+        f.setAccessible(true);
+        return (boolean) f.get(app);
+    }
+
+    private static ProjectLoadingState readLoadingState(JavaLensApplication app) throws Exception {
+        Field f = JavaLensApplication.class.getDeclaredField("loadingState");
+        f.setAccessible(true);
+        return (ProjectLoadingState) f.get(app);
+    }
+}
