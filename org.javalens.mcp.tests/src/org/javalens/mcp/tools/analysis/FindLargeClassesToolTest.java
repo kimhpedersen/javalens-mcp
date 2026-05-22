@@ -252,6 +252,27 @@ class FindLargeClassesToolTest {
     }
 
     @Test
+    @DisplayName("Top-level enum exceeding the method threshold is flagged")
+    void topLevelEnum_isFlagged() {
+        // LargeEnum is a top-level EnumDeclaration with 8 methods. With
+        // maxMethods=5 it must appear in the result — enums are size-
+        // contributing declarations just like classes.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxMethods", 5);
+        args.put("maxFields", 1000);
+        args.put("maxLines", 10000);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("largeClasses");
+        boolean hasEnum = classes.stream().anyMatch(c -> "LargeEnum".equals(c.get("typeName")));
+        assertTrue(hasEnum,
+            "Top-level enum LargeEnum has 8 methods (> maxMethods=5); must be flagged. Got: "
+                + classes.stream().map(c -> c.get("typeName")).toList());
+    }
+
+    @Test
     @DisplayName("Line-count violation: maxLines=10 flags any class > 10 lines with 'lines:' violation")
     @SuppressWarnings("unchecked")
     void lineCountViolation_isFlagged() {

@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -83,11 +86,22 @@ public class FindLargeClassesTool extends AbstractTool {
                 CompilationUnit ast = (CompilationUnit) parser.createAST(null);
 
                 for (Object type : ast.types()) {
-                    if (type instanceof TypeDeclaration typeDecl) {
+                    if (type instanceof AbstractTypeDeclaration typeDecl) {
                         totalClassesScanned++;
 
-                        int methodCount = typeDecl.getMethods().length;
-                        int fieldCount = typeDecl.getFields().length;
+                        int methodCount = 0;
+                        int fieldCount = 0;
+                        for (Object decl : typeDecl.bodyDeclarations()) {
+                            if (decl instanceof MethodDeclaration) {
+                                methodCount++;
+                            } else if (decl instanceof FieldDeclaration) {
+                                fieldCount++;
+                            }
+                        }
+                        if (typeDecl instanceof RecordDeclaration record) {
+                            fieldCount += record.recordComponents().size();
+                        }
+
                         int startLine = ast.getLineNumber(typeDecl.getStartPosition());
                         int endLine = ast.getLineNumber(typeDecl.getStartPosition() + typeDecl.getLength());
                         int lineCount = endLine - startLine + 1;
