@@ -150,7 +150,7 @@ class FindTypeInstantiationsToolTest {
         // assert line numbers correspond to known `new` lines:
         //   SearchPatterns.java 0-based 57, 211, 226
         //   UserService.java 0-based 19
-        //   SampleTest.java 0-based 21
+        //   SampleTest.java 0-based 25 (shifted from 21 by the @TestFactory addition + imports)
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
         args.put("maxResults", 100);
@@ -171,7 +171,7 @@ class FindTypeInstantiationsToolTest {
                 "SearchPatterns.java:211",
                 "SearchPatterns.java:226",
                 "UserService.java:19",
-                "SampleTest.java:21"),
+                "SampleTest.java:25"),
             tuples,
             "Instantiation locations must match `new Calculator()` lines; got: " + tuples);
     }

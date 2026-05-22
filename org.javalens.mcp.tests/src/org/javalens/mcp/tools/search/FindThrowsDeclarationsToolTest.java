@@ -92,7 +92,7 @@ class FindThrowsDeclarationsToolTest {
     }
 
     @Test
-    @DisplayName("IOException throws declarations: exactly 4 across all fixtures")
+    @DisplayName("IOException throws declarations: exactly 5 across all fixtures")
     void ioException_exactCountAndFileSet() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
@@ -102,12 +102,13 @@ class FindThrowsDeclarationsToolTest {
         assertTrue(r.isSuccess());
         List<Map<String, Object>> decls = declsOf(r);
         // Throws-clause occurrences across fixtures:
-        //  - SearchPatterns.readFile        (throws IOException)
-        //  - SearchPatterns.riskyOperation  (throws IOException, IllegalArgumentException)
-        //  - ControlFlowPatterns.tryWithResources (throws IOException)
-        //  - TypeKindsFixture.throwingHelper      (throws java.io.IOException)
-        assertEquals(4, decls.size(),
-            "IOException must be declared in exactly 4 throws clauses; got: " + decls);
+        //  - SearchPatterns.readFile               (throws IOException)
+        //  - SearchPatterns.riskyOperation         (throws IOException, IllegalArgumentException)
+        //  - ControlFlowPatterns.tryWithResources  (throws IOException)
+        //  - TypeKindsFixture.throwingHelper       (throws java.io.IOException)
+        //  - JavadocTagFixture.documentedMethod    (throws IOException)
+        assertEquals(5, decls.size(),
+            "IOException must be declared in exactly 5 throws clauses; got: " + decls);
 
         java.util.Set<String> files = new java.util.HashSet<>();
         for (Map<String, Object> d : decls) {
@@ -115,9 +116,10 @@ class FindThrowsDeclarationsToolTest {
             files.add(fp.substring(fp.lastIndexOf('/') + 1));
         }
         assertEquals(
-            java.util.Set.of("SearchPatterns.java", "ControlFlowPatterns.java", "TypeKindsFixture.java"),
+            java.util.Set.of("SearchPatterns.java", "ControlFlowPatterns.java",
+                "TypeKindsFixture.java", "JavadocTagFixture.java"),
             files,
-            "IOException throws span 3 files; got: " + files);
+            "IOException throws span 4 files; got: " + files);
     }
 
     @Test
