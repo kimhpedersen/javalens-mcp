@@ -132,4 +132,49 @@ class JavaLensApplicationLifecycleTest {
         f.setAccessible(true);
         return f.get(app);
     }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("stop() called from another thread while the running flag is true takes effect promptly")
+    void stop_fromConcurrentThread_takesEffect() throws Exception {
+        // Pins the volatile-visibility contract: a thread reading `running` sees the
+        // false written by another thread calling stop(). The message loop relies on
+        // exactly this — the stdin-reading thread sees the flag change set by an OSGi
+        // shutdown thread. Without volatile this would be a JMM bug; the test forces
+        // the read in another thread and checks it observes the write.
+        JavaLensApplication app = new JavaLensApplication();
+        assertTrue(readRunning(app));
+
+        java.util.concurrent.atomic.AtomicBoolean observed = new java.util.concurrent.atomic.AtomicBoolean(true);
+        java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+
+        Thread reader = new Thread(() -> {
+            try {
+                ready.countDown();
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+                while (System.nanoTime() < deadline) {
+                    if (!readRunning(app)) {
+                        observed.set(false);
+                        done.countDown();
+                        return;
+                    }
+                    Thread.onSpinWait();
+                }
+                done.countDown();
+            } catch (Exception e) {
+                done.countDown();
+            }
+        }, "running-flag-reader");
+        reader.start();
+
+        assertTrue(ready.await(1, java.util.concurrent.TimeUnit.SECONDS),
+            "Reader thread must reach its spin loop within 1s");
+        app.stop();
+        assertTrue(done.await(2, java.util.concurrent.TimeUnit.SECONDS),
+            "Reader must observe running=false within 2s of stop() being called");
+        assertFalse(observed.get(),
+            "Cross-thread volatile-visibility contract: reader thread must observe "
+                + "running=false after stop() — got running=" + observed.get());
+        reader.join(1000);
+    }
 }

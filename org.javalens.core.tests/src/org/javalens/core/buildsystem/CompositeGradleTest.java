@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -70,5 +71,41 @@ class CompositeGradleTest {
             "Included build must have its own settings.gradle (composite-build requirement)");
         assertTrue(Files.exists(root.resolve("shared-lib/src/main/java/com/example/sharedlib/SharedUtil.java")),
             "Shared library source must be present in the included build");
+    }
+
+    @Test
+    @DisplayName("Root build's source files are enumerated by getAllJavaFiles after load")
+    void compositeGradle_enumeratesRootSources() throws Exception {
+        JdtServiceImpl service = helper.loadProject("composite-gradle");
+        long appCount = service.getAllJavaFiles().stream()
+            .map(p -> p.toString().replace('\\', '/'))
+            .filter(s -> s.endsWith("src/main/java/com/example/composite/App.java"))
+            .count();
+        assertEquals(1, appCount,
+            "Root build's App.java must be enumerated exactly once by getAllJavaFiles");
+    }
+
+    @Test
+    @DisplayName("Cross-build symbol resolution: SharedUtil from included build either resolves or is documented unavailable")
+    void compositeGradle_crossBuildResolutionContract() throws Exception {
+        // The composite-build contract for JavaLens (without Gradle execution): the
+        // included build's classes MAY or MAY NOT resolve via findType — Gradle would
+        // emit dependency artifacts that JDT could see, and we don't run Gradle in tests.
+        // What we pin here is that the load doesn't crash AND the failure mode (if any)
+        // is clean: findType returns null rather than throwing.
+        JdtServiceImpl service = helper.loadProject("composite-gradle");
+        var sharedUtil = service.findType("com.example.sharedlib.SharedUtil");
+        // Either path is acceptable on the contract surface:
+        // - null: JavaLens correctly reports the cross-build type is unresolvable without
+        //   a Gradle build run. Consumers can call build first.
+        // - non-null + exists: JavaLens's importer surfaces the included build's sources.
+        if (sharedUtil != null) {
+            assertTrue(sharedUtil.exists(),
+                "If findType returns a non-null SharedUtil, it must report exists()=true");
+            assertEquals("SharedUtil", sharedUtil.getElementName());
+        }
+        // The load itself must stay green regardless.
+        assertTrue(service.getJavaProject().exists(),
+            "JavaProject must remain valid after a findType attempt on a cross-build type");
     }
 }

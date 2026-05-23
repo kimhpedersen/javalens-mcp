@@ -179,23 +179,35 @@ class CrossToolWorkflowTest {
         assertTrue(baseDiagResp.isSuccess(), "get_diagnostics must succeed on original");
         int baselineErrorCount = countErrorLevelDiagnostics(baseDiagResp);
 
-        // Run inline_method on doubleValue (file line 58 = `private int doubleValue(int value)`).
+        // Run inline_method on the doubleValue CALL SITE (not its declaration). inline_method
+        // requires a position on a call expression, not on the method declaration — JDT
+        // resolves the call binding from the call site to identify what to inline.
+        // RefactoringTarget.java file line 65 (0-based 64) is:
+        //     int doubled = doubleValue(x);
+        // Column 22 lands on the `d` of doubleValue in that call expression.
         InlineMethodTool inline = new InlineMethodTool(() -> service);
         ObjectNode inlineArgs = objectMapper.createObjectNode();
         inlineArgs.put("filePath", refTarget.toString());
-        inlineArgs.put("line", 57);   // 0-based
-        inlineArgs.put("column", 16); // on `doubleValue`
+        inlineArgs.put("line", 64);
+        inlineArgs.put("column", 22);
         ToolResponse inlineResp = inline.execute(inlineArgs);
-        // inline_method may refuse if the method has unsupported call shapes; that's fine
-        // for this cross-tool test — what matters is that IF it succeeds, get_diagnostics
-        // applied to the result stays clean.
-        if (!inlineResp.isSuccess()) {
-            return; // refusal path; nothing to assert downstream
-        }
+        assertTrue(inlineResp.isSuccess(),
+            "inline_method on doubleValue call site must succeed; got: " +
+                (inlineResp.getError() != null ? inlineResp.getError().getMessage() : "n/a"));
 
-        Map<String, List<Map<String, Object>>> editsByFile =
-            (Map<String, List<Map<String, Object>>>) data(inlineResp).get("editsByFile");
-        if (editsByFile == null || editsByFile.isEmpty()) return;
+        // inline_method response shape differs from rename: a flat `edits` list under a
+        // single `filePath`, not an editsByFile map. Reshape into Map<filePath, edits>
+        // so the shared apply helper can consume it.
+        Map<String, Object> inlineData = data(inlineResp);
+        String inlineFilePath = (String) inlineData.get("filePath");
+        List<Map<String, Object>> inlineEdits = (List<Map<String, Object>>) inlineData.get("edits");
+        assertNotNull(inlineFilePath, "inline response must include filePath");
+        assertNotNull(inlineEdits, "inline response must include edits list");
+        assertFalse(inlineEdits.isEmpty(),
+            "inline_method must emit a non-empty edit set so the cross-tool chain actually runs");
+
+        Map<String, List<Map<String, Object>>> editsByFile = new HashMap<>();
+        editsByFile.put(inlineFilePath, inlineEdits);
 
         Path tempProject = helper.copyFixture("simple-maven");
         applyEditsByFile(tempProject, editsByFile);

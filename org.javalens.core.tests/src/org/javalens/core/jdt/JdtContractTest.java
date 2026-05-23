@@ -419,6 +419,65 @@ class JdtContractTest {
             "JDT contract: foo(42) resolves to the int overload, not the String overload");
     }
 
+    // ========== B3-4: SearchEngine match's getCompilationUnit for JDK matches ==========
+    @Test
+    @DisplayName("B3-4: SearchEngine matches against a JDK type produce matches whose enclosing element is identifiable")
+    void searchEngineMatch_jdkType_elementIsIdentifiable() throws Exception {
+        // Searching for references to java.util.List in simple-maven finds usages
+        // in user code. The pinned contract: each match has a non-null getElement()
+        // that we can walk to a CU (or null if the match is itself inside JDK source —
+        // which JavaLens correctly handles via MatchResolver.resolveCu).
+        IType list = service.findType("java.util.List");
+        assertNotNull(list, "java.util.List must be findable through JDT");
+
+        SearchPattern pattern = SearchPattern.createPattern(list, IJavaSearchConstants.REFERENCES);
+        assertNotNull(pattern, "REFERENCES pattern for java.util.List must be creatable");
+
+        List<SearchMatch> matches = new ArrayList<>();
+        SearchEngine engine = new SearchEngine();
+        engine.search(pattern,
+            new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
+            org.eclipse.jdt.core.search.SearchEngine.createWorkspaceScope(),
+            new SearchRequestor() {
+                @Override
+                public void acceptSearchMatch(SearchMatch match) {
+                    matches.add(match);
+                }
+            },
+            new NullProgressMonitor());
+
+        // Project uses List in several places; expect at least one match.
+        assertTrue(matches.size() >= 1,
+            "Expected at least one java.util.List reference in simple-maven; got: " + matches.size());
+
+        // Every match's getElement() is non-null. For matches in PROJECT source, getElement()
+        // resolves to an IJavaElement whose ancestor is an ICompilationUnit; that ancestor is
+        // exactly what MatchResolver.resolveCu produces. The contract is that the API surface
+        // does not throw and produces something usable.
+        for (SearchMatch match : matches) {
+            assertNotNull(match.getElement(),
+                "JDT contract: SearchMatch.getElement() must be non-null for project-source matches");
+        }
+    }
+
+    // ========== B3-6: IType.findType(String) accepts dotted nested-type form ==========
+    @Test
+    @DisplayName("B3-6: findType accepts dotted nested-type form, returns null for $-form")
+    void findType_dottedForm_acceptedDollarFormRejected() throws Exception {
+        // Covered structurally by findType_nestedDotted_resolves and findType_nestedDollar_returnsNull
+        // earlier in this file; this explicit case ties the assertion to the B3-6 label so
+        // changes in JDT's findType naming convention surface here. Calculator nested type
+        // doesn't exist in the fixture; use a known-good form: java.util.Map$Entry
+        // (dotted form: java.util.Map.Entry).
+        IType dottedForm = service.findType("java.util.Map.Entry");
+        assertNotNull(dottedForm, "JDT contract: dotted form java.util.Map.Entry resolves via findType");
+
+        IType dollarForm = service.findType("java.util.Map$Entry");
+        assertEquals(null, dollarForm,
+            "JDT contract: $-form java.util.Map$Entry does NOT resolve via findType — "
+                + "JDT's findType only accepts the dotted form");
+    }
+
     // ========== B3-5: codeSelect at the package keyword ==========
     @Test
     @DisplayName("B3-5: codeSelect at the package keyword returns IPackageDeclaration")
