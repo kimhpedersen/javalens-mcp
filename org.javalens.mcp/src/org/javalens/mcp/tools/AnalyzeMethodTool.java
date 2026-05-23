@@ -67,6 +67,9 @@ public class AnalyzeMethodTool extends AbstractTool {
         return """
             Comprehensive method analysis in a single call.
 
+            USAGE: analyze_method(filePath="path/to/File.java", line=N, column=N)
+            OUTPUT: Method info, parameters, exceptions, callers, callees, override info
+
             Combines:
             - Method info (signature, modifiers, return type)
             - Parameters with types

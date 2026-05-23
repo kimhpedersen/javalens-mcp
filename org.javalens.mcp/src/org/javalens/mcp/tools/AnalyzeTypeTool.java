@@ -51,6 +51,9 @@ public class AnalyzeTypeTool extends AbstractTool {
         return """
             Comprehensive type analysis in a single call.
 
+            USAGE: analyze_type(typeName="com.example.Foo")
+            OUTPUT: Type info, members, hierarchy, usage summary, diagnostics
+
             Combines:
             - Type info (name, kind, modifiers, location)
             - All members (methods, fields, constructors)

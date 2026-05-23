@@ -37,6 +37,9 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
         return """
             Get comprehensive usage summary for a type across the codebase.
 
+            USAGE: get_type_usage_summary(typeName="com.example.Foo")
+            OUTPUT: Instantiations, casts, instanceof checks, type arguments, annotations
+
             Aggregates all usage patterns in a single call:
             - Instantiations (new Foo())
             - Casts ((Foo) x)

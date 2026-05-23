@@ -51,6 +51,9 @@ public class AnalyzeFileTool extends AbstractTool {
         return """
             Comprehensive file analysis in a single call.
 
+            USAGE: analyze_file(filePath="path/to/File.java")
+            OUTPUT: File info, imports, types with member counts, diagnostics
+
             Combines:
             - File info (path, package, line count)
             - All imports (with static/on-demand flags)
