@@ -1,5 +1,98 @@
 # Changelog
 
+## 1.3.3 - 2026-05-22
+
+Audit blind-spot remediation. 1.3.2 shipped with a "is every branch tested?" audit; three post-release bug reports (#13, #15-secondary, #17) showed the wrong question was being asked. This release closes the underlying categories: AST-visitor enumeration gaps, type-system fixture matrix coverage, adversarial-input handling, JDT-quirk pinning, scale validation, concurrency invariants, build-system matrix, cross-tool workflow guards, and tool-contract parity.
+
+### Closes reported issues
+
+- **Issue #17** — `find_unused_code` reported every private field of a generic class as unused even when read in the same class. Root cause: JDT's `IBinding.equals()` returns false between the declaration-context binding and the parameterized-member-access-context binding for the same field. Fix: canonicalize every binding via `getVariableDeclaration()` / `getMethodDeclaration()` before set membership checks.
+- **Issue #13** — `rename_symbol` returned 0 edits on an 11k-file project despite many real references. Root cause: the AST-binding-key path parsed every Java file with full binding resolution; under JDT index pressure at scale, bindings intermittently resolved to null and were silently skipped. Fix: dispatch `IMember` targets through `SearchService.findAllReferences` (index-driven, resilient at scale). `ILocalVariable` and `ITypeParameter` stay on the AST path with declaring-CU-only scope. Same scenario at 1000-class fixture scale now runs 3.5x faster.
+- **Issue #15-secondary** — `change_method_signature` was reported to silently drop `this(args)` / `super(args)` constructor delegation sites. Investigation confirmed the source already handled both; regression guards now pin the contract.
+
+### Tool fixes — call-site / reference-search completeness (Category A)
+
+- **`change_method_signature`**: `super.method()` (`SuperMethodInvocation`) call sites are now propagated. Method references (`Foo::method`, `instance::method`, `super::method`, `Foo::new`) now surface in a `methodReferences` collector with `warnings` rather than being silently dropped — replacing the underlying method reference textually would either rebind to the new signature or require synthesizing a lambda, both of which depend on context the tool cannot recover.
+- **`find_unused_code`**: canonicalized bindings (issue #17 fix above); regression guards for private methods referenced only via method reference.
+- **`get_call_hierarchy_outgoing`**: now emits callees for all four `MethodReference` AST subtypes with `callType="METHOD_REFERENCE"`; previously only `MethodInvocation` and constructor invocations were surfaced.
+- **`analyze_method`**: callees now include `this()` / `super()` delegations (`callType="THIS_CONSTRUCTOR"` / `"SUPER_CONSTRUCTOR"`) and the four method-reference subtypes.
+- **`analyze_data_flow`**: qualified-field-access writes (`this.x = v`, `super.x = v`, `Outer.x = v`) are now correctly classified as writes (previously misclassified as reads). Compound assignment (`x += 5`) is now counted as both a read and a write.
+- **`inline_method`**: refuses outright when the inlined body contains `super.method()`, `super.field`, `super::method`, or `super()` — the binding would silently rebind to a different super-hierarchy after inlining.
+- **`extract_constant`**: refuses extraction when the expression references instance state (`this`, instance field, non-static method). Previously emitted uncompilable `private static final` declarations referencing instance members.
+- **`extract_variable`**: refuses extraction when the lift would change evaluation semantics — for-loop condition, while/do condition, short-circuit `&&`/`||` RHS, ternary then/else branches.
+- **`extract_interface`**: propagates both class-level (`<T extends Number>`) and method-level (`<U>`) type parameters to the interface declaration and methods, plus the `implements` clause's type arguments.
+- **`extract_method`**: redeclares the variable at the call site when the extracted block declared a returned variable. Adds the containing method's type parameters to the new method when used.
+- **`convert_anonymous_to_lambda`**: completes the refusal-decision matrix — refuses on `super` references in the body, fields/initializers/nested types in the anonymous class body. Correctly does NOT refuse on `EnclosingClass.this` (resolves identically in both contexts).
+- **`find_circular_dependencies`** and **`get_dependency_graph`**: correctly resolve the package for all import forms — regular, on-demand, static (`import static com.foo.Bar.method`), static-on-demand, nested-class imports. Previously only the simple `com.foo.Bar` form resolved.
+- **`find_large_classes`**: scans all top-level type kinds (class, interface, enum, record, annotation). Previously skipped enums, records, and annotation types.
+- **`find_naming_violations`**: covers `record` and `annotation` declarations (in addition to class/interface/enum).
+- **`find_possible_bugs`**: implements the null-pointer-deref detector documented in `getDescription` but previously absent — conservative detection for locals whose only assignment is a `NullLiteral` initializer.
+- **`find_tests`**: recognizes JUnit 5's `@TestFactory` and `@TestTemplate` annotations (in addition to `@Test`, `@ParameterizedTest`, `@RepeatedTest`).
+- **`get_document_symbols`**: emits record components as child symbols (`kind="recordComponent"`). JDT 3.39's `IType.getFields()` does not include them and `IRecordComponent` is not exposed publicly; the fix parses the AST `RecordDeclaration.recordComponents()`.
+- **`get_hover_info`** and **`get_signature_help`**: include type parameters in type and method signatures.
+- **`get_javadoc`**: parses JEP 285 standard tags (`@apiNote`, `@implSpec`, `@implNote`) and merges `@exception` into the `throws` list as a synonym.
+- **`inline_variable`**: regression guard for for-init declarations being correctly refused (modification-via-update detected by the existing visitor).
+
+### Tool fixes — type-system dimension coverage (Category B1)
+
+- **`analyze_type`**: emits `typeParameters` and `typeParameterBounds`; previously omitted both.
+- **`analyze_method`**: emits method-level `typeParameters` and `typeParameterBounds`; previously omitted both.
+- **`rename_symbol`**: now handles `ITypeParameter` rename targets; previously the source range was unrecognized and rename produced a silent no-op.
+- **`ModifierFormatter`** (shared by ~10 tools): emits `sealed` and `non-sealed` modifiers; previously absent, so `analyze_file` etc. reported a sealed interface's modifiers as `[public]`.
+- **`extract_method`**: copies the containing method's type parameters to the extracted method when used in the lifted body.
+
+### Service-layer fixes (Category B2 — propagate to every position-resolving tool)
+
+- **`getElementAtPosition`** refuses positions inside string literals (`"..."`), character literals, text blocks, line comments (`// ...`), block comments (`/* ... */`), and Javadoc text. Previously, `codeSelect` returning empty would fall back to `getElementAt(offset)` which returned the enclosing method as a "found" symbol — silent misleading success. Additionally, `codeSelect` itself tokenizes comment text and matched words like `"Empty"` inside `// Empty catch block` against `sun.invoke.empty.Empty`; the literal/comment check now runs BEFORE `codeSelect`.
+- Position past EOF now returns a clean failure.
+
+### JDT contract pinning (Category B3)
+
+`JdtContractTest` now pins:
+- `IBinding` equality for parameterized members (declaration-context binding ≠ usage-context binding; `getXxxDeclaration()` returns the canonical form for both — the issue #17 quirk).
+- Type-variable bindings report `isTypeVariable=true`, `isClass=false`, `isInterface=false`.
+- `MethodInvocation.resolveMethodBinding()` for overloaded methods selects the matching overload (`foo(42)` resolves to `foo(int)`, not `foo(String)`).
+- SearchEngine matches against JDK types have non-null `getElement()`.
+- `codeSelect` at the `package` keyword returns either empty or `IPackageDeclaration` / `IPackageFragment` — never an unexpected type.
+- `IType.findType(String)` accepts dotted nested-type form (`java.util.Map.Entry`); does NOT accept `$`-form (`java.util.Map$Entry`).
+
+### Scale validation (Category C1)
+
+- New `ScaleFixtureGenerator` produces a JVM-cached 1000-leaf-class Maven fixture: 100 packages × 10 leaves + 1 hub class declaring `public int counter` (referenced by every leaf) + 1 `Marker` interface (implemented by every leaf).
+- New `ScaleToolsTest` exercises `rename_symbol`, `find_references`, `find_implementations`, `search_symbols`, and `find_unused_code` against the scale fixture with exact-count assertions (not "non-null"). `rename_symbol` on `Hub.counter` produces 2001 edits in ~1.7 seconds via the new SearchEngine path.
+
+### Concurrency / lifecycle (Category C2)
+
+- `AbstractTool.execute` LOADING and FAILED dispatch branches are pinned deterministically.
+- `JavaLensApplication.stop()` is idempotent; the `running` flag is volatile and per-instance; cross-thread visibility of the stop signal is exercised.
+- Per-session state fields (`running`, `loadingState`, `jdtService`, `loadingError`) are structurally verified non-static so two in-process app instances do not corrupt each other's state.
+
+### Build-system / environment matrix (Category C3)
+
+- New `modular-maven` fixture: a project declaring `module-info.java` loads cleanly, member types resolve via `findType`, the declared Java 21 compliance is preserved.
+- Existing `compliance-level-mismatch` fixture extended: source level higher than JDT supports (declared `99`) loads without crashing, `compilerSource` remains a parseable Java level.
+- New `composite-gradle` fixture: a Gradle root declaring `includeBuild 'shared-lib'` loads, root sources enumerate via `getAllJavaFiles`, cross-build `findType` either resolves or returns null cleanly (never throws). Full cross-build symbol resolution requires Gradle execution, out of test-fragment scope.
+
+### Adversarial input tolerance (Category B2)
+
+- `AdversarialInputTest` pins UTF-8 BOM tolerance, CRLF line endings (positions resolve correctly), non-ASCII identifiers (`Café.java` with class `Café` and field `naïveCount` resolves via `findType`), and symbolic links (platform-conditional, skipped on Windows without Developer Mode).
+
+### Cross-tool workflows (Category D1)
+
+`CrossToolWorkflowTest` covers four scenarios end-to-end with apply-and-reload cycles:
+- rename then find-references: reference cardinality preserved.
+- organize-imports then validate-syntax: zero errors after apply.
+- inline-method then get-diagnostics: no NEW errors above the baseline.
+- change-method-signature then find-references: call sites preserved across signature changes.
+
+### Description-vs-implementation parity (Category D2)
+
+`ToolContractParityTest` iterates every registered tool and pins: lower_snake_case naming, `USAGE:` + `OUTPUT:` description convention, non-empty input schema, dispatch returns documented error codes (no thrown exceptions, no null), and per-tool valid invocation against simple-maven produces a well-formed response. Caught real drift: `analyze_file`, `analyze_method`, `analyze_type`, `get_type_usage_summary` now follow the `USAGE:` / `OUTPUT:` convention used by every other tool.
+
+### Internal cleanup
+
+- Removed `docs/TESTING.md` (stale — its core rule mandated `@Disabled("Pending:")` for unfixed contracts, which contradicts the current rule that failing tests are unfixed work).
+
 ## 1.3.2 - 2026-05-19
 
 ### Output shape — unified across reference-search tools
