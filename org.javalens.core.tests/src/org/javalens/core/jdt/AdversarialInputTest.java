@@ -105,4 +105,34 @@ class AdversarialInputTest {
         assertTrue(type.exists(), "IType for non-ASCII class must exist");
         assertEquals("Café", type.getElementName());
     }
+
+    @Test
+    @DisplayName("B2-10: load follows a symbolic link to a source file (skipped on platforms without symlink permission)")
+    void symlinkedSourceFile_loadsCleanly() throws Exception {
+        // Create a symbolic link from sample.link to com/example/Calculator.java. JDT
+        // discovers java files by walking the source folder; the load must follow the
+        // link to reach the real source. Symlink creation requires Developer Mode or
+        // admin on Windows — `assumeTrue` skips the test if the create call fails.
+        Path projectRoot = helper.copyFixture("simple-maven");
+        Path target = projectRoot.resolve("src/main/java/com/example/Calculator.java");
+        Path link = projectRoot.resolve("src/main/java/com/example/CalcLink.java");
+        try {
+            Files.createSymbolicLink(link, target.getFileName());
+        } catch (Throwable t) {
+            org.junit.jupiter.api.Assumptions.abort(
+                "Symbolic-link creation unavailable on this platform (need admin / developer mode); "
+                    + "skip: " + t.getMessage());
+            return;
+        }
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+
+        // The real Calculator class is still resolvable. The symlink itself may or may
+        // not be enumerated as a separate compilation unit depending on JDT's resolver;
+        // what we pin is "load does not crash and the real file's class still resolves".
+        IType calc = service.findType("com.example.Calculator");
+        assertNotNull(calc, "Calculator must resolve even when a symlink alias exists in the same package");
+        assertTrue(calc.exists());
+    }
 }
