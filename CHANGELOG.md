@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.4] - 2026-05-25
+
+### Added
+
+- `get_classpath_info` now returns `resolved` (containers expanded, per-entry `exists` flag, optional `module` attribute) and `jre` (`name`, `installLocation`, `javaVersion`, `systemModules`, `containerPath`) sections.
+
+### Fixed
+
+- `get_classpath_info` `resolved` source-folder entries no longer report `exists: false` due to checking workspace-relative paths against the filesystem.
+
 ## [1.3.3] - 2026-05-23
 
 ### Fixed
@@ -267,4 +277,5 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.3.4]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.2...v1.3.3
