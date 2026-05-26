@@ -46,6 +46,15 @@ public record LoadWarning(String code, String message, String remediation, Strin
      */
     public static final String APT_PROCESSOR_JARS_MISSING = "APT_PROCESSOR_JARS_MISSING";
 
+    /**
+     * The running JVM could not be registered as an {@code IVMInstall} backing the
+     * project's JRE container — typically because {@code System.getProperty("java.home")}
+     * was unset or pointed at a non-existent directory. Without a backing install the
+     * JRE container resolves to an empty system-modules set and every source file
+     * referencing {@code java.lang.Object} produces a BUILDPATH cascade.
+     */
+    public static final String JRE_REGISTRATION_FAILED = "JRE_REGISTRATION_FAILED";
+
     public LoadWarning(String code, String message, String remediation) {
         this(code, message, remediation, null);
     }

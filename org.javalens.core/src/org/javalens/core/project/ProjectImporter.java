@@ -110,11 +110,28 @@ public class ProjectImporter {
         // Build classpath entries
         List<IClasspathEntry> entries = new ArrayList<>();
 
-        // 1. Add JRE container (provides java.* classes)
+        // 1. Ensure an IVMInstall for the running JVM is registered and set as the JDT
+        // default, so the bare JRE_CONTAINER path below resolves to JDK system modules.
+        // JDT's auto-detection (JavaRuntime.detectEclipseRuntime → java.home) covers this
+        // in most environments but not all — issue #18 surfaces npm-launched runtimes
+        // where the fallback doesn't fire, leaving the JRE container unbacked and
+        // every source file producing BUILDPATH cascades. Registering explicitly here
+        // makes the JRE presence independent of the fallback's success.
+        if (org.javalens.core.project.JreInstallEnsurer.ensureRunningJvmRegistered() == null) {
+            warnings.add(new LoadWarning(
+                LoadWarning.JRE_REGISTRATION_FAILED,
+                "Could not register the running JVM as the project's JRE — java.home was "
+                    + "unset or pointed at a non-existent directory.",
+                "Verify JAVA_HOME and the JVM used to launch JavaLens are set correctly. "
+                    + "Without a registered JRE every source file referencing java.lang.* "
+                    + "will report BUILDPATH errors."));
+        }
+
+        // 2. Add JRE container (provides java.* classes)
         IPath jreContainerPath = JavaRuntime.getDefaultJREContainerEntry().getPath();
         entries.add(JavaCore.newContainerEntry(jreContainerPath));
 
-        // 2. Create linked folders and add source entries. Source-path aggregation is
+        // 3. Create linked folders and add source entries. Source-path aggregation is
         // build-system-aware (Maven modules, Gradle subprojects, Bazel packages); the
         // per-directory layout probing and linked-folder creation live in
         // LinkedFolderConfigurator.
@@ -123,10 +140,10 @@ public class ProjectImporter {
             entries, project, projectPath, sourcePaths, workspaceManager,
             mavenImporter.isMultiModule(projectPath));
 
-        // 3. Add dependency JARs from build system
+        // 4. Add dependency JARs from build system
         addDependencyEntries(entries, projectPath);
 
-        // 4. Add output location
+        // 5. Add output location
         IPath outputPath = project.getFullPath().append("bin");
 
         // Set the classpath
