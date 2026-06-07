@@ -1,0 +1,100 @@
+name: Feature
+description: A capability or change to build. Fill this so it can be picked up and worked without further context.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the change so someone (or an agent) can implement it cold.
+        Be concrete about where it lives and how to confirm it's done.
+        Do not include scheduling, priority, or effort — those are decided when work is picked up, not here.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence — what the change is.
+      placeholder: "Adopt JDT ASTRewrite/ImportRewrite for refactoring edit generation."
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Problem / motivation
+      description: The need this addresses, stated independently of the solution. Why it matters; what's limited today.
+      placeholder: |
+        Refactoring edits are generated as constructed text + computed offsets, which must special-case
+        every syntactic form. A structural approach handles these uniformly and is more robust.
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: The technical direction. Enough that an implementer doesn't have to invent the design.
+      placeholder: |
+        Replace text construction with edits produced by ASTRewrite (imports via ImportRewrite).
+        Take the TextEdit from ASTRewrite.rewriteAST(...) and map it into the existing editsByFile shape.
+        Leave SearchEngine-based discovery unchanged.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Where this lives (code pointers)
+      description: Concrete files / classes / methods involved, and relevant existing components to reuse or preserve. This is what makes the issue pickable.
+      placeholder: |
+        Tools: org.javalens.mcp/src/org/javalens/mcp/tools/ — ChangeMethodSignatureTool, ExtractMethodTool, ...
+        Pattern to replace: ChangeMethodSignatureTool#buildMethodSignature (builds String),
+          getSignatureStart/End/Text (offset slicing), updateCallSite/callArguments (per-node text rendering).
+        Reuse/preserve: discovery via SearchService (SearchEngine -> SearchMatch).
+        APIs: org.eclipse.jdt.core.dom.rewrite.ASTRewrite / ImportRewrite (already on the target platform).
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: A checklist that defines "done". Each item objectively checkable.
+      placeholder: |
+        - [ ] Migrated tools generate edits via ASTRewrite/ImportRewrite; no hand-built signature/call-site strings remain.
+        - [ ] Existing per-tool tests pass unchanged (response contract preserved).
+        - [ ] No new target-platform dependency.
+        - [ ] Edits returned as editsByFile text; the tool never writes files.
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: How to verify
+      description: Where the tests are and the exact command to run them, plus any contract to match.
+      placeholder: |
+        Tests: org.javalens.mcp.tests (e.g. ChangeMethodSignatureToolTest).
+        Focused build: ./mvnw verify -pl org.javalens.target,org.javalens.core,org.javalens.mcp,org.javalens.mcp.tests -am -Dtest=<TestClass>
+        Contract: the editsByFile response shape the existing tests assert.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope boundaries / dependencies
+      description: What is explicitly out of scope, and anything this is gated on (e.g., a dependency not yet present).
+      placeholder: |
+        Out: net-new refactorings (extract-superclass, pull-up/push-down).
+        Gated: those need org.eclipse.jdt.core.manipulation, not on the target platform — separate issue.
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Anything else — related issues/discussions, prior art, constraints to respect.
+    validations:
+      required: false
