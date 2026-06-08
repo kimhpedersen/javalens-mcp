@@ -168,12 +168,21 @@ public class GetJavadocTool extends AbstractTool {
     }
 
     private void parseJavadoc(String javadoc, Map<String, Object> data, IJavaElement element) {
-        // Clean up the javadoc
-        String cleaned = javadoc
-            .replaceAll("/\\*\\*", "")
-            .replaceAll("\\*/", "")
-            .replaceAll("(?m)^\\s*\\*\\s?", "")
-            .trim();
+        // Clean up the javadoc. Markdown documentation comments (JEP 467, standard
+        // since Java 23) use /// line markers; traditional comments use a /** ... */
+        // block with leading * on each line. Strip whichever markers this comment uses.
+        String cleaned;
+        if (javadoc.stripLeading().startsWith("///")) {
+            cleaned = javadoc
+                .replaceAll("(?m)^\\s*///\\s?", "")
+                .trim();
+        } else {
+            cleaned = javadoc
+                .replaceAll("/\\*\\*", "")
+                .replaceAll("\\*/", "")
+                .replaceAll("(?m)^\\s*\\*\\s?", "")
+                .trim();
+        }
 
         // Extract summary (everything before first @tag)
         int firstTag = cleaned.indexOf("@");
