@@ -197,6 +197,12 @@ public class GetDiagnosticsTool extends AbstractTool {
                 boolean isError = problem.isError();
                 boolean isWarning = problem.isWarning();
 
+                // This tool's contract is errors and warnings only. JDT can report
+                // problems at other severities (e.g. info), which must not be surfaced
+                // or counted here — otherwise totalDiagnostics would exceed
+                // errorCount + warningCount and the severity label would be wrong.
+                if (!isError && !isWarning) continue;
+
                 // Filter by severity
                 if ("error".equals(severity) && !isError) continue;
                 if ("warning".equals(severity) && !isWarning) continue;
