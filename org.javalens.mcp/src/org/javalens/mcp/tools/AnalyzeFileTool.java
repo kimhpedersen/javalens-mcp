@@ -120,9 +120,21 @@ public class AnalyzeFileTool extends AbstractTool {
             List<Map<String, Object>> imports = new ArrayList<>();
             for (IImportDeclaration imp : cu.getImports()) {
                 Map<String, Object> importInfo = new LinkedHashMap<>();
-                importInfo.put("name", imp.getElementName());
-                importInfo.put("static", Flags.isStatic(imp.getFlags()));
-                importInfo.put("onDemand", imp.isOnDemand());
+                boolean isModule = Flags.isModule(imp.getFlags());
+                if (isModule) {
+                    // import module M; (JEP 511). The JDT model carries it as an
+                    // on-demand import named "M.*" — identical in shape to a
+                    // wildcard import. Report it by its module name and flag it so
+                    // it is not mistaken for an ordinary on-demand wildcard.
+                    importInfo.put("name", imp.getElementName().replaceFirst("\\.\\*$", ""));
+                    importInfo.put("static", false);
+                    importInfo.put("onDemand", false);
+                } else {
+                    importInfo.put("name", imp.getElementName());
+                    importInfo.put("static", Flags.isStatic(imp.getFlags()));
+                    importInfo.put("onDemand", imp.isOnDemand());
+                }
+                importInfo.put("module", isModule);
                 imports.add(importInfo);
             }
             data.put("imports", imports);
