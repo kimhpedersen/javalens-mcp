@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.MarkerAnnotation;
+import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
@@ -103,11 +104,19 @@ public class OrganizeImportsTool extends AbstractTool {
             List<String> unusedImports = new ArrayList<>();
             List<String> staticImports = new ArrayList<>();
             List<String> onDemandImports = new ArrayList<>();
+            List<String> moduleImports = new ArrayList<>();
 
             for (ImportDeclaration imp : currentImports) {
                 String importName = imp.getName().getFullyQualifiedName();
 
-                if (imp.isStatic()) {
+                if (Modifier.isModule(imp.getModifiers())) {
+                    // import module M; (JEP 511) brings in a whole module's
+                    // exported packages. We cannot tell which unqualified types
+                    // resolve through it, so it is always preserved verbatim —
+                    // never dropped as unused, never rewritten as "M.*" (the DOM
+                    // reports it as on-demand, which would do exactly that).
+                    moduleImports.add("import module " + importName + ";");
+                } else if (imp.isStatic()) {
                     staticImports.add(imp.toString().trim());
                 } else if (imp.isOnDemand()) {
                     onDemandImports.add(importName + ".*");
@@ -127,6 +136,15 @@ public class OrganizeImportsTool extends AbstractTool {
             // Build organized import block
             StringBuilder organizedImports = new StringBuilder();
             String lastPrefix = "";
+
+            // Module imports first — they govern the whole file's unqualified
+            // resolution, so they conventionally lead the import block.
+            for (String imp : moduleImports.stream().sorted().collect(Collectors.toList())) {
+                organizedImports.append(imp).append("\n");
+            }
+            if (!moduleImports.isEmpty() && !sortedImports.isEmpty()) {
+                organizedImports.append("\n");
+            }
 
             for (String imp : sortedImports) {
                 String prefix = getImportPrefix(imp);
