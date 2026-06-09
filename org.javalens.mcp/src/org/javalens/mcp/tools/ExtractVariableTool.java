@@ -220,8 +220,8 @@ public class ExtractVariableTool extends AbstractTool {
             TextEdit rewriteEdit = rewrite.rewriteAST();
             List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, source, ast);
             TextEdit importsEdit = importRewrite.rewriteImports(new NullProgressMonitor());
-            if (importsEdit != null && (importsEdit.hasChildren() || importsEdit.getLength() > 0
-                    || !importsEdit.getClass().getSimpleName().equals("MultiTextEdit"))) {
+            if (importsEdit != null) {
+                // An empty container converts to zero edit maps.
                 edits.addAll(TextEditConverter.toEditMaps(importsEdit, source, ast));
             }
 

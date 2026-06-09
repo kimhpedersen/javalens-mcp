@@ -1,8 +1,8 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -27,16 +27,20 @@ import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.ThisExpression;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ImportRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -188,44 +192,54 @@ public class ExtractConstantTool extends AbstractTool {
                 return ToolResponse.invalidParameter("selection", "Cannot find containing type");
             }
 
-            // Get expression text
-            String expressionText = expression.toString();
+            // Get expression text (source slice, also used for response metadata)
+            String source = cu.getSource();
+            String expressionText = source.substring(expression.getStartPosition(),
+                expression.getStartPosition() + expression.getLength());
 
-            // Build the constant declaration
+            // Synthesize the edits structurally with ASTRewrite: a new
+            // private static final field on the containing type, placed after
+            // the last existing constant (or first in the body), and the
+            // selected expression replaced by the constant name. The rewriter
+            // renders declaration text and indentation; ImportRewrite brings in
+            // the constant's type respecting project import conventions.
+            AST astFactory = ast.getAST();
+            ASTRewrite rewrite = ASTRewrite.create(astFactory);
+            ImportRewrite importRewrite = ImportRewrite.create(ast, true);
+
+            VariableDeclarationFragment fragment = astFactory.newVariableDeclarationFragment();
+            fragment.setName(astFactory.newSimpleName(constantName));
+            fragment.setInitializer((Expression) rewrite.createStringPlaceholder(
+                expressionText, expression.getNodeType()));
+
+            FieldDeclaration constantField = astFactory.newFieldDeclaration(fragment);
+            Type typeNode = typeBinding != null
+                ? importRewrite.addImport(typeBinding, astFactory)
+                : astFactory.newSimpleType(astFactory.newSimpleName("Object"));
+            constantField.setType(typeNode);
+            constantField.modifiers().addAll(astFactory.newModifiers(
+                Modifier.PRIVATE | Modifier.STATIC | Modifier.FINAL));
+
+            ListRewrite bodyDeclarations = rewrite.getListRewrite(containingType,
+                containingType.getBodyDeclarationsProperty());
+            BodyDeclaration lastConstant = findLastConstant(containingType);
+            if (lastConstant != null) {
+                bodyDeclarations.insertAfter(constantField, lastConstant, null);
+            } else {
+                bodyDeclarations.insertFirst(constantField, null);
+            }
+            rewrite.replace(expression, astFactory.newSimpleName(constantName), null);
+
+            TextEdit rewriteEdit = rewrite.rewriteAST();
+            List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, source, ast);
+            TextEdit importsEdit = importRewrite.rewriteImports(new NullProgressMonitor());
+            if (importsEdit != null) {
+                // An empty container converts to zero edit maps.
+                edits.addAll(TextEditConverter.toEditMaps(importsEdit, source, ast));
+            }
+
+            // Human-readable summary of what the declaration introduces.
             String declaration = "private static final " + typeName + " " + constantName + " = " + expressionText + ";";
-
-            // Find insertion point - after existing constants/fields or at the beginning
-            int insertOffset = findConstantInsertionPoint(containingType, cu);
-            int insertLine = ast.getLineNumber(insertOffset) - 1;
-
-            // Get indentation
-            String indent = getIndentation(cu, containingType);
-            String memberIndent = indent + "    ";
-
-            // Build edits
-            List<Map<String, Object>> edits = new ArrayList<>();
-
-            // Edit 1: Insert constant declaration
-            Map<String, Object> insertEdit = new LinkedHashMap<>();
-            insertEdit.put("type", "insert");
-            insertEdit.put("line", insertLine);
-            insertEdit.put("column", 0);
-            insertEdit.put("offset", insertOffset);
-            insertEdit.put("newText", memberIndent + declaration + "\n\n");
-            edits.add(insertEdit);
-
-            // Edit 2: Replace expression with constant name
-            Map<String, Object> replaceEdit = new LinkedHashMap<>();
-            replaceEdit.put("type", "replace");
-            replaceEdit.put("startLine", ast.getLineNumber(expression.getStartPosition()) - 1);
-            replaceEdit.put("startColumn", ast.getColumnNumber(expression.getStartPosition()));
-            replaceEdit.put("endLine", ast.getLineNumber(expression.getStartPosition() + expression.getLength()) - 1);
-            replaceEdit.put("endColumn", ast.getColumnNumber(expression.getStartPosition() + expression.getLength()));
-            replaceEdit.put("startOffset", expression.getStartPosition());
-            replaceEdit.put("endOffset", expression.getStartPosition() + expression.getLength());
-            replaceEdit.put("oldText", expressionText);
-            replaceEdit.put("newText", constantName);
-            edits.add(replaceEdit);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("filePath", service.getPathUtils().formatPath(path));
@@ -259,70 +273,22 @@ public class ExtractConstantTool extends AbstractTool {
         return null;
     }
 
-    private int findConstantInsertionPoint(AbstractTypeDeclaration type, ICompilationUnit cu) {
-        // Try to insert after existing static final fields, or at the beginning of the class body
-        if (type instanceof TypeDeclaration td) {
-            @SuppressWarnings("unchecked")
-            List<BodyDeclaration> bodyDecls = td.bodyDeclarations();
-
-            int lastConstantEnd = -1;
-            for (BodyDeclaration decl : bodyDecls) {
-                if (decl instanceof FieldDeclaration fd) {
-                    int modifiers = fd.getModifiers();
-                    // Check if it's a static final field (constant)
-                    if ((modifiers & org.eclipse.jdt.core.dom.Modifier.STATIC) != 0 &&
-                        (modifiers & org.eclipse.jdt.core.dom.Modifier.FINAL) != 0) {
-                        lastConstantEnd = fd.getStartPosition() + fd.getLength();
-                    }
+    /**
+     * The last static-final field of the type, used as the insertion anchor so
+     * the new constant lands after existing constants; null when the type has
+     * none (the constant is then inserted first in the body).
+     */
+    private BodyDeclaration findLastConstant(AbstractTypeDeclaration type) {
+        BodyDeclaration last = null;
+        for (Object declObj : type.bodyDeclarations()) {
+            if (declObj instanceof FieldDeclaration fd) {
+                int modifiers = fd.getModifiers();
+                if ((modifiers & Modifier.STATIC) != 0 && (modifiers & Modifier.FINAL) != 0) {
+                    last = fd;
                 }
-            }
-
-            if (lastConstantEnd > 0) {
-                return lastConstantEnd + 1; // Insert after last constant
-            }
-
-            // No existing constants - insert at the beginning of the type body
-            // Find the opening brace
-            try {
-                String source = cu.getSource();
-                if (source != null) {
-                    int typeStart = type.getStartPosition();
-                    int bracePos = source.indexOf('{', typeStart);
-                    if (bracePos > 0) {
-                        return bracePos + 1; // Insert after opening brace
-                    }
-                }
-            } catch (JavaModelException e) {
-                log.debug("Error finding insertion point: {}", e.getMessage());
             }
         }
-
-        // Fallback: insert at the beginning of type body
-        return type.getStartPosition() + type.getLength();
-    }
-
-    private String getIndentation(ICompilationUnit cu, ASTNode node) {
-        try {
-            String source = cu.getSource();
-            if (source == null) return "";
-
-            int nodeStart = node.getStartPosition();
-            int lineStart = source.lastIndexOf('\n', nodeStart - 1) + 1;
-
-            StringBuilder indent = new StringBuilder();
-            for (int i = lineStart; i < nodeStart && i < source.length(); i++) {
-                char c = source.charAt(i);
-                if (c == ' ' || c == '\t') {
-                    indent.append(c);
-                } else {
-                    break;
-                }
-            }
-            return indent.toString();
-        } catch (JavaModelException e) {
-            log.debug("Error getting indentation: {}", e.getMessage());
-            return "    ";
-        }
+        return last;
     }
 
     /**
