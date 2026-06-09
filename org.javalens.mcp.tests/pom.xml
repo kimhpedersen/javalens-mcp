@@ -130,6 +130,14 @@
                             <type>eclipse-plugin</type>
                             <artifactId>org.eclipse.text</artifactId>
                         </dependency>
+                        <dependency>
+                            <type>eclipse-plugin</type>
+                            <artifactId>org.eclipse.jdt.core.manipulation</artifactId>
+                        </dependency>
+                        <dependency>
+                            <type>eclipse-plugin</type>
+                            <artifactId>org.eclipse.ltk.core.refactoring</artifactId>
+                        </dependency>
                     </dependencies>
                 </configuration>
             </plugin>

@@ -279,13 +279,14 @@ All refactoring tools return **text edits** rather than applying changes directl
 | `change_method_signature` | Modify params/return, update all callers |
 | `convert_anonymous_to_lambda` | Convert anonymous class to lambda |
 
-### Quick Fixes (3 tools)
+### Quick Fixes (4 tools)
 
 | Tool | Description |
 |------|-------------|
 | `suggest_imports` | Find import candidates for unresolved type |
 | `get_quick_fixes` | List available fixes for problem at position |
 | `apply_quick_fix` | Apply fix by ID (add import, remove import, add throws, try-catch) |
+| `apply_cleanup` | Apply a JDT clean-up (e.g. convert loops to enhanced for) and return rewritten source |
 
 ### Metrics (5 tools)
 

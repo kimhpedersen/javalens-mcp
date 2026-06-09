@@ -61,8 +61,8 @@ Combine multiple queries to reduce round-trips: analyze file, analyze type, anal
 ### Refactoring (10 tools)
 All return text edits rather than modifying files directly: rename, organize imports, extract variable/method/constant/interface, inline variable/method, change method signature, and convert anonymous to lambda.
 
-### Quick Fixes & Metrics (8 tools)
-Import suggestions, quick fixes, cyclomatic complexity, dependency graphs, circular dependency detection, large class detection, and naming convention violations.
+### Quick Fixes & Metrics (9 tools)
+Import suggestions, quick fixes, JDT clean-ups (e.g. convert loops to enhanced for), cyclomatic complexity, dependency graphs, circular dependency detection, large class detection, and naming convention violations.
 
 ### Project & Infrastructure (6 tools)
 Health check, project loading, project structure, classpath info, type member lookup by name, and superclass method resolution.

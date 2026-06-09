@@ -466,6 +466,12 @@ class ToolContractParityTest {
         applyArgs.put("fixId", "remove_import");
         m.put("apply_quick_fix", applyArgs);
 
+        // apply_cleanup: a headless JDT clean-up over a whole file.
+        ObjectNode cleanupArgs = objectMapper.createObjectNode();
+        cleanupArgs.put("filePath", calcPath);
+        cleanupArgs.put("cleanupId", "convert_loops");
+        m.put("apply_cleanup", cleanupArgs);
+
         // Project lifecycle.
         ObjectNode healthArgs = objectMapper.createObjectNode();
         m.put("health_check", healthArgs);
