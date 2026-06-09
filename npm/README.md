@@ -64,6 +64,9 @@ All return text edits rather than modifying files directly: rename, organize imp
 ### Quick Fixes & Metrics (8 tools)
 Import suggestions, quick fixes, cyclomatic complexity, dependency graphs, circular dependency detection, large class detection, and naming convention violations.
 
+### Project & Infrastructure (6 tools)
+Health check, project loading, project structure, classpath info, type member lookup by name, and superclass method resolution.
+
 ## Build System Support
 
 Single-module and multi-module projects load end-to-end across Maven, Gradle, and Bazel.
