@@ -72,6 +72,13 @@
                                     <type>jar</type>
                                     <destFileName>javalens.jar</destFileName>
                                 </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                    <type>jar</type>
+                                    <destFileName>lombok.jar</destFileName>
+                                </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.directory}/products/org.javalens.product/win32/win32/x86_64/javalens</outputDirectory>
                         </configuration>
@@ -90,6 +97,13 @@
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <destFileName>javalens.jar</destFileName>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                    <type>jar</type>
+                                    <destFileName>lombok.jar</destFileName>
                                 </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.directory}/products/org.javalens.product/linux/gtk/x86_64/javalens</outputDirectory>
@@ -110,6 +124,13 @@
                                     <type>jar</type>
                                     <destFileName>javalens.jar</destFileName>
                                 </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                    <type>jar</type>
+                                    <destFileName>lombok.jar</destFileName>
+                                </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.directory}/products/org.javalens.product/linux/gtk/aarch64/javalens</outputDirectory>
                         </configuration>
@@ -129,6 +150,13 @@
                                     <type>jar</type>
                                     <destFileName>javalens.jar</destFileName>
                                 </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                    <type>jar</type>
+                                    <destFileName>lombok.jar</destFileName>
+                                </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.directory}/products/org.javalens.product/macosx/cocoa/x86_64/JavaLens.app/Contents/Eclipse</outputDirectory>
                         </configuration>
@@ -147,6 +175,13 @@
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <destFileName>javalens.jar</destFileName>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                    <type>jar</type>
+                                    <destFileName>lombok.jar</destFileName>
                                 </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.directory}/products/org.javalens.product/macosx/cocoa/aarch64/JavaLens.app/Contents/Eclipse</outputDirectory>

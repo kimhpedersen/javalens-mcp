@@ -29,6 +29,10 @@
 
         <!-- Tycho version -->
         <tycho.version>5.0.1</tycho.version>
+
+        <!-- Lombok agent bundled with the product and attached at launch so JDT
+             surfaces Lombok-generated members; also attached to the test JVM. -->
+        <lombok.version>1.18.30</lombok.version>
     </properties>
 
     <modules>

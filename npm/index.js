@@ -75,8 +75,26 @@ function cleanupOldCache() {
   }
 }
 
+function resolveLombokAgent() {
+  // The Lombok agent must be an ABSOLUTE path here: eclipse.ini carries a
+  // relative "-javaagent:lombok.jar" for the native launcher, but under
+  // `java -jar` a relative path would resolve against the user's cwd. Prefer an
+  // operator override (e.g. a vetted jar in a locked-down environment), else the
+  // bundled jar. Returns the "-javaagent:...=ECJ" arg, or null to run without it.
+  const override = process.env.JAVALENS_LOMBOK_JAR;
+  if (override) {
+    if (fs.existsSync(override)) return `-javaagent:${override}=ECJ`;
+    log(`JAVALENS_LOMBOK_JAR is set to '${override}' but no file exists there; running without Lombok support.`);
+    return null;
+  }
+  const bundled = path.join(DIST_DIR, 'lombok.jar');
+  return fs.existsSync(bundled) ? `-javaagent:${bundled}=ECJ` : null;
+}
+
 function launch(javaBin, userArgs) {
-  const vmargs = parseEclipseIni();
+  // Drop any -javaagent from eclipse.ini (its relative Lombok path is only valid
+  // for the native launcher); re-add it below with an absolute path.
+  const vmargs = parseEclipseIni().filter(a => !a.startsWith('-javaagent:'));
   const jarPath = path.join(DIST_DIR, 'javalens.jar');
 
   if (!fs.existsSync(jarPath)) {
@@ -84,10 +102,12 @@ function launch(javaBin, userArgs) {
     process.exit(1);
   }
 
+  const lombokAgent = resolveLombokAgent();
   const hasData = userArgs.some(a => a === '-data' || a === '--data');
 
   const javaArgs = [
     ...vmargs,
+    ...(lombokAgent ? [lombokAgent] : []),
     '-jar', jarPath,
     ...(hasData ? [] : ['-data', WORKSPACE_DIR]),
     ...userArgs
