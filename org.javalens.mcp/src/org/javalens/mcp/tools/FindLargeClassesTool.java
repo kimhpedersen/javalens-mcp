@@ -3,6 +3,7 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
@@ -104,7 +105,33 @@ public class FindLargeClassesTool extends AbstractTool {
 
                         int startLine = ast.getLineNumber(typeDecl.getStartPosition());
                         int endLine = ast.getLineNumber(typeDecl.getStartPosition() + typeDecl.getLength());
-                        int lineCount = endLine - startLine + 1;
+                        if (startLine < 1 || endLine < 1) {
+                            // A JEP 512 implicit class (ImplicitTypeDeclaration) is synthetic:
+                            // its own source range does not map to real lines, so the span
+                            // above is invalid. Fall back to the range of its body
+                            // declarations so the line threshold still applies.
+                            int minStart = Integer.MAX_VALUE;
+                            int maxEnd = -1;
+                            for (Object decl : typeDecl.bodyDeclarations()) {
+                                if (decl instanceof ASTNode node) {
+                                    minStart = Math.min(minStart, node.getStartPosition());
+                                    maxEnd = Math.max(maxEnd, node.getStartPosition() + node.getLength());
+                                }
+                            }
+                            if (maxEnd >= 0) {
+                                startLine = ast.getLineNumber(minStart);
+                                endLine = ast.getLineNumber(maxEnd);
+                            }
+                        }
+                        int lineCount = (startLine >= 1 && endLine >= 1) ? endLine - startLine + 1 : 0;
+
+                        // Implicit classes have no source-level name; the JDT model names
+                        // them after the file, so match that for a stable, non-empty name.
+                        String typeName = typeDecl.getName().getIdentifier();
+                        if (typeName.isEmpty()) {
+                            String fn = filePath.getFileName().toString();
+                            typeName = fn.endsWith(".java") ? fn.substring(0, fn.length() - 5) : fn;
+                        }
 
                         List<String> violations = new ArrayList<>();
                         if (methodCount > methodThreshold) violations.add("methods: " + methodCount + " > " + methodThreshold);
@@ -114,7 +141,7 @@ public class FindLargeClassesTool extends AbstractTool {
                         if (!violations.isEmpty()) {
                             Map<String, Object> entry = new LinkedHashMap<>();
                             entry.put("file", service.getPathUtils().formatPath(filePath));
-                            entry.put("typeName", typeDecl.getName().getIdentifier());
+                            entry.put("typeName", typeName);
                             entry.put("methodCount", methodCount);
                             entry.put("fieldCount", fieldCount);
                             entry.put("lineCount", lineCount);
