@@ -76,7 +76,7 @@ public class HealthCheckTool implements Tool {
         };
         status.put("status", statusMessage);
         status.put("message", "JavaLens MCP Server is operational");
-        status.put("version", "2.0.0-SNAPSHOT");
+        status.put("version", org.javalens.mcp.protocol.McpProtocolHandler.serverVersion());
         status.put("startedAt", startTime.toString());
         status.put("uptime", getUptimeString());
 

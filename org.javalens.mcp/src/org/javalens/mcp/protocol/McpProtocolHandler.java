@@ -152,10 +152,11 @@ public class McpProtocolHandler {
         // Protocol version
         result.put("protocolVersion", "2024-11-05");
 
-        // Server info
+        // Server info — version comes from the bundle so it can never drift
+        // from the released version.
         Map<String, Object> serverInfo = new LinkedHashMap<>();
         serverInfo.put("name", "JavaLens");
-        serverInfo.put("version", "2.0.0-SNAPSHOT");
+        serverInfo.put("version", serverVersion());
         result.put("serverInfo", serverInfo);
 
         // Capabilities
@@ -269,6 +270,24 @@ public class McpProtocolHandler {
 
     public String getClientVersion() {
         return clientVersion;
+    }
+
+    /**
+     * The server version, read from the containing bundle's manifest. Falls
+     * back to "unknown" outside OSGi (plain unit tests).
+     */
+    public static String serverVersion() {
+        try {
+            org.osgi.framework.Bundle bundle =
+                org.osgi.framework.FrameworkUtil.getBundle(McpProtocolHandler.class);
+            if (bundle != null) {
+                org.osgi.framework.Version v = bundle.getVersion();
+                return v.getMajor() + "." + v.getMinor() + "." + v.getMicro();
+            }
+        } catch (Throwable t) {
+            // fall through
+        }
+        return "unknown";
     }
 
     // Exception classes
