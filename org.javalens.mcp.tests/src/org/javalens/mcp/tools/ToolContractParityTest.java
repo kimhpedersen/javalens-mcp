@@ -514,6 +514,10 @@ class ToolContractParityTest {
         moveTypeArgs.put("column", 15);
         m.put("move_type_to_new_file", moveTypeArgs);
 
+        ObjectNode diagnoseFixArgs = objectMapper.createObjectNode();
+        diagnoseFixArgs.put("filePath", calcPath);
+        m.put("diagnose_and_fix", diagnoseFixArgs);
+
         // Project lifecycle.
         ObjectNode healthArgs = objectMapper.createObjectNode();
         m.put("health_check", healthArgs);
