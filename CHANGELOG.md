@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.1] - 2026-06-09
+
+### Added
+
+- Six refactorings driven by JDT's own refactoring engine (via its public descriptors, running headlessly): `encapsulate_field`, `pull_up`, `push_down`, `extract_superclass`, `introduce_parameter_object`, and `move_type_to_new_file`. Refactorings that create a file return its content as `createdFiles`; everything else arrives as `editsByFile` text — nothing is written.
+- `diagnose_and_fix`: the diagnose→fix loop in one call — diagnostics for a file plus each fixable problem's top quick-fix edits, combined as `editsByFile`. Read-only.
+- `apply_cleanup` catalog grows from 1 to 10 clean-ups: convert_to_lambda, pattern_matching_instanceof, convert_to_switch_expression, string_concat_to_text_block, do_while_rather_than_while, invert_equals, boolean_value_rather_than_comparison, else_if, and overridden_assignment join convert_loops. The tool description lists them all.
+
+### Changed
+
+- Refactoring edit generation moved onto JDT's `ASTRewrite`/`ImportRewrite`: declarations, parameter lists, call-site argument lists, implements clauses, lambdas, and inline substitutions are now rendered structurally from AST modifications instead of hand-built strings and offset math. Response contracts are unchanged; `inline_method` parameter substitution is now binding-driven, so identical text inside string literals or under shadowing declarations is never touched.
+- `extract_variable` now refuses extraction into an unbraced single-statement body (the old path emitted uncompilable edits there); `inline_variable` removes just the fragment when a multi-variable declaration is inlined (the old path deleted the whole statement).
+
 ## [1.4.0] - 2026-06-09
 
 ### Added
@@ -308,6 +321,7 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.4.1]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.6...v1.4.0
 [1.3.6]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.5...v1.3.6
 [1.3.5]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.4...v1.3.5

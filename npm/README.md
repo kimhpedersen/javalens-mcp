@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/javalens-mcp.svg)](https://www.npmjs.com/package/javalens-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/pzalutski-pixel/javalens-mcp/blob/master/LICENSE)
 
-An MCP server providing **64 semantic analysis tools** for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
+An MCP server providing **71 semantic analysis tools** for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
 
 ## Requirements
 
@@ -60,11 +60,11 @@ Diagnostics, syntax validation, call hierarchy (incoming/outgoing), field write 
 ### Compound Analysis (4 tools)
 Combine multiple queries to reduce round-trips: analyze file, analyze type, analyze method, and type usage summary.
 
-### Refactoring (10 tools)
-All return text edits rather than modifying files directly: rename, organize imports, extract variable/method/constant/interface, inline variable/method, change method signature, and convert anonymous to lambda.
+### Refactoring (16 tools)
+All return text edits (and new-file content where a refactoring creates one) rather than modifying files directly: rename, organize imports, extract variable/method/constant/interface/superclass, inline variable/method, change method signature, convert anonymous to lambda, encapsulate field, pull up / push down members, introduce parameter object, and move a nested type to its own file.
 
-### Quick Fixes & Metrics (9 tools)
-Import suggestions, quick fixes, JDT clean-ups (e.g. convert loops to enhanced for), cyclomatic complexity, dependency graphs, circular dependency detection, large class detection, and naming convention violations.
+### Quick Fixes & Metrics (10 tools)
+Import suggestions, quick fixes, 10 JDT clean-ups (convert loops, pattern matching, switch expressions, text blocks, ...), one-call diagnose-and-fix, cyclomatic complexity, dependency graphs, circular dependency detection, large class detection, and naming convention violations.
 
 ### Project & Infrastructure (6 tools)
 Health check, project loading, project structure, classpath info, type member lookup by name, and superclass method resolution.

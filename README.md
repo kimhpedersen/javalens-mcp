@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
 
-An MCP server providing 64 semantic analysis tools for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
+An MCP server providing 71 semantic analysis tools for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
 
 ## Built for AI Agents
 
@@ -264,9 +264,9 @@ Combine multiple queries to reduce round-trips:
 | `analyze_method` | Get signature, callers, callees, overrides |
 | `get_type_usage_summary` | Get instantiations, casts, instanceof counts |
 
-### Refactoring (10 tools)
+### Refactoring (16 tools)
 
-All refactoring tools return **text edits** rather than applying changes directly:
+All refactoring tools return **text edits** (and new-file content where a refactoring creates one) rather than applying changes directly:
 
 | Tool | Description |
 |------|-------------|
@@ -276,19 +276,26 @@ All refactoring tools return **text edits** rather than applying changes directl
 | `extract_method` | Extract code block to new method |
 | `extract_constant` | Extract to `static final` field |
 | `extract_interface` | Create interface from class methods |
+| `extract_superclass` | Move a member into a newly created superclass |
 | `inline_variable` | Replace variable with its initializer |
 | `inline_method` | Replace call with method body |
 | `change_method_signature` | Modify params/return, update all callers |
 | `convert_anonymous_to_lambda` | Convert anonymous class to lambda |
+| `encapsulate_field` | Generate accessors and rewrite all direct field accesses |
+| `pull_up` | Move a member into the superclass |
+| `push_down` | Move a member into the subclasses |
+| `introduce_parameter_object` | Bundle a method's parameters into a new class, updating callers |
+| `move_type_to_new_file` | Move a nested type into its own top-level file |
 
-### Quick Fixes (4 tools)
+### Quick Fixes (5 tools)
 
 | Tool | Description |
 |------|-------------|
 | `suggest_imports` | Find import candidates for unresolved type |
 | `get_quick_fixes` | List available fixes for problem at position |
 | `apply_quick_fix` | Apply fix by ID (add import, remove import, add throws, try-catch) |
-| `apply_cleanup` | Apply a JDT clean-up (e.g. convert loops to enhanced for) and return rewritten source |
+| `apply_cleanup` | Apply one of 10 JDT clean-ups (convert loops, pattern matching, switch expressions, text blocks, ...) and return rewritten source |
+| `diagnose_and_fix` | Diagnose a file and return each problem's top quick-fix edits in one call |
 
 ### Metrics (5 tools)
 
@@ -430,7 +437,7 @@ Build-system coverage is structured as focused per-bug tests plus realistic end-
 ```mermaid
 flowchart TD
     Client["<b>MCP Client</b>"]
-    MCP["<b>org.javalens.mcp</b><br/>McpProtocolHandler → ToolRegistry → 64 Tools"]
+    MCP["<b>org.javalens.mcp</b><br/>McpProtocolHandler → ToolRegistry → 71 Tools"]
     Core["<b>org.javalens.core</b><br/>JdtServiceImpl → WorkspaceManager, SearchService"]
     JDT["<b>Eclipse JDT Core</b> (via OSGi / Equinox)<br/>IWorkspace, IJavaProject, SearchEngine, ASTParser"]
 
