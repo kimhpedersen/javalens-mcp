@@ -500,6 +500,12 @@ class ToolContractParityTest {
         extractSuperArgs.put("superclassName", "CalculatorBase");
         m.put("extract_superclass", extractSuperArgs);
 
+        ObjectNode ipoArgs = objectMapper.createObjectNode();
+        ipoArgs.put("filePath", calcPath);
+        ipoArgs.put("line", 14);
+        ipoArgs.put("column", 15);
+        m.put("introduce_parameter_object", ipoArgs);
+
         // Project lifecycle.
         ObjectNode healthArgs = objectMapper.createObjectNode();
         m.put("health_check", healthArgs);
