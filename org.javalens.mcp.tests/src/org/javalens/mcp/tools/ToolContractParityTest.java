@@ -506,6 +506,14 @@ class ToolContractParityTest {
         ipoArgs.put("column", 15);
         m.put("introduce_parameter_object", ipoArgs);
 
+        // move_type_to_new_file: a top-level position is refused with
+        // INVALID_PARAMETER — a well-formed response for the parity contract.
+        ObjectNode moveTypeArgs = objectMapper.createObjectNode();
+        moveTypeArgs.put("filePath", calcPath);
+        moveTypeArgs.put("line", 14);
+        moveTypeArgs.put("column", 15);
+        m.put("move_type_to_new_file", moveTypeArgs);
+
         // Project lifecycle.
         ObjectNode healthArgs = objectMapper.createObjectNode();
         m.put("health_check", healthArgs);

@@ -63,6 +63,7 @@ import org.javalens.mcp.tools.PullUpTool;
 import org.javalens.mcp.tools.PushDownTool;
 import org.javalens.mcp.tools.ExtractSuperclassTool;
 import org.javalens.mcp.tools.IntroduceParameterObjectTool;
+import org.javalens.mcp.tools.MoveTypeToNewFileTool;
 import org.javalens.mcp.tools.GetComplexityMetricsTool;
 import org.javalens.mcp.tools.GetDependencyGraphTool;
 import org.javalens.mcp.tools.FindCircularDependenciesTool;
@@ -288,6 +289,7 @@ public class JavaLensApplication implements IApplication {
         toolRegistry.register(new PushDownTool(() -> jdtService));
         toolRegistry.register(new ExtractSuperclassTool(() -> jdtService));
         toolRegistry.register(new IntroduceParameterObjectTool(() -> jdtService));
+        toolRegistry.register(new MoveTypeToNewFileTool(() -> jdtService));
 
         // Metrics tools
         toolRegistry.register(new GetComplexityMetricsTool(() -> jdtService));
