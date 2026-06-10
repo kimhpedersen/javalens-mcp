@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.fixtures.TestProjectHelper;
+import org.javalens.mcp.tools.AnalyzeChangeImpactTool;
 import org.javalens.mcp.tools.FindUnreachableCodeTool;
 import org.javalens.mcp.tools.LoadProjectTool;
 import org.javalens.mcp.tools.ToolRegistry;
@@ -48,6 +49,7 @@ class ImpactAnalysisProtocolIntegrationTest {
         // Replicate JavaLensApplication's registration pattern for the tools under test.
         toolRegistry.register(new LoadProjectTool(service -> this.sharedService = service));
         toolRegistry.register(new FindUnreachableCodeTool(() -> this.sharedService));
+        toolRegistry.register(new AnalyzeChangeImpactTool(() -> this.sharedService));
 
         projectPath = helper.getFixturePath("reachability-maven");
     }
@@ -146,6 +148,33 @@ class ImpactAnalysisProtocolIntegrationTest {
 
         assertTrue(payload.get("success").asBoolean());
         assertEquals(13, payload.get("data").get("unreachableCount").asInt());
+    }
+
+    @Test
+    @DisplayName("tools/call analyze_change_impact transitive mode crosses interface dispatch")
+    void toolsCall_analyzeChangeImpact_transitive() throws Exception {
+        loadFixtureOverProtocol();
+
+        String prefixFile = projectPath.resolve("src/main/java/com/reach/EnglishGreeter.java")
+            .toString().replace("\\", "\\\\");
+        JsonNode payload = toolPayload(call(String.format("""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"analyze_change_impact",
+                "arguments":{"filePath":"%s","line":13,"column":20,"transitive":true}
+            }}
+            """, prefixFile)));
+
+        assertTrue(payload.get("success").asBoolean(), () -> "tool failed: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("prefix", data.get("symbol").asText());
+        assertEquals(4, data.get("totalAffectedMethods").asInt());
+
+        Set<String> methods = new HashSet<>();
+        for (JsonNode method : data.get("affectedMethods")) {
+            methods.add(method.asText());
+        }
+        assertTrue(methods.contains("com.reach.Main#main(String[])"),
+            "depth-4 caller through the interface hop must appear; got: " + methods);
     }
 
     @Test

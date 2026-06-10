@@ -7,6 +7,8 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.graph.ProjectGraph;
+import org.javalens.core.graph.ProjectGraph.GraphNode;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -52,6 +54,13 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
               depth=1: direct references only
               depth=2: references + callers of those references
               depth=3: three levels deep
+            - transitive: full reverse closure over the project call graph
+              (default false). No depth ceiling; follows calls, instantiations,
+              field accesses, and override declarations (callers through an
+              interface or superclass count). Returns affectedMethods +
+              affectedFiles instead of callSites. Supports project methods,
+              fields, and types.
+            - maxResults: cap on affectedMethods in transitive mode (default 200)
 
             Requires load_project to be called first.
             """;
@@ -64,6 +73,8 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
             .required("line", "integer", "Zero-based line number")
             .required("column", "integer", "Zero-based column number")
             .optional("depth", "integer", "Levels of transitive callers to follow (default 1, max 3)")
+            .optional("transitive", "boolean", "Full reverse closure over the project graph, no depth ceiling (default false)")
+            .optional("maxResults", "integer", "Cap on affectedMethods in transitive mode (default 200)")
             .build();
     }
 
@@ -83,6 +94,10 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
 
             if (element == null) {
                 return ToolResponse.symbolNotFound("No symbol found at " + filePathStr + ":" + line + ":" + column);
+            }
+
+            if (getBooleanParam(arguments, "transitive", false)) {
+                return transitiveImpact(service, element, getIntParam(arguments, "maxResults", 200));
             }
 
             // Collect all references at each depth level
@@ -167,5 +182,65 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
         } catch (Exception e) {
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * Full blast radius via the project graph's reverse closure: every method
+     * from which the symbol may be invoked or accessed, across override
+     * declarations, with no depth ceiling.
+     */
+    private ToolResponse transitiveImpact(IJdtService service, IJavaElement element, int maxResults)
+            throws Exception {
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults", "must be >= 0");
+        }
+
+        ProjectGraph graph = service.getProjectGraphService().getGraph();
+        String key = graph.keyOf(element);
+        if (key == null || graph.node(key) == null) {
+            return ToolResponse.invalidParameter("transitive",
+                "transitive analysis supports project methods, fields, and types; "
+                    + "no graph node for '" + element.getElementName() + "'");
+        }
+
+        List<String> affectedMethods = graph.transitiveCallers(key).stream().sorted().toList();
+
+        Map<String, Integer> fileCounts = new LinkedHashMap<>();
+        for (String methodKey : affectedMethods) {
+            GraphNode node = graph.node(methodKey);
+            if (node != null) {
+                fileCounts.merge(service.getPathUtils().formatPath(node.filePath()), 1, Integer::sum);
+            }
+        }
+        List<Map<String, Object>> affectedFiles = fileCounts.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .map(e -> {
+                Map<String, Object> file = new LinkedHashMap<String, Object>();
+                file.put("filePath", e.getKey());
+                file.put("methodCount", e.getValue());
+                return file;
+            })
+            .toList();
+
+        int total = affectedMethods.size();
+        boolean truncated = total > maxResults;
+        List<String> returned = truncated ? affectedMethods.subList(0, maxResults) : affectedMethods;
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("symbol", element.getElementName());
+        data.put("symbolType", element.getClass().getSimpleName().replace("Sourced", "").replace("Impl", ""));
+        data.put("transitive", true);
+        data.put("totalAffectedMethods", total);
+        data.put("affectedMethods", returned);
+        data.put("affectedFiles", affectedFiles);
+
+        return ToolResponse.success(data, ResponseMeta.builder()
+            .totalCount(total)
+            .returnedCount(returned.size())
+            .truncated(truncated)
+            .suggestedNextTools(List.of(
+                "find_affected_tests for the tests covering this symbol",
+                "find_references for the direct call sites with locations"))
+            .build());
     }
 }
