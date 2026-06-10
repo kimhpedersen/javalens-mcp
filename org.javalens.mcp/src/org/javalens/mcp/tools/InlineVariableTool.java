@@ -2,7 +2,6 @@ package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -19,7 +18,10 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -159,7 +161,9 @@ public class InlineVariableTool extends AbstractTool {
             }
 
             String variableName = declarationFragment.getName().getIdentifier();
-            String initializerText = initializer.toString();
+            String source = cu.getSource();
+            String initializerText = source.substring(initializer.getStartPosition(),
+                initializer.getStartPosition() + initializer.getLength());
 
             // Find all usages of this variable
             List<SimpleName> usages = findUsages(ast, variableBinding, declarationFragment);
@@ -174,52 +178,43 @@ public class InlineVariableTool extends AbstractTool {
                     "Variable is modified after initialization, cannot safely inline");
             }
 
-            // Build edits - sort by offset descending for safe application
-            List<Map<String, Object>> edits = new ArrayList<>();
-
-            // Collect all replacement edits first
+            // Synthesize the edits structurally with ASTRewrite: each usage is
+            // replaced by the initializer (paren-wrapped when the surrounding
+            // precedence requires it), and the declaration is removed — the
+            // whole statement for a single-variable declaration, or just this
+            // fragment when the statement declares several variables.
+            ASTRewrite rewrite = ASTRewrite.create(ast.getAST());
             for (SimpleName usage : usages) {
-                Map<String, Object> replaceEdit = new LinkedHashMap<>();
-                replaceEdit.put("type", "replace");
-                replaceEdit.put("line", ast.getLineNumber(usage.getStartPosition()) - 1);
-                replaceEdit.put("column", ast.getColumnNumber(usage.getStartPosition()));
-                replaceEdit.put("startOffset", usage.getStartPosition());
-                replaceEdit.put("endOffset", usage.getStartPosition() + usage.getLength());
-                replaceEdit.put("oldText", variableName);
-                // Wrap in parentheses if the initializer is complex
-                String replacement = needsParentheses(initializer, usage) ?
-                    "(" + initializerText + ")" : initializerText;
-                replaceEdit.put("newText", replacement);
-                edits.add(replaceEdit);
+                String replacement = needsParentheses(initializer, usage)
+                    ? "(" + initializerText + ")" : initializerText;
+                rewrite.replace(usage,
+                    rewrite.createStringPlaceholder(replacement, initializer.getNodeType()), null);
             }
 
-            // Add delete edit for the declaration
             Statement declarationStatement = findDeclarationStatement(declarationFragment);
-            if (declarationStatement != null) {
-                Map<String, Object> deleteEdit = new LinkedHashMap<>();
-                deleteEdit.put("type", "delete");
-                deleteEdit.put("line", ast.getLineNumber(declarationStatement.getStartPosition()) - 1);
-                deleteEdit.put("startOffset", declarationStatement.getStartPosition());
-                deleteEdit.put("endOffset", declarationStatement.getStartPosition() + declarationStatement.getLength());
-                deleteEdit.put("oldText", getStatementText(cu, declarationStatement));
-
-                // Check if there are other variables in this declaration
-                if (declarationStatement instanceof VariableDeclarationStatement vds) {
-                    @SuppressWarnings("unchecked")
-                    List<VariableDeclarationFragment> fragments = vds.fragments();
-                    if (fragments.size() > 1) {
-                        deleteEdit.put("note", "Declaration has multiple variables, only removing this one");
-                        // Would need more complex edit - for now just note it
-                    }
-                }
-
-                edits.add(deleteEdit);
+            if (declarationStatement instanceof VariableDeclarationStatement vds
+                    && vds.fragments().size() > 1) {
+                rewrite.remove(declarationFragment, null);
+            } else if (declarationStatement != null) {
+                rewrite.remove(declarationStatement, null);
             }
 
-            // Sort edits by offset descending for safe application
+            TextEdit rewriteEdit = rewrite.rewriteAST();
+            List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, source, ast);
+
+            // This tool's edit contract carries `line`/`column` on every edit
+            // and is ordered by offset descending for safe sequential application.
+            for (Map<String, Object> edit : edits) {
+                if (!edit.containsKey("line")) {
+                    edit.put("line", edit.get("startLine"));
+                }
+                if (!edit.containsKey("column")) {
+                    edit.put("column", edit.get("startColumn"));
+                }
+            }
             edits.sort((a, b) -> {
-                int offsetA = (int) a.get("startOffset");
-                int offsetB = (int) b.get("startOffset");
+                int offsetA = ((Number) (a.containsKey("startOffset") ? a.get("startOffset") : a.get("offset"))).intValue();
+                int offsetB = ((Number) (b.containsKey("startOffset") ? b.get("startOffset") : b.get("offset"))).intValue();
                 return Integer.compare(offsetB, offsetA);
             });
 
@@ -403,19 +398,5 @@ public class InlineVariableTool extends AbstractTool {
         }
 
         return true; // Default to wrapping for safety
-    }
-
-    private String getStatementText(ICompilationUnit cu, Statement statement) {
-        try {
-            String source = cu.getSource();
-            if (source != null) {
-                int start = statement.getStartPosition();
-                int end = start + statement.getLength();
-                return source.substring(start, end);
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error getting statement text: {}", e.getMessage());
-        }
-        return "";
     }
 }

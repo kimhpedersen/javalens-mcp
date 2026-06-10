@@ -64,6 +64,11 @@ public final class TextEditConverter {
                 // Insert + delete over the same start -> one replace.
                 last.length += leaf.length;
                 last.text += leaf.text;
+            } else if (last != null && last.text.isEmpty() && leaf.text.isEmpty()
+                    && last.offset + last.length == leaf.offset) {
+                // Contiguous deletes (e.g. a removed statement and its trailing
+                // whitespace arrive as separate edits) -> one delete.
+                last.length += leaf.length;
             } else {
                 merged.add(new Leaf(leaf.offset, leaf.length, leaf.text));
             }
