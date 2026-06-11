@@ -12,6 +12,7 @@ Export-Package: org.javalens.core,
  org.javalens.core.project,
  org.javalens.core.project.model,
  org.javalens.core.search,
+ org.javalens.core.sync,
  org.javalens.core.workspace
 Import-Package: org.eclipse.core.resources,
  org.eclipse.core.runtime,
