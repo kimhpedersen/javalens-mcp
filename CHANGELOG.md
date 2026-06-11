@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.2] - 2026-06-10
+
+### Added
+
+- Whole-program reachability graph (built lazily per loaded project, cached until reload) powering three impact-analysis capabilities:
+  - `find_unreachable_code`: project-wide dead code — types, methods, and fields unreachable from any `main` method or test (disabled tests still count as roots; a call through an interface or superclass reaches every override). Results mean "unreachable from declared entry points", not "safe to delete" — reflection/DI entry points are invisible to the graph.
+  - `find_affected_tests`: the test methods (JUnit 4/5, TestNG) that exercise a symbol, directly or transitively through non-test helpers and interface dispatch — the set to run after changing it. Disabled covering tests are flagged.
+  - `analyze_change_impact` gains `transitive=true`: the full reverse closure over the project graph (no depth ceiling, crosses override declarations) as `affectedMethods` + `affectedFiles`. The depth-mode contract is unchanged.
+- `analyze_data_flow` gains opt-in interprocedural tracking (`followCalls`, bounded by `maxCallDepth`): null facts followed through argument-to-parameter hops to dereference sinks in callees, and parameter-taint facts propagated through aliases and concatenation to escape points into non-project callees. May-analysis; returned values are not tracked back.
+- Framework-semantic extractors: `get_jpa_model` (entities with table names, id fields, and relationships — targets resolved through collection type arguments, mappedBy sides) and `get_http_endpoints` (route table with class-prefix/method-path composition for Spring verb shortcuts and JAX-RS). Frameworks absent from the classpath return empty results.
+
+### Fixed
+
+- `get_diagnostics` flagged `truncated` whenever the collected count reached `maxResults`, even when nothing was dropped. The flag now means items were actually dropped.
+- `suggest_imports` overflowed its internal collection budget at `maxResults=Integer.MAX_VALUE` and silently returned nothing.
+
 ## [1.4.1] - 2026-06-09
 
 ### Added
@@ -321,6 +337,7 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.4.2]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.6...v1.4.0
 [1.3.6]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.5...v1.3.6

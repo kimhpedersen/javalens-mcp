@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
 
-An MCP server providing 71 semantic analysis tools for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
+An MCP server providing 75 semantic analysis tools for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
 
 ## Built for AI Agents
 
@@ -80,6 +80,8 @@ Language Server Protocol was designed for IDE autocomplete and basic navigation�
 | Calculate cyclomatic complexity | ❌ | ✅ |
 | Find unused private methods | ❌ | ✅ |
 | Detect possible null pointer bugs | ❌ | ✅ |
+| Project-wide dead-code reachability from entry points | ❌ | ✅ |
+| Find the tests that exercise a symbol, transitively | ❌ | ✅ |
 
 JavaLens wraps **Eclipse JDT Core** directly via OSGi, providing:
 
@@ -232,7 +234,7 @@ These use JDT's unique reference type constants—not available through LSP:
 | `find_type_arguments` | Find all `List<Type>` usages |
 | `find_reflection_usage` | Find `Class.forName()`, `Method.invoke()`, and other reflection calls |
 
-### Analysis (16 tools)
+### Analysis (20 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -243,15 +245,19 @@ These use JDT's unique reference type constants—not available through LSP:
 | `find_field_writes` | Find where fields are mutated |
 | `find_tests` | Discover JUnit/TestNG test methods |
 | `find_unused_code` | Find unused private members |
+| `find_unreachable_code` | Project-wide dead code — members unreachable from any main method or test, over the whole-program call graph |
+| `find_affected_tests` | The tests that exercise a symbol, directly or transitively — the set to run after changing it |
 | `find_possible_bugs` | Detect null risks, empty catches, resource leaks |
 | `get_hover_info` | Get documentation/signature for symbol |
 | `get_javadoc` | Get parsed Javadoc |
 | `get_signature_help` | Get method signature at call site |
 | `get_enclosing_element` | Get containing method/class at position |
-| `analyze_change_impact` | Blast radius — all files and call sites affected by changing a symbol |
-| `analyze_data_flow` | Variable read/write/declaration tracking within a method |
+| `analyze_change_impact` | Blast radius — direct call sites by depth, or the full transitive closure over the project graph (`transitive=true`) |
+| `analyze_data_flow` | Variable read/write/declaration tracking within a method; opt-in `followCalls` tracks null/taint facts across calls to sinks |
 | `analyze_control_flow` | Branching, loops, return/throw points, nesting depth |
 | `get_di_registrations` | Find Spring DI registrations (@Component, @Bean, @Autowired, @Inject) |
+| `get_jpa_model` | Assembled JPA entity model — tables, id fields, relationships with resolved targets and mappedBy sides |
+| `get_http_endpoints` | Assembled HTTP route table — Spring and JAX-RS paths composed from class prefixes, mapped to handler methods |
 
 ### Compound Analysis (4 tools)
 
@@ -437,7 +443,7 @@ Build-system coverage is structured as focused per-bug tests plus realistic end-
 ```mermaid
 flowchart TD
     Client["<b>MCP Client</b>"]
-    MCP["<b>org.javalens.mcp</b><br/>McpProtocolHandler → ToolRegistry → 71 Tools"]
+    MCP["<b>org.javalens.mcp</b><br/>McpProtocolHandler → ToolRegistry → 75 Tools"]
     Core["<b>org.javalens.core</b><br/>JdtServiceImpl → WorkspaceManager, SearchService"]
     JDT["<b>Eclipse JDT Core</b> (via OSGi / Equinox)<br/>IWorkspace, IJavaProject, SearchEngine, ASTParser"]
 

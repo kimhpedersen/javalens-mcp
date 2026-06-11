@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/javalens-mcp.svg)](https://www.npmjs.com/package/javalens-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/pzalutski-pixel/javalens-mcp/blob/master/LICENSE)
 
-An MCP server providing **71 semantic analysis tools** for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
+An MCP server providing **75 semantic analysis tools** for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
 
 ## Requirements
 
@@ -54,8 +54,8 @@ Search symbols, go to definition, find references, find implementations, type hi
 ### Fine-Grained Reference Search (9 tools)
 JDT-unique capabilities not available through LSP: find annotation usages, type instantiations, casts, instanceof checks, throws declarations, catch blocks, method references, type arguments, and reflection usage detection.
 
-### Analysis (16 tools)
-Diagnostics, syntax validation, call hierarchy (incoming/outgoing), field write tracking, test discovery, unused code detection, possible bug detection, change impact analysis, data flow analysis, control flow analysis, and Spring DI registration scanning.
+### Analysis (20 tools)
+Diagnostics, syntax validation, call hierarchy (incoming/outgoing), field write tracking, test discovery, unused code detection, project-wide unreachable-code detection over the whole-program call graph, affected-test discovery (which tests exercise a symbol, transitively), possible bug detection, change impact analysis (with a full transitive mode), data flow analysis (with opt-in cross-method null/taint tracking), control flow analysis, Spring DI registration scanning, JPA entity-model assembly, and HTTP route-table assembly (Spring and JAX-RS).
 
 ### Compound Analysis (4 tools)
 Combine multiple queries to reduce round-trips: analyze file, analyze type, analyze method, and type usage summary.
