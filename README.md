@@ -348,29 +348,22 @@ All line/column parameters are **zero-based**:
 
 ## Important Notes
 
-### No Live File Watching
+### Disk Synchronization
 
-JavaLens analyzes code at load time and does **not** watch for file changes. This is by design—the AI coding agent is responsible for maintaining synchronization:
+Every answer is **verified against the files on disk at query time**. Before any tool logic runs, JavaLens content-hashes the known source files, detects edits, additions, and deletions (the agent reports nothing — the server discovers changes itself), repairs exactly what changed, waits for the search index to absorb the repair, and only then answers. There is no file watcher and no background thread — verification is synchronous inside the query the agent issued, so there are no race conditions.
 
-| Event | Agent Action |
-|-------|--------------|
-| After writing/editing files | Call `load_project` to refresh indexes |
-| Before complex refactoring | Call `load_project` to ensure fresh state |
-| After external changes (git pull, etc.) | Call `load_project` to resync |
-
-**Why not automatic watching?**
-
-1. AI agents make discrete edits with clear boundaries—auto-sync adds complexity without benefit
-2. The agent controls when analysis should reflect changes
-3. Avoids race conditions between file writes and index updates
-
-**Recommended pattern:**
+**The agent's loop is just: edit → query.**
 ```
 1. Use JavaLens tools to analyze
 2. Write changes to files
-3. Call load_project to refresh
-4. Use JavaLens tools to verify changes
+3. Use JavaLens tools to verify — answers already reflect the changes
 ```
+
+`load_project` is needed only on first use, when a response reports `RELOAD_REQUIRED` (a build file like `pom.xml` changed, so the classpath must be rebuilt), or to rebuild everything from scratch. If verification itself fails, the query returns `VERIFICATION_FAILED` rather than an unverified answer.
+
+**Cost:** verification is hash-based and parallel — measured per query at ~2 ms for a 72-file project, ~25 ms at 1,000 files, ~180 ms at 10,000 files. Repairs cost only what changed (one edited file reconciles in well under a second), never a full reindex.
+
+**Manual mode:** set `JAVALENS_DISK_SYNC=manual` to restore the pre-1.5.0 contract — answers reflect the last load and the agent calls `load_project` after editing files. Tool descriptions and the MCP `instructions` field always state the active contract, and `health_check` reports it as `diskSync`.
 
 ### Refactoring Returns Edits
 
@@ -399,6 +392,7 @@ Subprocess invocations of `mvn` / `gradle` happen during project load. If a tool
 |---------------------|-------------|---------|
 | `JAVA_PROJECT_PATH` | Auto-load project on startup | (none) |
 | `JAVALENS_TIMEOUT_SECONDS` | Operation timeout | 30 |
+| `JAVALENS_DISK_SYNC` | `strict` (every answer verified against disk) or `manual` (agent calls `load_project` after edits) | strict |
 | `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR | INFO |
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | (default: 512m via eclipse.ini) |
 | `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |

@@ -13,6 +13,8 @@ An MCP server providing **75 semantic analysis tools** for Java, built directly 
 
 **Lombok** is supported out of the box: a bundled agent makes Lombok-generated members resolve, so `@Data` accessors appear in the model and code using them is not flagged as undefined. Set `JAVALENS_LOMBOK_JAR` to override the bundled agent jar.
 
+**Disk synchronization**: every answer is verified against the files on disk at query time — no reload is needed after editing, adding, or deleting source files (the agent's loop is just edit → query). Verification is hash-based and parallel (~2 ms at 72 files, ~25 ms at 1,000, ~180 ms at 10,000 per query); repairs cost only what changed. `load_project` remains for first use, `RELOAD_REQUIRED` responses (build-file changes), and full resets. Set `JAVALENS_DISK_SYNC=manual` for the pre-1.5.0 contract where the agent reloads after edits.
+
 ## Quick Start
 
 ```json
@@ -88,6 +90,7 @@ If `mvn` / `gradle` is missing or the subprocess fails, JavaLens reports a struc
 |---------------------|-------------|---------|
 | `JAVA_PROJECT_PATH` | Auto-load project on startup | (none) |
 | `JAVALENS_TIMEOUT_SECONDS` | Operation timeout | 30 |
+| `JAVALENS_DISK_SYNC` | `strict` (answers verified against disk per query) or `manual` (reload after edits) | strict |
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | 512m |
 | `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR | INFO |
 | `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.0] - 2026-06-11
+
+### Changed
+
+- **Every answer is now verified against the files on disk at query time** (issue #26). Before any tool logic runs, JavaLens content-hashes the known source files, discovers edits/additions/deletions itself, repairs exactly what changed (scoped resource refresh, single-unit reconcile, search-index barrier, derived-cache invalidation), and only then answers.
+  - **How the interaction changed**: the old loop was *edit → call `load_project` → query* — and forgetting the reload meant silently stale answers. The new loop is *edit → query*: there are no sync calls and nothing for the AI to remember; the server discovers changes itself. Tool descriptions and the MCP `instructions` field state the active contract, so the AI is always told the truth about what the server guarantees.
+  - **Why**: a forgotten reload was the one way a compiler-accurate tool could be silently wrong. The accuracy guarantee is now structural — content-verified per query — instead of depending on caller discipline.
+  - **Benefits**: the edit→verify cycle drops from a full project reindex (~30–60 s on a ~300-file project) to a delta repair (sub-second); verification itself measures ~2 ms per query at 72 files, ~25 ms at 1,000, ~180 ms at 10,000 (hash-based, parallel). Answers carry an unconditional disk-truth guarantee.
+  - **Fallback**: `JAVALENS_DISK_SYNC=manual` restores the pre-1.5.0 behavior *and* the pre-1.5.0 tool descriptions exactly (the stated contract always matches the delivered one; `health_check` reports the active mode as `diskSync`). When a build file changes (`pom.xml`, `build.gradle`, ...), the server does not guess — the query fails with `RELOAD_REQUIRED` naming the file, and a verification I/O failure fails with `VERIFICATION_FAILED` rather than answering unverified.
+  - **Memory implications**: one session-local stamp map of `path → (size, mtime, hash)` — roughly 300–400 bytes per source file (≈0.1 MB at 300 files, ≈10 MB at 30,000; negligible next to JDT's own model). File contents are never retained (streamed hashing, constant memory) and stamps are never persisted — every `load_project` rebuilds them, so they cannot go stale across sessions.
+
 ## [1.4.2] - 2026-06-10
 
 ### Added
@@ -337,6 +348,7 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.5.0]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.6...v1.4.0
