@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetHoverInfoTool;
@@ -27,6 +29,7 @@ class GetHoverInfoToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetHoverInfoTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -35,6 +38,7 @@ class GetHoverInfoToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetHoverInfoTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -436,5 +440,26 @@ class GetHoverInfoToolTest {
         assertNotNull(sig);
         assertTrue(sig.contains("static"),
             "Method signature must include `static` modifier; got: " + sig);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.add hover is a method with declaringType and `sum` doc")
+    void envelope_addHover_exactFields() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("get_hover_info", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_hover_info failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add", data.get("name").asText());
+        assertEquals("method", data.get("kind").asText());
+        assertEquals("com.example.Calculator", data.get("declaringType").asText());
+        assertTrue(data.get("docComment").asText().contains("sum"),
+            "the Javadoc `@return the sum` must survive the envelope; got: " + data.get("docComment"));
     }
 }
