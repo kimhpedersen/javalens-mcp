@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindTypeInstantiationsTool;
@@ -21,12 +23,14 @@ class FindTypeInstantiationsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindTypeInstantiationsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindTypeInstantiationsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -255,5 +259,36 @@ class FindTypeInstantiationsToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, instOf(r).size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator instantiated at exactly 5 `new` sites across 3 files")
+    void envelope_calculator_exactNewSites() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_type_instantiations", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_type_instantiations failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(5, data.get("totalCount").asInt(), "exactly five `new Calculator()` sites through the envelope");
+        java.util.Set<String> tuples = new java.util.TreeSet<>();
+        for (JsonNode i : data.get("locations")) {
+            String fp = i.get("filePath").asText().replace('\\', '/');
+            String fileName = fp.substring(fp.lastIndexOf('/') + 1);
+            tuples.add(fileName + ":" + i.get("line").asInt());
+        }
+        assertEquals(
+            java.util.Set.of(
+                "SearchPatterns.java:57",
+                "SearchPatterns.java:211",
+                "SearchPatterns.java:226",
+                "UserService.java:19",
+                "SampleTest.java:25"),
+            tuples,
+            "the exact `new Calculator()` (file:line) tuples must survive the envelope; got: " + tuples);
     }
 }
