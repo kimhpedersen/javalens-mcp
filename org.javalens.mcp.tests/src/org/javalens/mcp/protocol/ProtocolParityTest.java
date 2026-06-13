@@ -23,24 +23,24 @@ import java.util.TreeSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Universal MCP-protocol parity: EVERY registered tool is driven through the
- * real {@link McpProtocolHandler#processMessage} with a known-valid input and
- * must return a well-formed JSON-RPC envelope whose tool payload is either a
- * success or a documented error code.
+ * Universal MCP-protocol parity, BEHAVIORAL: EVERY registered tool is driven
+ * through the real {@link McpProtocolHandler#processMessage} AND through a
+ * direct {@code execute()} on the same registry with the same input, and the
+ * two payloads must be identical (modulo timestamps). The direct execute()
+ * path is the one the per-tool behavior tests already validate against known
+ * fixtures, so this proves the MCP envelope delivers the real, tested result
+ * for every tool — not merely a well-formed shape. A shape-only check would
+ * pass a tool that returns a successful-but-wrong answer (the #32 class).
  *
- * <p>This is both a backfill (the pre-1.4.2 tools never had protocol coverage)
- * and a permanent gate: a newly registered tool with no entry in
+ * <p>Also a permanent gate: a newly registered tool with no entry in
  * {@link ToolInvocationInputs} fails {@link #everyRegisteredToolHasAnInput},
  * so the per-tool protocol rule can no longer silently lapse.
  */
 class ProtocolParityTest {
 
-    /** Documented tool error codes (ErrorInfo). A protocol failure must be one of these. */
-    private static final Set<String> DOCUMENTED_ERROR_CODES = Set.of(
-        "PROJECT_NOT_LOADED", "PROJECT_LOADING", "PROJECT_LOAD_FAILED",
-        "FILE_NOT_FOUND", "SYMBOL_NOT_FOUND", "INVALID_COORDINATES",
-        "INVALID_PARAMETER", "SECURITY_VIOLATION", "TIMEOUT", "INTERNAL_ERROR",
-        "REFACTORING_FAILED", "RELOAD_REQUIRED", "VERIFICATION_FAILED");
+    /** Time-varying fields legitimately differing between two calls; scrubbed before compare. */
+    private static final Set<String> VOLATILE_FIELDS =
+        Set.of("uptime", "startedAt", "startTime", "loadedAt");
 
     private static TestProjectHelper helper;
     private static ToolRegistry registry;
@@ -91,9 +91,9 @@ class ProtocolParityTest {
     }
 
     @Test
-    @DisplayName("every registered tool answers a well-formed JSON-RPC payload through processMessage")
-    void everyRegisteredToolAnswersThroughEnvelope() throws Exception {
-        Map<String, String> malformed = new TreeMap<>();
+    @DisplayName("every tool delivers through the MCP envelope the same result its execute() path produces")
+    void everyRegisteredToolBehavesIdenticallyThroughEnvelope() throws Exception {
+        Map<String, String> divergent = new TreeMap<>();
 
         int id = 1;
         for (String name : new TreeSet<>(registry.getToolNames())) {
@@ -101,43 +101,71 @@ class ProtocolParityTest {
             if (args == null) {
                 continue; // covered by the gate test
             }
+
+            // Behavioral oracle: the direct execute() result, the path the
+            // per-tool behavior tests validate against known fixtures.
+            org.javalens.mcp.models.ToolResponse direct =
+                registry.getTool(name).orElseThrow().execute(args.deepCopy());
+            String expected = canonical(objectMapper.valueToTree(direct));
+
+            // Envelope path: the same input through processMessage.
             ObjectNode call = objectMapper.createObjectNode();
             call.put("jsonrpc", "2.0");
             call.put("id", id++);
             call.put("method", "tools/call");
             ObjectNode params = call.putObject("params");
             params.put("name", name);
-            params.set("arguments", args);
-
+            params.set("arguments", args.deepCopy());
             String response = handler.processMessage(objectMapper.writeValueAsString(call));
+
             try {
                 JsonNode rpc = objectMapper.readTree(response);
                 if (rpc.has("error")) {
-                    malformed.put(name, "JSON-RPC envelope error: " + rpc.get("error"));
+                    divergent.put(name, "JSON-RPC envelope error: " + rpc.get("error"));
                     continue;
                 }
                 JsonNode content = rpc.path("result").path("content");
                 if (!content.isArray() || content.isEmpty()) {
-                    malformed.put(name, "no content array");
+                    divergent.put(name, "no content array");
                     continue;
                 }
-                JsonNode payload = objectMapper.readTree(content.get(0).path("text").asText());
-                if (!payload.has("success")) {
-                    malformed.put(name, "payload missing 'success'");
-                    continue;
-                }
-                if (!payload.get("success").asBoolean()) {
-                    String code = payload.path("error").path("code").asText("");
-                    if (!DOCUMENTED_ERROR_CODES.contains(code)) {
-                        malformed.put(name, "undocumented error code: '" + code + "'");
-                    }
+                String actual = canonical(objectMapper.readTree(content.get(0).path("text").asText()));
+                if (!expected.equals(actual)) {
+                    divergent.put(name, "envelope payload != execute() payload\n  execute=" + expected
+                        + "\n  envelope=" + actual);
                 }
             } catch (Exception e) {
-                malformed.put(name, "unparseable response: " + e.getMessage());
+                divergent.put(name, "unparseable response: " + e.getMessage());
             }
         }
 
-        assertTrue(malformed.isEmpty(),
-            "Tools whose protocol response was not well-formed: " + malformed);
+        assertTrue(divergent.isEmpty(),
+            "Tools whose MCP-envelope behavior diverged from their execute() result: " + divergent);
+    }
+
+    /**
+     * Canonical string form of a payload: object keys sorted, ARRAY ELEMENTS
+     * sorted (search-match ordering is not part of a tool's contract and
+     * legitimately differs between two invocations), volatile and null fields
+     * dropped. Two payloads with the same content compare equal regardless of
+     * field or element order; genuine content divergence still differs.
+     */
+    private static String canonical(JsonNode node) {
+        if (node.isObject()) {
+            java.util.TreeMap<String, String> entries = new java.util.TreeMap<>();
+            node.fields().forEachRemaining(e -> {
+                if (!VOLATILE_FIELDS.contains(e.getKey()) && !e.getValue().isNull()) {
+                    entries.put(e.getKey(), canonical(e.getValue()));
+                }
+            });
+            return entries.toString();
+        }
+        if (node.isArray()) {
+            java.util.List<String> elements = new java.util.ArrayList<>();
+            node.forEach(e -> elements.add(canonical(e)));
+            java.util.Collections.sort(elements);
+            return elements.toString();
+        }
+        return node.toString();
     }
 }
