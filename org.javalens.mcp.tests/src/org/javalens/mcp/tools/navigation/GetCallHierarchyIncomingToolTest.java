@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetCallHierarchyIncomingTool;
@@ -22,6 +24,7 @@ class GetCallHierarchyIncomingToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetCallHierarchyIncomingTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
@@ -29,6 +32,7 @@ class GetCallHierarchyIncomingToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetCallHierarchyIncomingTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         Path projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -263,5 +267,26 @@ class GetCallHierarchyIncomingToolTest {
         assertTrue(hasUseCaller,
             "MethodRefUser.use uses MethodRefTarget::formatId — must surface as a caller " +
                 "in the incoming hierarchy; got: " + callers);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.add has exactly four callers with the exact signature")
+    void envelope_calculatorAdd_exactCallerCount() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("get_call_hierarchy_incoming", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_call_hierarchy_incoming failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add", data.get("method").asText());
+        assertEquals("com.example.Calculator", data.get("declaringClass").asText());
+        assertEquals("add(int, int)", data.get("signature").asText());
+        assertEquals(4, data.get("totalCallers").asInt(),
+            "Calculator.add has exactly four callers — the count must survive the envelope");
     }
 }
