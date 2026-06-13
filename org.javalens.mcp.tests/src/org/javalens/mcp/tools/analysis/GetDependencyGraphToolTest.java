@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetDependencyGraphTool;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,17 +24,38 @@ class GetDependencyGraphToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetDependencyGraphTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetDependencyGraphTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> nodeNames(Map<String, Object> data) {
+        Set<String> names = new java.util.TreeSet<>();
+        for (Object n : (List<Object>) data.get("nodes")) {
+            names.add((String) ((Map<String, Object>) n).get("name"));
+        }
+        return names;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> edges(Map<String, Object> data) {
+        return (List<Map<String, Object>>) data.get("edges");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> summary(Map<String, Object> data) {
+        return (Map<String, Object>) data.get("summary");
+    }
 
     @Test @DisplayName("analyzes type dependencies")
     void analyzesTypeDependencies() {
@@ -219,5 +243,56 @@ class GetDependencyGraphToolTest {
         assertTrue(r.isSuccess());
         assertEquals("com.example.Calculator", getData(r).get("root"));
         assertEquals("type", getData(r).get("scope"));
+    }
+
+    // ========== Exact graph content ==========
+
+    @Test
+    @DisplayName("UserService type graph: nodes are exactly {UserService, Calculator}, one edge count 2")
+    void userService_exactInternalGraph() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("scope", "type");
+        args.put("name", "com.example.service.UserService");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(), () -> "tool failed: " + r.getError());
+        Map<String, Object> data = getData(r);
+
+        // Internal dependencies only (includeExternal defaults false). UserService
+        // references com.example.Calculator twice — its import and its `calculator`
+        // field — collapsing to one edge with count 2. List/String/int are external
+        // or primitive and must not appear as nodes.
+        assertEquals(Set.of("com.example.service.UserService", "com.example.Calculator"),
+            nodeNames(data), "internal graph nodes are exactly UserService and Calculator");
+
+        List<Map<String, Object>> edges = edges(data);
+        assertEquals(1, edges.size(), () -> "exactly one internal edge; got: " + edges);
+        Map<String, Object> edge = edges.get(0);
+        assertEquals("com.example.service.UserService", edge.get("from"));
+        assertEquals("com.example.Calculator", edge.get("to"));
+        assertEquals(2, ((Number) edge.get("count")).intValue(),
+            "import + field reference must collapse to count 2, not 1");
+
+        Map<String, Object> s = summary(data);
+        assertEquals(2, ((Number) s.get("totalNodes")).intValue());
+        assertEquals(1, ((Number) s.get("totalEdges")).intValue());
+        assertEquals(1, ((Number) s.get("internalDependencies")).intValue());
+        assertEquals(0, ((Number) s.get("externalDependencies")).intValue());
+    }
+
+    @Test
+    @DisplayName("Through the real MCP envelope: UserService->Calculator edge has count 2")
+    void envelope_userService_edgeCountTwo() {
+        ObjectNode args = envelope.args();
+        args.put("scope", "type");
+        args.put("name", "com.example.service.UserService");
+        JsonNode payload = envelope.payload("get_dependency_graph", args);
+
+        assertTrue(payload.get("success").asBoolean(), () -> "failed: " + payload);
+        JsonNode edges = payload.get("data").get("edges");
+        assertEquals(1, edges.size(), () -> "exactly one internal edge: " + edges);
+        JsonNode edge = edges.get(0);
+        assertEquals("com.example.Calculator", edge.get("to").asText());
+        assertEquals(2, edge.get("count").asInt(),
+            "edge multiplicity must survive the envelope and not collapse to 1");
     }
 }

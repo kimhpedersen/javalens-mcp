@@ -37,6 +37,9 @@ public class GetDependencyGraphTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetDependencyGraphTool.class);
 
+    private static final Set<String> PRIMITIVE_TYPES = Set.of(
+        "int", "long", "short", "byte", "char", "boolean", "float", "double", "void");
+
     public GetDependencyGraphTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -216,7 +219,7 @@ public class GetDependencyGraphTool extends AbstractTool {
         String superName = type.getSuperclassName();
         if (superName != null && !superName.equals("Object")) {
             String resolvedSuper = resolveTypeName(type, superName);
-            if (includeExternal || !isExternalPackage(extractPackage(resolvedSuper))) {
+            if (resolvedSuper != null && (includeExternal || !isExternalPackage(extractPackage(resolvedSuper)))) {
                 addEdge(edges, typeName, resolvedSuper);
                 nodes.add(resolvedSuper);
                 nodeKinds.putIfAbsent(resolvedSuper, "class");
@@ -226,7 +229,7 @@ public class GetDependencyGraphTool extends AbstractTool {
         // 3. Interfaces
         for (String ifaceName : type.getSuperInterfaceNames()) {
             String resolved = resolveTypeName(type, ifaceName);
-            if (includeExternal || !isExternalPackage(extractPackage(resolved))) {
+            if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
                 addEdge(edges, typeName, resolved);
                 nodes.add(resolved);
                 nodeKinds.putIfAbsent(resolved, "interface");
@@ -240,7 +243,7 @@ public class GetDependencyGraphTool extends AbstractTool {
                 String fieldType = Signature.toString(fieldTypeSig);
                 String resolved = resolveTypeName(type, fieldType);
 
-                if (includeExternal || !isExternalPackage(extractPackage(resolved))) {
+                if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
                     addEdge(edges, typeName, resolved);
                     nodes.add(resolved);
                     nodeKinds.putIfAbsent(resolved, "type");
@@ -258,7 +261,7 @@ public class GetDependencyGraphTool extends AbstractTool {
                 String returnType = Signature.toString(returnSig);
                 if (!returnType.equals("void")) {
                     String resolved = resolveTypeName(type, returnType);
-                    if (includeExternal || !isExternalPackage(extractPackage(resolved))) {
+                    if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
                         addEdge(edges, typeName, resolved);
                         nodes.add(resolved);
                         nodeKinds.putIfAbsent(resolved, "type");
@@ -269,7 +272,7 @@ public class GetDependencyGraphTool extends AbstractTool {
                 for (String paramSig : method.getParameterTypes()) {
                     String paramType = Signature.toString(paramSig);
                     String resolved = resolveTypeName(type, paramType);
-                    if (includeExternal || !isExternalPackage(extractPackage(resolved))) {
+                    if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
                         addEdge(edges, typeName, resolved);
                         nodes.add(resolved);
                         nodeKinds.putIfAbsent(resolved, "type");
@@ -396,31 +399,39 @@ public class GetDependencyGraphTool extends AbstractTool {
                packageName.startsWith("org.xml.");
     }
 
+    /**
+     * Resolve a possibly-unqualified type name to its fully qualified name, or
+     * {@code null} when it is not a project/library type dependency. Primitives
+     * and {@code void} carry no dependency; an unqualified name is resolved
+     * through {@link IType#resolveType} (which honours imports, the enclosing
+     * package, and implicit {@code java.lang}), so e.g. {@code String} resolves
+     * to {@code java.lang.String} and is then filtered as external rather than
+     * fabricated as a bogus same-package type.
+     */
     private String resolveTypeName(IType context, String simpleName) {
         // Remove array brackets and generics
         String baseName = simpleName.replaceAll("\\[\\]", "").replaceAll("<.*>", "");
 
+        if (PRIMITIVE_TYPES.contains(baseName)) {
+            return null;
+        }
+
         // If already qualified, return as-is
         if (baseName.contains(".")) return baseName;
 
-        // Try to resolve from imports
         try {
-            ICompilationUnit cu = context.getCompilationUnit();
-            if (cu != null) {
-                for (IImportDeclaration imp : cu.getImports()) {
-                    String importName = imp.getElementName();
-                    if (importName.endsWith("." + baseName)) {
-                        return importName;
-                    }
-                }
+            String[][] resolved = context.resolveType(baseName);
+            if (resolved != null && resolved.length > 0) {
+                String pkg = resolved[0][0];
+                String simple = resolved[0][1];
+                return (pkg == null || pkg.isEmpty()) ? simple : pkg + "." + simple;
             }
         } catch (Exception e) {
-            // Fall through to return simple name
+            // Fall through: unresolved names contribute no dependency.
         }
 
-        // Return with context package
-        String pkg = context.getPackageFragment().getElementName();
-        return pkg.isEmpty() ? baseName : pkg + "." + baseName;
+        // Unresolved — do not invent a context-package dependency.
+        return null;
     }
 
 }
