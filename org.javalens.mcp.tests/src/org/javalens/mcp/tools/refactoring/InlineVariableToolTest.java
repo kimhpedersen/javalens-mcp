@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.InlineVariableTool;
@@ -27,6 +29,7 @@ class InlineVariableToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private InlineVariableTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -35,6 +38,7 @@ class InlineVariableToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new InlineVariableTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -409,5 +413,58 @@ class InlineVariableToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Inlining a for-init-declared variable must be refused; got success: " + r.getData());
+    }
+
+    // ========== Exact edit lines ==========
+
+    @Test
+    @DisplayName("Inline edits sit at exact 0-based lines: delete at 26, replaces at usages 27 and 28")
+    void inline_trimmed_exactEditLines() {
+        ToolResponse r = tool.execute(trimmedArgs());
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = getEdits(getData(r));
+
+        Map<String, Object> del = edits.stream()
+            .filter(e -> "delete".equals(e.get("type"))).findFirst().orElseThrow();
+        // The delete removes the declaration together with its leading
+        // `// Variable to inline` comment, so the range begins on 0-based line 25.
+        assertEquals(25, ((Number) del.get("line")).intValue(),
+            "delete edit starts at the declaration's leading comment (0-based line 25); got: " + del);
+
+        java.util.Set<Integer> replaceLines = new java.util.TreeSet<>();
+        for (Map<String, Object> e : edits) {
+            if ("replace".equals(e.get("type"))) {
+                replaceLines.add(((Number) e.get("line")).intValue());
+            }
+        }
+        assertEquals(java.util.Set.of(27, 28), replaceLines,
+            "the two usages of `trimmed` are on 0-based lines 27 and 28; got: " + edits);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: inlining trimmed deletes line 26 and replaces lines 27, 28")
+    void envelope_inline_exactEditLines() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 26);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("inline_variable", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "inline_variable failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(2, data.get("usageCount").asInt());
+        java.util.Set<Integer> replaceLines = new java.util.TreeSet<>();
+        int deleteLine = -1;
+        for (JsonNode e : data.get("edits")) {
+            String type = e.get("type").asText();
+            if ("delete".equals(type)) deleteLine = e.get("line").asInt();
+            else if ("replace".equals(type)) replaceLines.add(e.get("line").asInt());
+        }
+        assertEquals(25, deleteLine, "delete-edit line must survive the envelope");
+        assertEquals(java.util.Set.of(27, 28), replaceLines,
+            "replace-edit lines must survive the envelope");
     }
 }
