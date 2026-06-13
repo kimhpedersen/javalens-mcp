@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindTestsTool;
@@ -21,12 +23,14 @@ class FindTestsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindTestsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindTestsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -379,5 +383,27 @@ class FindTestsToolTest {
             .findFirst().orElseThrow();
         assertNotNull(custom.get("displayName"),
             "testWithCustomDisplayName must carry its @DisplayName value; got: " + custom);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: TestngSampleTest is framework=TestNG with scenarioOne/Two")
+    void envelope_testng_exactMethods() {
+        JsonNode payload = envelope.payload("find_tests", envelope.args());
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_tests failed through the envelope: " + payload);
+        JsonNode tng = null;
+        for (JsonNode tc : payload.get("data").get("testClasses")) {
+            if ("TestngSampleTest".equals(tc.get("className").asText())) tng = tc;
+        }
+        assertNotNull(tng, "TestngSampleTest must be detected through the envelope");
+        assertEquals("TestNG", tng.get("framework").asText(),
+            "TestNG framework attribution must survive the envelope");
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (JsonNode m : tng.get("testMethods")) names.add(m.get("name").asText());
+        assertEquals(java.util.Set.of("scenarioOne", "scenarioTwo"), names,
+            "the exact TestNG method set must survive the envelope");
     }
 }
