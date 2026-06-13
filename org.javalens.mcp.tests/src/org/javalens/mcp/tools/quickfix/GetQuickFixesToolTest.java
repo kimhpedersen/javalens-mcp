@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.quickfix;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetQuickFixesTool;
@@ -409,5 +411,35 @@ class GetQuickFixesToolTest {
                 + "(distinct from UNUSED_IMPORT's 'Remove unused import'); got: " + removeImport);
         assertEquals(85, ((Number) removeImport.get("relevance")).intValue(),
             "IMPORT_NOT_FOUND remove_import relevance must be 85; got: " + removeImport);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: UndefinedType `Date` proposes add_import:java.util.Date (IMPORT, relevance 100)")
+    void envelope_undefinedType_addImportFix() throws Exception {
+        JdtServiceImpl svc = helper.loadProject("broken-symbols");
+        EnvelopeHarness localEnvelope = new EnvelopeHarness(svc);
+        ObjectNode args = localEnvelope.args();
+        args.put("filePath", helper.getFixturePath("broken-symbols")
+            .resolve("src/main/java/com/example/BrokenSymbols.java").toString());
+        args.put("line", 29); // 0-based: `Date d = null;`
+        JsonNode payload = localEnvelope.payload("get_quick_fixes", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_quick_fixes failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertTrue(data.get("problemCount").asInt() > 0,
+            "BrokenSymbols line 29 must surface a problem through the envelope: " + data);
+        JsonNode dateFix = null;
+        for (JsonNode f : data.get("fixes")) {
+            if ("add_import:java.util.Date".equals(f.path("fixId").asText())) {
+                dateFix = f;
+                break;
+            }
+        }
+        assertNotNull(dateFix, () -> "add_import:java.util.Date must survive the envelope; got: " + data.get("fixes"));
+        assertEquals("IMPORT", dateFix.get("category").asText(), "add_import category=IMPORT through the envelope");
+        assertEquals(100, dateFix.get("relevance").asInt(), "java.util relevance=100 through the envelope");
     }
 }
