@@ -96,7 +96,7 @@ public final class ToolInvocationInputs {
         m.put("search_symbols", searchArgs);
 
         ObjectNode suggestArgs = objectMapper.createObjectNode();
-        suggestArgs.put("simpleName", "List");
+        suggestArgs.put("typeName", "List");
         m.put("suggest_imports", suggestArgs);
 
         m.put("find_reflection_usage", objectMapper.createObjectNode());

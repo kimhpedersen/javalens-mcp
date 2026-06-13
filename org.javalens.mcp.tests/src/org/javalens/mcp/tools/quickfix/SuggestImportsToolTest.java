@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.quickfix;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.SuggestImportsTool;
@@ -27,6 +29,7 @@ class SuggestImportsToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private SuggestImportsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
 
@@ -34,6 +37,7 @@ class SuggestImportsToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new SuggestImportsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
     }
@@ -308,5 +312,50 @@ class SuggestImportsToolTest {
             assertFalse(pkg.contains(".impl."),
                 "*.impl.* packages must be filtered; got: " + c);
         }
+    }
+
+    // ========== Exact ranking contract ==========
+
+    @Test
+    @DisplayName("java.util.List is the strict top-ranked candidate for \"List\"")
+    void list_javaUtilListRanksFirst() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "List");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> cands = getCandidates(getData(r));
+        assertFalse(cands.isEmpty(), "List resolves to at least java.util.List");
+
+        // calculateRelevance gives package java.util a score of 100 — the unique
+        // table maximum — so java.util.List must rank first regardless of which
+        // other List types (java.awt.List, etc.) the JDK module scope surfaces.
+        // The description's "java.util ranked higher than java.awt" contract.
+        assertEquals("java.util.List", cands.get(0).get("fullyQualifiedName"),
+            "java.util.List must rank first; got: " + cands);
+        int top = ((Number) cands.get(0).get("relevance")).intValue();
+        for (int i = 1; i < cands.size(); i++) {
+            assertTrue(((Number) cands.get(i).get("relevance")).intValue() < top,
+                "java.util.List must be the strict relevance maximum; got: " + cands);
+        }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: java.util.List ranks first for \"List\"")
+    void envelope_list_javaUtilFirst() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "List");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("suggest_imports", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "suggest_imports failed through the envelope: " + payload);
+        JsonNode cands = payload.get("data").get("candidates");
+        assertTrue(cands.size() > 0, "at least java.util.List");
+        assertEquals("java.util.List", cands.get(0).get("fullyQualifiedName").asText(),
+            "the top-ranked import must survive the JSON-RPC envelope");
     }
 }
