@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindCatchBlocksTool;
@@ -21,12 +23,14 @@ class FindCatchBlocksToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindCatchBlocksTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindCatchBlocksTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -229,5 +233,28 @@ class FindCatchBlocksToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, blocksOf(r).size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: IOException is caught in exactly 3 blocks across 2 files")
+    void envelope_ioException_exactCount() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "java.io.IOException");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_catch_blocks", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_catch_blocks failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(3, data.get("totalCount").asInt(), "exactly three catch blocks through the envelope");
+        java.util.Set<String> files = new java.util.TreeSet<>();
+        for (JsonNode b : data.get("locations")) {
+            String fp = b.get("filePath").asText().replace('\\', '/');
+            files.add(fp.substring(fp.lastIndexOf('/') + 1));
+        }
+        assertEquals(java.util.Set.of("SearchPatterns.java", "ControlFlowPatterns.java"), files,
+            "catch blocks span exactly two files through the envelope");
     }
 }
