@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindFieldWritesTool;
@@ -22,6 +24,7 @@ class FindFieldWritesToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindFieldWritesTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -30,6 +33,7 @@ class FindFieldWritesToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindFieldWritesTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -368,5 +372,34 @@ class FindFieldWritesToolTest {
         Map<String, Object> data = getData(r);
         int total = ((Number) data.get("totalWriteLocations")).intValue();
         assertEquals(total, writesOf(r).size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.lastResult has exactly 3 WRITE locations")
+    void envelope_lastResult_exactlyThreeWrites() {
+        String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = envelope.args();
+        args.put("filePath", calcPath);
+        args.put("line", 6);    // 0-based: `    private int lastResult;`
+        args.put("column", 16); // on `lastResult`
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_field_writes", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_field_writes failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("lastResult", data.get("field").asText());
+        assertEquals("Calculator", data.get("declaringType").asText());
+        assertEquals("I", data.get("fieldType").asText(), "int field signature 'I' through the envelope");
+        assertEquals(3, data.get("totalWriteLocations").asInt(),
+            "exactly three writes (add/subtract/multiply) through the envelope");
+        JsonNode writes = data.get("writeLocations");
+        assertEquals(3, writes.size());
+        for (JsonNode w : writes) {
+            assertEquals("WRITE", w.get("accessType").asText(),
+                "every entry must report accessType=WRITE through the envelope; got: " + w);
+        }
     }
 }
