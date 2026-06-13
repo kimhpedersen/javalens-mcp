@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.SemanticAssertions;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
@@ -23,6 +25,7 @@ class GetSuperMethodToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetSuperMethodTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String animalPath;
@@ -31,6 +34,7 @@ class GetSuperMethodToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetSuperMethodTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         animalPath = projectPath.resolve("src/main/java/com/example/Animal.java").toString();
@@ -315,5 +319,29 @@ class GetSuperMethodToolTest {
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
         assertNull(data.get("overrides"),
             "Constructors do not override any method; got: " + data);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Dog.speak overrides Animal.speak with the exact signature")
+    void envelope_dogSpeak_overridesAnimalSpeak() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", animalPath);
+        args.put("line", 22);
+        args.put("column", 16);
+        JsonNode payload = envelope.payload("get_super_method", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_super_method failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        JsonNode overrides = data.get("overrides");
+        assertTrue(overrides != null && !overrides.isNull(),
+            "Dog.speak overrides Animal.speak — overrides block must survive the envelope");
+        assertEquals("speak", overrides.get("name").asText());
+        assertEquals("com.example.Animal", overrides.get("declaringType").asText());
+        assertEquals("speak(): void", overrides.get("signature").asText());
+        assertFalse(data.get("implementsInterface").asBoolean(),
+            "Animal is a class, not an interface");
     }
 }
