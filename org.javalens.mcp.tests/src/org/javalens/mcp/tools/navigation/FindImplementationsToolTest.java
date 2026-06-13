@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.SemanticAssertions;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
@@ -29,6 +31,7 @@ class FindImplementationsToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private FindImplementationsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -37,6 +40,7 @@ class FindImplementationsToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindImplementationsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -379,5 +383,35 @@ class FindImplementationsToolTest {
             assertEquals("draw", impl.get("method"),
                 "Each method-level impl entry must report the overriding method name; got: " + impl);
         }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: IShape returns exactly its seven transitive implementors")
+    void envelope_iShape_returnsExactSevenImplementors() {
+        ObjectNode args = argsAt(fixturePath("src/main/java/com/example/IShape.java"), 2, 17);
+        JsonNode payload = envelope.payload("find_implementations", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_implementations failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertTrue(data.get("isInterface").asBoolean(), "IShape is an interface");
+        assertEquals(7, data.get("totalImplementations").asInt());
+
+        Set<String> names = new java.util.TreeSet<>();
+        for (JsonNode impl : data.get("implementations")) {
+            names.add(impl.get("qualifiedName").asText());
+        }
+        assertEquals(Set.of(
+            "com.example.IFillable",
+            "com.example.Rectangle",
+            "com.example.FilledCircle",
+            "com.example.AnonymousShapeUser$InnerShape",
+            "com.example.AnonymousShapeUser$NonStaticInnerShape",
+            "com.example.AnonymousShapeUser$1",
+            "com.example.AnonymousShapeUser$2"),
+            names,
+            "the exact transitive implementor set must survive the JSON-RPC envelope and serialization");
     }
 }
