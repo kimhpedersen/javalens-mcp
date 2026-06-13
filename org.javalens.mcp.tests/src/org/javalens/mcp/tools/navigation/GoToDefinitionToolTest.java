@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GoToDefinitionTool;
@@ -26,6 +28,7 @@ class GoToDefinitionToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GoToDefinitionTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -35,6 +38,7 @@ class GoToDefinitionToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GoToDefinitionTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -402,5 +406,26 @@ class GoToDefinitionToolTest {
         assertTrue(r.isSuccess());
         assertEquals("com.example.Calculator", getData(r).get("containingType"),
             "containingType must be the fully-qualified type name; got: " + getData(r));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: a Calculator.add call in UserService navigates to Calculator.add")
+    void envelope_methodCall_navigatesCrossFile() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", userServicePath);
+        args.put("line", 58);
+        args.put("column", 27);
+        JsonNode payload = envelope.payload("go_to_definition", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "go_to_definition failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add", data.get("symbol").asText());
+        assertEquals("method", data.get("kind").asText());
+        assertEquals("com.example.Calculator", data.get("containingType").asText());
+        assertTrue(data.get("location").get("filePath").asText().endsWith("Calculator.java"),
+            "the cross-file definition must resolve to Calculator.java through the envelope");
     }
 }
