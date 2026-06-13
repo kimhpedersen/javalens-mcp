@@ -33,11 +33,6 @@
         <!-- Lombok agent bundled with the product and attached at launch so JDT
              surfaces Lombok-generated members; also attached to the test JVM. -->
         <lombok.version>1.18.30</lombok.version>
-
-        <!-- Off by default; -Djavalens.regen.goldens=true rewrites the MCP
-             protocol golden payloads (McpGoldenIntegrationTest). Forwarded to
-             the forked test JVM via the surefire argLine below. -->
-        <javalens.regen.goldens>false</javalens.regen.goldens>
     </properties>
 
     <modules>
@@ -135,7 +130,7 @@
                     <configuration>
                         <useUIHarness>false</useUIHarness>
                         <useUIThread>false</useUIThread>
-                        <argLine>-Xmx1024m -Djavalens.regen.goldens=${javalens.regen.goldens}</argLine>
+                        <argLine>-Xmx1024m</argLine>
                     </configuration>
                 </plugin>
                 <plugin>

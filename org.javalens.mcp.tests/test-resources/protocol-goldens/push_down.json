@@ -1,7 +1,0 @@
-{
-  "error" : {
-    "code" : "INVALID_PARAMETER",
-    "message" : "Invalid parameter 'member': Declaring type has no subclasses to push into"
-  },
-  "success" : false
-}

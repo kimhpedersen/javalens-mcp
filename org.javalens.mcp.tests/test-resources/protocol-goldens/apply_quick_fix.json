@@ -1,7 +1,0 @@
-{
-  "error" : {
-    "code" : "INVALID_PARAMETER",
-    "message" : "Invalid parameter 'fixId': Invalid format. Expected type:param"
-  },
-  "success" : false
-}
