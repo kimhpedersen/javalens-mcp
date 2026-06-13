@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.SearchSymbolsTool;
@@ -27,6 +29,7 @@ class SearchSymbolsToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private SearchSymbolsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
 
@@ -34,6 +37,7 @@ class SearchSymbolsToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new SearchSymbolsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
     }
@@ -423,5 +427,28 @@ class SearchSymbolsToolTest {
 
         Map<String, Object> pagination = (Map<String, Object>) p2Data.get("pagination");
         assertEquals(2, pagination.get("offset"));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator class search returns exact qualifiedName and package")
+    void envelope_calculatorSearch_exactQualifiedName() {
+        ObjectNode args = envelope.args();
+        args.put("query", "Calculator");
+        args.put("kind", "class");
+        JsonNode payload = envelope.payload("search_symbols", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "search_symbols failed through the envelope: " + payload);
+        JsonNode calc = null;
+        for (JsonNode r : payload.get("data").get("results")) {
+            if ("Calculator".equals(r.get("name").asText())) calc = r;
+        }
+        assertNotNull(calc, "Calculator must be in results through the envelope");
+        assertEquals("com.example.Calculator", calc.get("qualifiedName").asText());
+        assertEquals("com.example", calc.get("package").asText());
+        assertTrue(calc.get("filePath").asText().endsWith("Calculator.java"),
+            "Calculator result must point to Calculator.java through the envelope");
     }
 }
