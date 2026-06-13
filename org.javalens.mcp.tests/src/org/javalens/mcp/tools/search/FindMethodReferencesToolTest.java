@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindMethodReferencesTool;
@@ -21,6 +23,7 @@ class FindMethodReferencesToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindMethodReferencesTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String searchPatternsPath;
 
@@ -28,6 +31,7 @@ class FindMethodReferencesToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindMethodReferencesTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         searchPatternsPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/SearchPatterns.java").toString();
@@ -126,6 +130,14 @@ class FindMethodReferencesToolTest {
         String normalized = filePath.replace('\\', '/');
         assertTrue(normalized.endsWith("MethodRefUser.java"),
             "Method reference must be located in MethodRefUser.java; got: " + filePath);
+
+        // `MethodRefTarget::formatId` sits on 0-based line 15; the tool reports the
+        // referenced method name `formatId`, which starts at column 57 (length 8).
+        // A coordinate off-by-one fails here.
+        assertEquals(15, ((Number) ref.get("line")).intValue(),
+            "method-reference line must be 0-based 15; got: " + ref);
+        assertEquals(57, ((Number) ref.get("column")).intValue(),
+            "method-reference column must be 57 (the `formatId` name in MethodRefTarget::formatId); got: " + ref);
     }
 
     @Test
@@ -297,5 +309,31 @@ class FindMethodReferencesToolTest {
         String msg = r.getError().getMessage();
         assertTrue(msg.toLowerCase().contains("method"),
             "Error message must mention method; got: " + msg);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: formatId reference at MethodRefUser line 15, column 40")
+    void envelope_formatId_exactLocation() {
+        String targetPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        ObjectNode args = envelope.args();
+        args.put("filePath", targetPath);
+        args.put("line", 8);
+        args.put("column", 25);
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_method_references", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_method_references failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(1, data.get("totalCount").asInt());
+        JsonNode ref = data.get("locations").get(0);
+        assertTrue(ref.get("filePath").asText().replace('\\', '/').endsWith("MethodRefUser.java"));
+        assertEquals(15, ref.get("line").asInt(),
+            "method-reference line must survive the envelope");
+        assertEquals(57, ref.get("column").asInt(),
+            "method-reference column must survive the envelope");
     }
 }
