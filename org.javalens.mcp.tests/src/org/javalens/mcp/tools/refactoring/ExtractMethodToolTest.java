@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ExtractMethodTool;
@@ -27,6 +29,7 @@ class ExtractMethodToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ExtractMethodTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -35,6 +38,7 @@ class ExtractMethodToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new ExtractMethodTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -373,5 +377,56 @@ class ExtractMethodToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Inverted range must be rejected");
+    }
+
+    // ========== Exact extracted-parameter type ==========
+
+    @Test
+    @DisplayName("Extracted parameter `numbers` keeps its declared type List<Integer>")
+    void numbers_parameterHasListIntegerType() {
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+
+        // calculateTotal(List<Integer> numbers) — the extracted method takes
+        // `numbers` by its declared type. A degraded resolution to Object or raw
+        // List would compile-break or change semantics, so the type is pinned.
+        Map<String, Object> numbers = paramsOf(r).stream()
+            .filter(p -> "numbers".equals(p.get("name")))
+            .findFirst().orElseThrow(() -> new AssertionError("no `numbers` parameter: " + paramsOf(r)));
+        assertEquals("List<Integer>", numbers.get("type"),
+            "extracted parameter must keep its declared type List<Integer>; got: " + numbers);
+
+        // The rendered declaration must carry the typed parameter, not Object.
+        assertTrue(((String) getData(r).get("newMethodCode"))
+                .contains("calculateSum(List<Integer> numbers)"),
+            "new method signature must read calculateSum(List<Integer> numbers); got:\n"
+                + getData(r).get("newMethodCode"));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: extracted method returns int and takes List<Integer> numbers")
+    void envelope_extract_exactSignature() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 44);
+        args.put("startColumn", 8);
+        args.put("endLine", 47);
+        args.put("endColumn", 9);
+        args.put("methodName", "calculateSum");
+        JsonNode payload = envelope.payload("extract_method", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "extract_method failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("int", data.get("returnType").asText());
+        JsonNode numbers = null;
+        for (JsonNode p : data.get("parameters")) {
+            if ("numbers".equals(p.get("name").asText())) numbers = p;
+        }
+        assertNotNull(numbers, () -> "no `numbers` parameter through envelope: " + data);
+        assertEquals("List<Integer>", numbers.get("type").asText(),
+            "parameter type must survive the envelope, not degrade to Object");
     }
 }

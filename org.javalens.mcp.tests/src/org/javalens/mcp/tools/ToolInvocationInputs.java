@@ -37,7 +37,7 @@ public final class ToolInvocationInputs {
             "rename_symbol", "get_hover_info", "get_method_at_position",
             "get_type_at_position", "get_field_at_position", "get_enclosing_element",
             "find_method_references", "get_javadoc", "get_signature_help",
-            "get_symbol_info", "get_super_method", "extract_method", "extract_variable",
+            "get_symbol_info", "get_super_method", "extract_variable",
             "extract_constant", "extract_interface", "inline_method", "inline_variable",
             "find_field_writes", "convert_anonymous_to_lambda",
             "get_call_hierarchy_incoming", "get_call_hierarchy_outgoing",
@@ -49,7 +49,6 @@ public final class ToolInvocationInputs {
             args.put("line", 14);   // 0-based; Calculator.add line
             args.put("column", 15);
             if (name.equals("rename_symbol")) args.put("newName", "addRenamed");
-            if (name.equals("extract_method")) args.put("methodName", "extracted");
             if (name.equals("extract_variable")) args.put("variableName", "extracted");
             if (name.equals("extract_constant")) args.put("constantName", "EXTRACTED");
             if (name.equals("extract_interface")) args.put("interfaceName", "ICalculator");
@@ -127,6 +126,17 @@ public final class ToolInvocationInputs {
         params.addObject().put("type", "String").put("name", "message");
         params.addObject().put("type", "int").put("name", "count");
         m.put("change_method_signature", csArgs);
+
+        // extract_method: a real extractable range in RefactoringTarget.calculateTotal
+        // (the accumulator loop), not a single position — exercises real extraction.
+        ObjectNode extractMethodArgs = objectMapper.createObjectNode();
+        extractMethodArgs.put("filePath", refTarget);
+        extractMethodArgs.put("startLine", 44);
+        extractMethodArgs.put("startColumn", 8);
+        extractMethodArgs.put("endLine", 47);
+        extractMethodArgs.put("endColumn", 9);
+        extractMethodArgs.put("methodName", "extracted");
+        m.put("extract_method", extractMethodArgs);
 
         // apply_quick_fix: a documented fix on BugPatterns (best-effort).
         ObjectNode applyArgs = objectMapper.createObjectNode();
