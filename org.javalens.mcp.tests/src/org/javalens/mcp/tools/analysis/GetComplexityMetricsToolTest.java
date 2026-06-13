@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetComplexityMetricsTool;
@@ -21,6 +23,7 @@ class GetComplexityMetricsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetComplexityMetricsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
@@ -28,6 +31,7 @@ class GetComplexityMetricsToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetComplexityMetricsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/Calculator.java").toString();
@@ -330,5 +334,33 @@ class GetComplexityMetricsToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> methods = (List<Map<String, Object>>) data.get("methods");
         assertEquals(((Number) summary.get("methodCount")).intValue(), methods.size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: ComplexityBoundaries cyclomatic and risk counts are exact")
+    void envelope_complexityBoundaries_exact() {
+        String boundariesPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ComplexityBoundaries.java").toString();
+        ObjectNode args = envelope.args();
+        args.put("filePath", boundariesPath);
+        args.put("includeDetails", true);
+        JsonNode payload = envelope.payload("get_complexity_metrics", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_complexity_metrics failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        java.util.Map<String, Integer> ccByName = new java.util.HashMap<>();
+        for (JsonNode m : data.get("methods")) {
+            ccByName.put(m.get("name").asText(), m.get("cyclomaticComplexity").asInt());
+        }
+        assertEquals(1, (int) ccByName.get("cc01"), "cc01 CC=1 through envelope");
+        assertEquals(5, (int) ccByName.get("cc05"), "cc05 CC=5 through envelope");
+        assertEquals(11, (int) ccByName.get("cc11"), "cc11 CC=11 through envelope");
+        JsonNode risk = data.get("riskAssessment");
+        assertEquals(2, risk.get("lowRiskMethods").asInt());
+        assertEquals(2, risk.get("mediumRiskMethods").asInt());
+        assertEquals(1, risk.get("highRiskMethods").asInt());
     }
 }
