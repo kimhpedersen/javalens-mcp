@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindCastsTool;
@@ -21,12 +23,14 @@ class FindCastsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindCastsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindCastsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -216,5 +220,25 @@ class FindCastsToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, castsOf(r).size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: exactly one (Calculator) cast on line 79 of SearchPatterns")
+    void envelope_calculatorCast_exactLocation() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_casts", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_casts failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(1, data.get("totalCount").asInt(), "exactly one (Calculator) cast through the envelope");
+        JsonNode cast = data.get("locations").get(0);
+        assertTrue(cast.get("filePath").asText().replace('\\', '/').endsWith("SearchPatterns.java"));
+        assertEquals(79, cast.get("line").asInt(),
+            "the cast's 0-based line must survive the envelope");
     }
 }
