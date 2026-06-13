@@ -94,6 +94,7 @@ class ProtocolParityTest {
     @DisplayName("every tool delivers through the MCP envelope the same result its execute() path produces")
     void everyRegisteredToolBehavesIdenticallyThroughEnvelope() throws Exception {
         Map<String, String> divergent = new TreeMap<>();
+        int compared = 0;
 
         int id = 1;
         for (String name : new TreeSet<>(registry.getToolNames())) {
@@ -101,6 +102,7 @@ class ProtocolParityTest {
             if (args == null) {
                 continue; // covered by the gate test
             }
+            compared++;
 
             // Behavioral oracle: the direct execute() result, the path the
             // per-tool behavior tests validate against known fixtures.
@@ -141,6 +143,12 @@ class ProtocolParityTest {
 
         assertTrue(divergent.isEmpty(),
             "Tools whose MCP-envelope behavior diverged from their execute() result: " + divergent);
+
+        // Provably ALL of them: the behavioral comparison ran for every
+        // registered tool, none silently skipped. Combined with the gate test,
+        // coverage cannot quietly shrink as tools are added.
+        assertEquals(registry.getToolNames().size(), compared,
+            "every registered tool must be behaviorally compared through the envelope");
     }
 
     /**
