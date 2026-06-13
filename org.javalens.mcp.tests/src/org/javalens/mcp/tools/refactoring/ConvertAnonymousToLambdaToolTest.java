@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ConvertAnonymousToLambdaTool;
@@ -27,6 +29,7 @@ class ConvertAnonymousToLambdaToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ConvertAnonymousToLambdaTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String anonymousExamplesPath;
@@ -35,6 +38,7 @@ class ConvertAnonymousToLambdaToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new ConvertAnonymousToLambdaTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         anonymousExamplesPath = projectPath.resolve("src/main/java/com/example/AnonymousClassExamples.java").toString();
@@ -133,8 +137,18 @@ class ConvertAnonymousToLambdaToolTest {
         List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("edits");
         assertFalse(edits.isEmpty());
         String newText = (String) edits.get(0).get("newText");
-        // Block body should have braces
-        assertTrue(newText.contains("{") && newText.contains("}"));
+        // Block-body lambda: `() -> { ... }` carrying all three statements of run()
+        // intact. A truncated body would drop a statement or its terminator.
+        assertTrue(newText.trim().startsWith("() ->"), "no-arg block lambda; got: " + newText);
+        assertTrue(newText.contains("{") && newText.trim().endsWith("}"),
+            "block body must be brace-delimited; got: " + newText);
+        for (String stmt : List.of(
+                "String msg = \"Hello\";",
+                "msg = msg + \" World\";",
+                "System.out.println(msg);")) {
+            assertTrue(newText.contains(stmt),
+                "block lambda must contain the complete statement `" + stmt + "`; got: " + newText);
+        }
     }
 
     @Test
@@ -403,5 +417,46 @@ class ConvertAnonymousToLambdaToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Anonymous class with a field declared alongside the SAM must be refused; got success: " + r.getData());
+    }
+
+    // ========== Exact converted-text content ==========
+
+    @Test
+    @DisplayName("Single-statement Runnable converts to the exact expression lambda")
+    void runnable_exactExpressionLambda() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 19);
+        args.put("column", 28);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        // run()'s body is the single expression statement System.out.println("Hello");
+        // which converts to an expression-bodied lambda. The full text must be
+        // complete — a truncated body (the audited failure) would drop the final ')'.
+        assertEquals("() -> System.out.println(\"Hello\")",
+            ((String) data.get("lambdaExpression")).trim(),
+            "exact expression lambda for the single-statement Runnable");
+        assertEquals(data.get("lambdaExpression"), editsOf(r).get(0).get("newText"),
+            "data.lambdaExpression must mirror the edit newText exactly");
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Runnable converts to the exact expression lambda")
+    void envelope_runnable_exactLambda() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 19);
+        args.put("column", 28);
+        JsonNode payload = envelope.payload("convert_anonymous_to_lambda", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "convert_anonymous_to_lambda failed through the envelope: " + payload);
+        assertEquals("() -> System.out.println(\"Hello\")",
+            payload.get("data").get("lambdaExpression").asText().trim(),
+            "the complete lambda text must survive the JSON-RPC envelope");
     }
 }
