@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.1] - 2026-06-12
+
+### Fixed
+
+- `find_affected_tests` and `analyze_change_impact` (transitive mode) returned nothing when the selected symbol was a **class/type** whose tests exercise it through its members — a class with an explicit constructor, or covered only via method calls and field reads (#32). The reverse-closure walk looked only at the type node's direct callers (implicit-constructor instantiations); it now aggregates callers across the type **and all its members** (constructors, methods, fields). Both tools always claimed type support in their descriptions but no test pinned it — they now do, across all three member kinds.
+- `search_symbols` line/column output is confirmed 0-based and round-trips into the position-taking tools with no adjustment; the reported off-by-one (#31) was a symptom of #32 (zero results prompting adjacent-position retries), not a coordinate bug. Pinned with a round-trip consistency test.
+- `health_check` reported "no project loaded" after a successful `load_project` **tool** call. The loading state was flipped to LOADED only by the `JAVA_PROJECT_PATH` auto-load path; the tool's registration set the service but not the state. Loading via the tool now reflects LOADED in `health_check`.
+
+### Tests
+
+- Universal MCP-protocol parity: every one of the 75 tools is now driven through the real JSON-RPC envelope (`McpProtocolHandler.processMessage`) with a known-valid input, backfilling the ~66 tools that previously had only `execute()` unit coverage. A parity gate fails the build if a newly registered tool has no protocol-test input, so the per-tool rule can no longer silently lapse.
+
 ## [1.5.0] - 2026-06-11
 
 ### Changed
@@ -352,6 +364,7 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.5.1]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.0...v1.4.1
