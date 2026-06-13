@@ -225,9 +225,10 @@ class AnalyzeDataFlowToolTest {
             .filter(v -> "y".equals(v.get("name"))).findFirst().orElseThrow();
         assertEquals("local", y.get("kind"));
         assertEquals(Boolean.TRUE, y.get("declared"));
-        // y has initializer (=0) which counts as a write, and y is used in z = x + y.
-        assertTrue(((Number) y.get("writeCount")).intValue() >= 1);
-        assertTrue(((Number) y.get("readCount")).intValue() >= 1);
+        // Ground truth from source: y written at `int y = 0` and `y = x * 2` (2),
+        // read once in `z = x + y` (1). Exact, not >=, so an over-count fails.
+        assertEquals(2, ((Number) y.get("writeCount")).intValue(), "y is written exactly twice");
+        assertEquals(1, ((Number) y.get("readCount")).intValue(), "y is read exactly once");
     }
 
     @Test
@@ -243,8 +244,10 @@ class AnalyzeDataFlowToolTest {
             .filter(v -> "z".equals(v.get("name"))).findFirst().orElseThrow();
         assertEquals("local", z.get("kind"));
         assertEquals(Boolean.TRUE, z.get("declared"));
-        assertTrue(((Number) z.get("writeCount")).intValue() >= 2,
-            "z is written twice (initial assignment then conditional `z = z + input`); got writes=" + z.get("writeCount"));
+        // Ground truth: z written at `z = x + y` and `z = z + input` (2); read at
+        // `z = z + input` RHS and `return z` (2). Exact bounds both ways.
+        assertEquals(2, ((Number) z.get("writeCount")).intValue(), "z is written exactly twice");
+        assertEquals(2, ((Number) z.get("readCount")).intValue(), "z is read exactly twice");
     }
 
     @Test
@@ -294,10 +297,12 @@ class AnalyzeDataFlowToolTest {
             .findFirst()
             .orElseThrow(() -> new AssertionError(
                 "field `counter` must appear among tracked variables; got: " + vars));
-        int writeCount = ((Number) counter.get("writeCount")).intValue();
-        assertTrue(writeCount >= 1,
-            "`this.counter = 42` is a write to counter — writeCount must be >= 1; " +
-                "got: " + counter);
+        // Ground truth: writeViaThisQualifier has `this.counter = 42;` only — one
+        // plain write, no read. Exact, so a spurious read or double-count fails.
+        assertEquals(1, ((Number) counter.get("writeCount")).intValue(),
+            "`this.counter = 42` is exactly one write; got: " + counter);
+        assertEquals(0, ((Number) counter.get("readCount")).intValue(),
+            "a plain assignment is not a read of counter; got: " + counter);
         assertEquals(Boolean.TRUE, counter.get("written"),
             "`written` boolean must reflect the write; got: " + counter);
     }
@@ -328,9 +333,11 @@ class AnalyzeDataFlowToolTest {
             .findFirst()
             .orElseThrow(() -> new AssertionError(
                 "field `counter` must appear; got: " + vars));
-        assertTrue(((Number) counter.get("writeCount")).intValue() >= 1,
-            "Compound assignment is a write — writeCount must be >= 1; got: " + counter);
-        assertTrue(((Number) counter.get("readCount")).intValue() >= 1,
-            "Compound assignment is also a read — readCount must be >= 1; got: " + counter);
+        // Ground truth: compoundAssignViaThis has `this.counter += 5;` only — a
+        // compound assign is exactly one write AND one read. Exact both ways.
+        assertEquals(1, ((Number) counter.get("writeCount")).intValue(),
+            "`this.counter += 5` is exactly one write; got: " + counter);
+        assertEquals(1, ((Number) counter.get("readCount")).intValue(),
+            "`this.counter += 5` is exactly one read; got: " + counter);
     }
 }

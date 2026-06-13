@@ -122,6 +122,36 @@ class FindCircularDependenciesToolTest {
     }
 
     @Test
+    @DisplayName("a 3-package cycle (a->b->c->a) is detected as HIGH severity, length 3")
+    void threePackageCycle_isHighSeverity() throws Exception {
+        // tricycle-maven fixture: com.tri.a -> b -> c -> a, a single 3-package
+        // SCC. The tool's severity rule is `length <= 2 ? medium : high`; with
+        // only 2-package cycles elsewhere the high branch was never exercised.
+        JdtServiceImpl triService = helper.loadProject("tricycle-maven");
+        FindCircularDependenciesTool triTool = new FindCircularDependenciesTool(() -> triService);
+
+        ToolResponse r = triTool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+        Map<String, Object> data = getData(r);
+
+        assertEquals(true, data.get("hasCycles"));
+        assertEquals(1, ((Number) data.get("cycleCount")).intValue(),
+            "the three packages form exactly one cycle; got: " + data);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> cycles = (List<Map<String, Object>>) data.get("cycles");
+        Map<String, Object> cycle = cycles.get(0);
+        assertEquals(3, ((Number) cycle.get("length")).intValue(),
+            "the cycle spans exactly 3 packages; got: " + cycle);
+        assertEquals("high", cycle.get("severity"),
+            "a 3-package cycle is high severity (the previously dead branch); got: " + cycle);
+
+        @SuppressWarnings("unchecked")
+        java.util.Set<String> packages = new java.util.HashSet<>((List<String>) cycle.get("packages"));
+        assertEquals(java.util.Set.of("com.tri.a", "com.tri.b", "com.tri.c"), packages);
+    }
+
+    @Test
     @DisplayName("packageFilter='com.example.service' (single non-cyclic package): hasCycles=false")
     void serviceOnly_hasNoCycles() {
         ObjectNode args = objectMapper.createObjectNode();

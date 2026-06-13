@@ -137,6 +137,34 @@ class FindReflectionUsageToolTest {
             "Expected Class.getDeclaredField in detected reflection methods; got: " + reflectionMethods);
     }
 
+    @Test
+    @DisplayName("Field.get isolation: the real field.get() is detected, the Supplier.get() decoys are not")
+    void fieldGet_excludesSupplierGetDecoys() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", 100);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fieldGets = ((List<Map<String, Object>>) getData(r).get("reflectionCalls"))
+            .stream()
+            .filter(c -> "Field.get".equals(c.get("reflectionMethod")))
+            .toList();
+
+        // Ground truth from source: the only reflective field read is
+        // DiAndReflectionPatterns.getFieldByReflection `field.get(target)`.
+        assertTrue(fieldGets.stream().anyMatch(c ->
+                String.valueOf(c.get("filePath")).replace('\\', '/').endsWith("DiAndReflectionPatterns.java")),
+            "the real field.get(target) must be detected; got: " + fieldGets);
+
+        // The two `supplier.get()` calls in AnonymousClassExamples (Supplier.get,
+        // not Field.get) must NOT be miscounted - a regression to simple-name
+        // matching would put a Field.get entry there.
+        assertTrue(fieldGets.stream().noneMatch(c ->
+                String.valueOf(c.get("filePath")).replace('\\', '/').endsWith("AnonymousClassExamples.java")),
+            "Supplier.get() must not be classified as Field.get (false positive); got: " + fieldGets);
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @SuppressWarnings("unchecked")
