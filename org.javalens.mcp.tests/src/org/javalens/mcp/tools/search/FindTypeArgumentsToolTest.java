@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindTypeArgumentsTool;
@@ -21,12 +23,14 @@ class FindTypeArgumentsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindTypeArgumentsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindTypeArgumentsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -232,5 +236,26 @@ class FindTypeArgumentsToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, usagesOf(r).size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator appears in exactly 2 type-arg positions in SearchPatterns")
+    void envelope_calculator_exactTypeArgUsages() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_type_arguments", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_type_arguments failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(2, data.get("totalCount").asInt(),
+            "exactly two type-argument usages through the envelope");
+        for (JsonNode u : data.get("locations")) {
+            assertTrue(u.get("filePath").asText().replace('\\', '/').endsWith("SearchPatterns.java"),
+                "all Calculator type-arg usages come from SearchPatterns.java through the envelope; got: " + u);
+        }
     }
 }
