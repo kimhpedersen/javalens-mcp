@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindInstanceofChecksTool;
@@ -21,12 +23,14 @@ class FindInstanceofChecksToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindInstanceofChecksTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindInstanceofChecksTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -207,5 +211,25 @@ class FindInstanceofChecksToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, checksOf(r).size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: exactly two instanceof Calculator checks on lines {78, 99}")
+    void envelope_calculatorInstanceof_exactLines() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_instanceof_checks", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_instanceof_checks failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(2, data.get("totalCount").asInt(), "exactly two checks through the envelope");
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (JsonNode c : data.get("locations")) lines.add(c.get("line").asInt());
+        assertEquals(java.util.Set.of(78, 99), lines,
+            "the two instanceof 0-based lines must survive the envelope");
     }
 }
