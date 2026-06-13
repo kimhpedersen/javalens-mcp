@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.MoveTypeToNewFileTool;
@@ -29,6 +31,7 @@ class MoveTypeToNewFileToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private MoveTypeToNewFileTool tool;
+    private EnvelopeHarness envelope;
     private String holderPath;
     private ObjectMapper mapper;
 
@@ -36,6 +39,7 @@ class MoveTypeToNewFileToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("java25-maven");
         tool = new MoveTypeToNewFileTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         holderPath = helper.getFixturePath("java25-maven")
             .resolve("src/main/java/com/example/ipo/NestHolder.java").toString();
         mapper = new ObjectMapper();
@@ -60,6 +64,15 @@ class MoveTypeToNewFileToolTest {
         Map<String, Object> data = getData(r);
         assertEquals("NestedPayload", data.get("typeName"));
         assertEquals("com.example.ipo.NestHolder", data.get("fromType"));
+
+        // Moving NestedPayload to a top-level file in the same package edits exactly
+        // one existing file (NestHolder, to drop the nested declaration) with exactly
+        // one edit; the `new NestedPayload()` reference in use() stays valid same-package
+        // and needs no rewrite. A dropped or extra enclosing edit changes these counts.
+        assertEquals(1, ((Number) data.get("filesAffected")).intValue(),
+            "only NestHolder is edited; got: " + data);
+        assertEquals(1, ((Number) data.get("totalEdits")).intValue(),
+            "exactly one edit (removing the nested declaration); got: " + data);
 
         List<Map<String, String>> createdFiles = (List<Map<String, String>>) data.get("createdFiles");
         assertEquals(1, createdFiles.size(),
@@ -105,5 +118,28 @@ class MoveTypeToNewFileToolTest {
         noFile.put("line", 6);
         noFile.put("column", 24);
         assertFalse(tool.execute(noFile).isSuccess());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: moving NestedPayload yields one created file and one edit")
+    void envelope_moveNestedPayload_exactCounts() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", holderPath);
+        args.put("line", 6);
+        args.put("column", 24);
+        JsonNode payload = envelope.payload("move_type_to_new_file", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "move_type_to_new_file failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("NestedPayload", data.get("typeName").asText());
+        assertEquals(1, data.get("filesAffected").asInt(),
+            "only NestHolder is edited — count must survive the envelope");
+        assertEquals(1, data.get("totalEdits").asInt(),
+            "exactly one edit — count must survive the envelope");
+        assertEquals(1, data.get("createdFiles").size(),
+            "exactly one created file through the envelope");
     }
 }
