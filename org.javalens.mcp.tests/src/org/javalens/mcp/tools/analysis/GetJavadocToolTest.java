@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetJavadocTool;
@@ -22,6 +24,7 @@ class GetJavadocToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetJavadocTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
     private Path projectPath;
@@ -30,6 +33,7 @@ class GetJavadocToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetJavadocTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -279,5 +283,31 @@ class GetJavadocToolTest {
         assertNull(data.get("summary"));
         assertNull(data.get("params"));
         assertNull(data.get("returns"));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.add javadoc has @return 'the sum' and two @param entries")
+    void envelope_calculatorAdd_javadocTags() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("get_javadoc", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_javadoc failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add", data.get("symbol").asText());
+        assertTrue(data.get("hasDocumentation").asBoolean());
+        assertEquals("the sum", data.get("returns").asText(),
+            "@return text must survive the envelope");
+        JsonNode params = data.get("params");
+        assertEquals(2, params.size(), "exactly two @param entries through the envelope");
+        java.util.Map<String, String> byName = new java.util.HashMap<>();
+        for (JsonNode p : params) byName.put(p.get("name").asText(), p.get("description").asText());
+        assertEquals("first operand", byName.get("a"));
+        assertEquals("second operand", byName.get("b"));
     }
 }
