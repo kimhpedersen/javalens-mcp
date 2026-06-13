@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindCircularDependenciesTool;
@@ -21,12 +23,14 @@ class FindCircularDependenciesToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindCircularDependenciesTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindCircularDependenciesTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -287,5 +291,28 @@ class FindCircularDependenciesToolTest {
                 assertEquals("high", sev, ">2-package cycle must be high severity; got: " + c);
             }
         }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: cycledemo reports exactly one 2-package medium cycle")
+    void envelope_cycledemo_exactCycle() {
+        ObjectNode args = envelope.args();
+        args.put("packageFilter", "com.example.cycledemo");
+        JsonNode payload = envelope.payload("find_circular_dependencies", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_circular_dependencies failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertTrue(data.get("hasCycles").asBoolean());
+        assertEquals(1, data.get("cycleCount").asInt(), "exactly one cycle through the envelope");
+        JsonNode cycle = data.get("cycles").get(0);
+        assertEquals(2, cycle.get("length").asInt());
+        assertEquals("medium", cycle.get("severity").asText());
+        java.util.Set<String> pkgs = new java.util.TreeSet<>();
+        for (JsonNode p : cycle.get("packages")) pkgs.add(p.asText());
+        assertEquals(java.util.Set.of("com.example.cycledemo.a", "com.example.cycledemo.b"), pkgs,
+            "the exact cycle members must survive the envelope");
     }
 }
