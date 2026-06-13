@@ -212,9 +212,17 @@ public class JavaLensApplication implements IApplication {
             () -> jdtService
         ));
 
-        // Register LoadProjectTool - stores the JdtService when a project is loaded
+        // Register LoadProjectTool - stores the JdtService AND flips the
+        // loading state to LOADED. The state was previously set only by the
+        // JAVA_PROJECT_PATH auto-load path, so a project loaded via the tool
+        // left health_check reporting "not loaded" though every tool worked
+        // (issue #30 thread). The callback fires only on a successful load.
         toolRegistry.register(new LoadProjectTool(
-            service -> this.jdtService = service
+            service -> {
+                this.jdtService = service;
+                this.loadingState = ProjectLoadingState.LOADED;
+                this.loadingError = null;
+            }
         ));
 
         // Batch 1: Core Navigation Tools
