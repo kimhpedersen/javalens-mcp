@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.RenameSymbolTool;
@@ -27,6 +29,7 @@ class RenameSymbolToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private RenameSymbolTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -36,6 +39,7 @@ class RenameSymbolToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new RenameSymbolTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -592,5 +596,42 @@ class RenameSymbolToolTest {
         int total = ((Number) data.get("totalEdits")).intValue();
         int sum = getEditsByFile(data).values().stream().mapToInt(List::size).sum();
         assertEquals(total, sum, "totalEdits must equal the sum of per-file edits");
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: renaming Calculator.add edits Calculator + UserService, every edit add->sum")
+    void envelope_renameAdd_crossFileExactEdits() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("newName", "sum");
+        JsonNode payload = envelope.payload("rename_symbol", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "rename_symbol failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add", data.get("oldName").asText());
+        assertEquals("method", data.get("symbolKind").asText());
+
+        JsonNode editsByFile = data.get("editsByFile");
+        java.util.Set<String> files = new java.util.TreeSet<>();
+        java.util.Iterator<String> keys = editsByFile.fieldNames();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            String n = k.replace('\\', '/');
+            files.add(n.substring(n.lastIndexOf('/') + 1));
+            for (JsonNode e : editsByFile.get(k)) {
+                assertEquals("add", e.get("oldText").asText(),
+                    "every rename edit rewrites `add` through the envelope; got: " + e);
+                assertEquals("sum", e.get("newText").asText());
+            }
+        }
+        assertTrue(files.contains("Calculator.java"),
+            "declaration file Calculator.java must be edited; got: " + files);
+        assertTrue(files.contains("UserService.java"),
+            "cross-file caller UserService.java must be edited; got: " + files);
     }
 }
