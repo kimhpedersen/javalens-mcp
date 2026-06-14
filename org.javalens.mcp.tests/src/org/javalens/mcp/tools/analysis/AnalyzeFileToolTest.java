@@ -45,7 +45,7 @@ class AnalyzeFileToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("analyzes file comprehensively")
+    @Test @DisplayName("Calculator.java: exact file info, single type, clean diagnostics")
     void analyzesFileComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -55,29 +55,28 @@ class AnalyzeFileToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // File info
+        // File info — exact
         @SuppressWarnings("unchecked")
         Map<String, Object> file = (Map<String, Object>) data.get("file");
-        String path = (String) file.get("path");
-        assertNotNull(path, "file.path missing");
-        assertTrue(path.endsWith("Calculator.java"),
+        assertTrue(((String) file.get("path")).endsWith("Calculator.java"),
             "file.path must end with Calculator.java; got: " + file);
         assertEquals("com.example", file.get("package"));
-        assertTrue((Integer) file.get("lineCount") > 0);
+        assertEquals(49, ((Number) file.get("lineCount")).intValue());
 
-        // Types
+        // Types — exactly one top-level class
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> types = (List<Map<String, Object>>) data.get("types");
-        assertFalse(types.isEmpty());
+        assertEquals(1, ((Number) data.get("typeCount")).intValue());
+        assertEquals(1, types.size());
         assertEquals("Calculator", types.get(0).get("name"));
         assertEquals("class", types.get(0).get("kind"));
 
-        // Diagnostics included by default — map with errors/warnings keys
+        // Calculator.java is clean — no errors, no warnings.
         @SuppressWarnings("unchecked")
         Map<String, Object> diagnostics = (Map<String, Object>) data.get("diagnostics");
-        assertNotNull(diagnostics, "diagnostics block missing");
-        assertTrue(diagnostics.containsKey("errors") || diagnostics.containsKey("warnings"),
-            "diagnostics must have errors or warnings; got: " + diagnostics);
+        assertEquals(0, ((Number) diagnostics.get("errorCount")).intValue());
+        assertEquals(0, ((Number) diagnostics.get("warningCount")).intValue());
+        assertEquals(false, diagnostics.get("hasProblems"));
     }
 
     @Test @DisplayName("controls optional output")
@@ -97,20 +96,29 @@ class AnalyzeFileToolTest {
         assertNull(getData(tool.execute(noDiag)).get("diagnostics"));
     }
 
-    @Test @DisplayName("requires filePath")
+    @Test @DisplayName("missing filePath -> exact INVALID_PARAMETER")
     void requiresFilePath() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing", r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles invalid inputs")
+    @Test @DisplayName("non-existent file -> FILE_NOT_FOUND; empty filePath -> INVALID_PARAMETER")
     void handlesInvalidInputs() {
         ObjectNode badPath = objectMapper.createObjectNode();
         badPath.put("filePath", "/nonexistent/File.java");
-        assertFalse(tool.execute(badPath).isSuccess());
+        ToolResponse badResp = tool.execute(badPath);
+        assertFalse(badResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, badResp.getError().getCode());
+        assertEquals("File not found: /nonexistent/File.java", badResp.getError().getMessage());
 
         ObjectNode emptyPath = objectMapper.createObjectNode();
         emptyPath.put("filePath", "");
-        assertFalse(tool.execute(emptyPath).isSuccess());
+        ToolResponse emptyResp = tool.execute(emptyPath);
+        assertFalse(emptyResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, emptyResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing", emptyResp.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -140,20 +148,24 @@ class AnalyzeFileToolTest {
     }
 
     @Test
-    @DisplayName("Imports: each entry has name, static, onDemand; importCount equals list size")
-    void imports_shape() {
+    @DisplayName("UserService imports: exact list of 3 (Calculator, ArrayList, List), none static/onDemand/module")
+    void imports_exactList() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", userServicePath);
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        for (Map<String, Object> imp : importsOf(r)) {
-            for (String key : List.of("name", "static", "onDemand")) {
-                assertNotNull(imp.get(key), key + " missing on import: " + imp);
-            }
+        List<Map<String, Object>> imports = importsOf(r);
+        assertEquals(3, ((Number) data.get("importCount")).intValue());
+        assertEquals(3, imports.size());
+        // cu.getImports() preserves source order.
+        assertEquals(List.of("com.example.Calculator", "java.util.ArrayList", "java.util.List"),
+            imports.stream().map(i -> (String) i.get("name")).toList());
+        for (Map<String, Object> imp : imports) {
+            assertEquals(false, imp.get("static"), "no static imports; got: " + imp);
+            assertEquals(false, imp.get("onDemand"), "no on-demand imports; got: " + imp);
+            assertEquals(false, imp.get("module"), "no module imports; got: " + imp);
         }
-        int count = ((Number) data.get("importCount")).intValue();
-        assertEquals(count, importsOf(r).size());
     }
 
     @Test
@@ -316,10 +328,8 @@ class AnalyzeFileToolTest {
             .filter(t -> "Vehicle".equals(t.get("name")))
             .findFirst().orElseThrow();
         assertEquals("interface", vehicle.get("kind"));
-        List<String> modifiers = (List<String>) vehicle.get("modifiers");
-        assertNotNull(modifiers);
-        assertTrue(modifiers.contains("sealed"),
-            "Vehicle is a sealed interface — modifiers must include `sealed`; got: " + modifiers);
+        // `public sealed interface` — source-declared modifiers only (no implicit abstract).
+        assertEquals(List.of("public", "sealed"), vehicle.get("modifiers"));
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
