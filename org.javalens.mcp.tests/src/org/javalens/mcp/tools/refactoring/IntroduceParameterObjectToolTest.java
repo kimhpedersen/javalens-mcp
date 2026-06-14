@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.IntroduceParameterObjectTool;
@@ -28,6 +30,7 @@ class IntroduceParameterObjectToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private IntroduceParameterObjectTool tool;
+    private EnvelopeHarness envelope;
     private String targetPath;
     private ObjectMapper mapper;
 
@@ -35,6 +38,7 @@ class IntroduceParameterObjectToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("java25-maven");
         tool = new IntroduceParameterObjectTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         targetPath = helper.getFixturePath("java25-maven")
             .resolve("src/main/java/com/example/ipo/ParamBundleTarget.java").toString();
         mapper = new ObjectMapper();
@@ -97,5 +101,34 @@ class IntroduceParameterObjectToolTest {
         noFile.put("line", 6);
         noFile.put("column", 18);
         assertFalse(tool.execute(noFile).isSuccess());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: bundling send() generates SendParameters and rewrites the caller")
+    void envelope_introduceParameterObject_bundlesAndRewrites() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", targetPath);
+        args.put("line", 6);    // 0-based; send(String host, int port, boolean secure)
+        args.put("column", 18);
+        JsonNode payload = envelope.payload("introduce_parameter_object", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "introduce_parameter_object failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("send", data.get("methodName").asText());
+        assertEquals("SendParameters", data.get("className").asText());
+        StringBuilder allNewText = new StringBuilder();
+        JsonNode editsByFile = data.get("editsByFile");
+        java.util.Iterator<String> files = editsByFile.fieldNames();
+        while (files.hasNext()) {
+            for (JsonNode edit : editsByFile.get(files.next())) allNewText.append(edit.path("newText").asText());
+        }
+        String txt = allNewText.toString();
+        assertTrue(txt.contains("SendParameters"),
+            "edits must introduce the SendParameters class/usages through the envelope; got: " + txt);
+        assertTrue(txt.contains("new SendParameters"),
+            "the caller must construct the bundle through the envelope; got: " + txt);
     }
 }
