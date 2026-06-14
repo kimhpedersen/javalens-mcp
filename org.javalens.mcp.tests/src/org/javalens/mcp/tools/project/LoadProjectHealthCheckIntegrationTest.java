@@ -1,8 +1,11 @@
 package org.javalens.mcp.tools.project;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.JavaLensApplication;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.Tool;
@@ -94,5 +97,35 @@ class LoadProjectHealthCheckIntegrationTest {
         assertEquals("Ready", data.get("status"));
         assertEquals("loaded", project.get("status"));
         assertEquals("strict", data.get("diskSync"), "the live service's disk-sync mode is reported");
+    }
+
+    // ========== MCP envelope seam: load_project -> health_check through processMessage ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope (processMessage): load_project flips health_check to loaded/Ready/strict")
+    void envelope_loadThenHealthCheck_reportsLoaded() throws Exception {
+        // The integration tests above drive the real registerTools() wiring but call tools
+        // via execute(). This adds the missing JSON-RPC serialization layer: the same
+        // load_project -> health_check transition driven through McpProtocolHandler.processMessage.
+        JdtServiceImpl loaded = helper.loadProject("simple-maven");
+        EnvelopeHarness envelope = new EnvelopeHarness(loaded);
+
+        // Drive load_project through the wire so its production callback flips the load state.
+        ObjectNode loadArgs = envelope.args();
+        loadArgs.put("projectPath", projectPath.toString());
+        JsonNode loadPayload = envelope.payload("load_project", loadArgs);
+        assertTrue(loadPayload.get("success").asBoolean(),
+            () -> "load_project failed through the envelope: " + loadPayload);
+
+        JsonNode healthPayload = envelope.payload("health_check", envelope.args());
+        assertTrue(healthPayload.get("success").asBoolean(),
+            () -> "health_check failed through the envelope: " + healthPayload);
+        JsonNode project = healthPayload.get("data").get("project");
+        assertTrue(project.get("loaded").asBoolean(),
+            "health_check must report loaded after a load_project tools/call through processMessage");
+        assertEquals("Ready", healthPayload.get("data").get("status").asText());
+        assertEquals("loaded", project.get("status").asText());
+        assertEquals("strict", healthPayload.get("data").get("diskSync").asText(),
+            "the live service's disk-sync mode must survive the JSON-RPC envelope");
     }
 }
