@@ -73,14 +73,17 @@ class PullUpToolTest {
         assertEquals(2, editsByFile.size(),
             "both HierBase and HierChild must receive edits; got: " + editsByFile.keySet());
 
-        String baseNewText = textFor(editsByFile, "HierBase.java", "newText");
-        assertTrue(baseNewText.contains("liftable"),
-            "HierBase must gain liftable(); got: " + baseNewText);
+        assertEquals(2, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(2, ((Number) data.get("filesAffected")).intValue());
 
-        String childOldText = textFor(editsByFile, "HierChild.java", "oldText");
-        String childNewText = textFor(editsByFile, "HierChild.java", "newText");
-        assertTrue(childOldText.contains("liftable") && !childNewText.contains("liftable"),
-            "HierChild must lose liftable(); old: " + childOldText + " new: " + childNewText);
+        // HierBase gains the pulled-up method, tab-indented (generated), appended.
+        assertEquals("\n\tpublic int liftable() {\n\t    return 42;\n\t}\n",
+            textFor(editsByFile, "HierBase.java", "newText").replace("\r\n", "\n"));
+        // HierChild loses it: the original 4-space method is the deleted oldText; the
+        // replacement newText is empty.
+        assertEquals("\n    public int liftable() {\n        return 42;\n    }\n",
+            textFor(editsByFile, "HierChild.java", "oldText").replace("\r\n", "\n"));
+        assertEquals("", textFor(editsByFile, "HierChild.java", "newText"));
     }
 
     private String textFor(Map<String, List<Map<String, Object>>> editsByFile,
@@ -105,6 +108,9 @@ class PullUpToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "pulling from a class whose superclass is Object must be refused; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'member': Declaring type has no project superclass to pull into",
+            r.getError().getMessage());
     }
 
     @Test
@@ -114,12 +120,19 @@ class PullUpToolTest {
         wrongPos.put("filePath", childPath);
         wrongPos.put("line", 0);
         wrongPos.put("column", 0);
-        assertFalse(tool.execute(wrongPos).isSuccess());
+        ToolResponse wrongPosResp = tool.execute(wrongPos);
+        assertFalse(wrongPosResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, wrongPosResp.getError().getCode());
+        assertEquals("Invalid parameter 'position': No method or field at position",
+            wrongPosResp.getError().getMessage());
 
         ObjectNode noFile = mapper.createObjectNode();
         noFile.put("line", 6);
         noFile.put("column", 15);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse noFileResp = tool.execute(noFile);
+        assertFalse(noFileResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFileResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", noFileResp.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
