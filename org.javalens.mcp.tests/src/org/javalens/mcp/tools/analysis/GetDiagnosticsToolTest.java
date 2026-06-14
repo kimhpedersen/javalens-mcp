@@ -136,11 +136,14 @@ class GetDiagnosticsToolTest {
         assertTrue((Integer) getData(r).get("filesChecked") > 0);
     }
 
-    @Test @DisplayName("handles invalid file path")
+    @Test @DisplayName("non-existent file -> exact FILE_NOT_FOUND")
     void handlesInvalidFilePath() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "/nonexistent/File.java");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, r.getError().getCode());
+        assertEquals("File not found: /nonexistent/File.java", r.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -163,17 +166,19 @@ class GetDiagnosticsToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         // ArrayList, Map, HashMap, IOException are imported but never used in this file.
-        // JDT categorizes unused-import as UNNECESSARY_CODE; assert each by message content.
-        java.util.Set<String> unusedImports = new java.util.HashSet<>();
+        // JDT categorizes unused-import as UNNECESSARY_CODE — pin the category, not just
+        // the message text.
+        int unusedImportCount = 0;
         for (Map<String, Object> d : diagsOf(r)) {
             String msg = (String) d.get("message");
             if (msg != null && msg.contains("import") && msg.contains("never used")) {
-                unusedImports.add(msg);
+                unusedImportCount++;
+                assertEquals("UNNECESSARY_CODE", d.get("category"),
+                    "unused-import diagnostics must carry category UNNECESSARY_CODE; got: " + d);
             }
         }
-        assertEquals(4, unusedImports.size(),
-            "RefactoringTarget has exactly 4 unused imports; got: " + unusedImports.size()
-                + " unused-import messages out of " + diagsOf(r));
+        assertEquals(4, unusedImportCount,
+            "RefactoringTarget has exactly 4 unused imports; got: " + diagsOf(r));
     }
 
     @Test
@@ -302,21 +307,16 @@ class GetDiagnosticsToolTest {
     }
 
     @Test
-    @DisplayName("maxResults=1 caps to 1 and meta.truncated reflects truncation when more diagnostics exist")
+    @DisplayName("maxResults=1 caps to exactly 1 and meta.truncated is true (project has > 1 diagnostic)")
     void maxResults_capsAndTruncated() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("maxResults", 1);
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        assertTrue(diagsOf(r).size() <= 1,
-            "maxResults=1 must cap list to at most 1; got: " + diagsOf(r));
-        // Meta.truncated semantics: if the cap was hit, truncated=true.
-        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
-        assertNotNull(meta);
-        if (diagsOf(r).size() == 1) {
-            assertEquals(Boolean.TRUE, meta.getTruncated(),
-                "When the cap (1) is hit, meta.truncated must be true");
-        }
+        // The project-wide scan has > 1 diagnostic (>= 4 unused-import warnings), so the
+        // cap is hit exactly and truncation is signalled.
+        assertEquals(1, diagsOf(r).size());
+        assertEquals(Boolean.TRUE, r.getMeta().getTruncated());
     }
 }
