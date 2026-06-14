@@ -40,10 +40,11 @@ class FindPossibleBugsToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("finds bugs comprehensively")
+    @Test @DisplayName("BugPatterns.java: exactly 7 issues, counts consistent")
     void findsBugsComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "src/main/java/com/example/BugPatterns.java");
+        args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
 
@@ -51,13 +52,12 @@ class FindPossibleBugsToolTest {
         Map<String, Object> data = getData(r);
         @SuppressWarnings("unchecked")
         List<?> issues = (List<?>) data.get("issues");
-        assertNotNull(issues, "issues list missing");
         int total = ((Number) data.get("totalIssues")).intValue();
         int high = ((Number) data.get("highCount")).intValue();
         int medium = ((Number) data.get("mediumCount")).intValue();
         int low = ((Number) data.get("lowCount")).intValue();
-        assertTrue(total >= 0 && high >= 0 && medium >= 0 && low >= 0,
-            "all counts >= 0; got: " + data);
+        // EMPTY_CATCH x2, STRING_COMPARISON x2, SYNC_ON_STRING x2, RESOURCE_LEAK x1.
+        assertEquals(7, total, "BugPatterns has exactly 7 detectable issues; got: " + issues);
         assertEquals(high + medium + low, total,
             "high+medium+low must equal totalIssues; got: " + data);
         assertEquals(total, issues.size(),
@@ -112,29 +112,17 @@ class FindPossibleBugsToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> issues = (List<Map<String, Object>>) getData(r).get("issues");
 
-        // Collect rule/category labels (the tool reports each issue with some kind of
-        // category identifier). We don't pin the exact key name; collect across the most
-        // common label fields.
-        java.util.Set<String> labels = new java.util.HashSet<>();
+        // The tool reports each issue with a stable `code`. BugPatterns triggers exactly
+        // four distinct detectors: empty catch, == on String, sync on String, unclosed
+        // resource (emptyExceptionHandler / stringCompareWithOperator / syncOnStringVariable
+        // / unclosedResource / multipleBugs). No NULL_DEREFERENCE here.
+        java.util.Set<String> codes = new java.util.TreeSet<>();
         for (Map<String, Object> issue : issues) {
-            for (String field : List.of("rule", "category", "type", "name", "message", "description")) {
-                Object v = issue.get(field);
-                if (v != null) labels.add(v.toString().toLowerCase());
-            }
+            codes.add((String) issue.get("code"));
         }
-
-        // The fixture has: emptyExceptionHandler (empty catch), stringCompareWithOperator
-        // (== on String), syncOnStringVariable (sync on String field), unclosedResource
-        // (FileInputStream not closed), multipleBugs (combination). At minimum the tool
-        // must surface each category.
-        assertTrue(labels.stream().anyMatch(l -> l.contains("empty") && l.contains("catch")),
-            "Expected an issue mentioning empty catch; got labels: " + labels);
-        assertTrue(labels.stream().anyMatch(l -> l.contains("string") && (l.contains("==") || l.contains("equals") || l.contains("compar"))),
-            "Expected an issue mentioning String == comparison; got labels: " + labels);
-        assertTrue(labels.stream().anyMatch(l -> l.contains("sync") && l.contains("string")),
-            "Expected an issue mentioning synchronization on String; got labels: " + labels);
-        assertTrue(labels.stream().anyMatch(l -> l.contains("resource") || l.contains("close")),
-            "Expected an issue mentioning resource leak / unclosed resource; got labels: " + labels);
+        assertEquals(java.util.Set.of(
+            "EMPTY_CATCH", "STRING_COMPARISON", "SYNC_ON_STRING", "RESOURCE_LEAK"), codes,
+            "BugPatterns must surface exactly these four issue codes; got: " + issues);
     }
 
     // ========== Behavior-matrix coverage ==========
