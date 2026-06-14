@@ -52,42 +52,45 @@ class FindTypeArgumentsToolTest {
     @Test @DisplayName("respects maxResults")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("typeName", "java.lang.String");
+        args.put("typeName", "com.example.Calculator");
         args.put("maxResults", 1);
-        assertTrue(getUsages(getData(tool.execute(args))).size() <= 1);
+        // Calculator appears as a type argument exactly twice; maxResults=1 caps to exactly 1.
+        assertEquals(1, getUsages(getData(tool.execute(args))).size());
     }
 
-    @Test @DisplayName("requires typeName")
+    @Test @DisplayName("missing typeName is rejected with INVALID_PARAMETER")
     void requiresTypeName() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain typeName is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles unknown type")
+    @Test @DisplayName("unknown type is rejected with SYMBOL_NOT_FOUND naming the type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.nonexistent.X");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("com.nonexistent.X"),
+            "message must name the unresolved type; got: " + r.getError().getMessage());
+    }
+
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", -1);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains(">= 0"),
+            "message must explain the bound; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
-
-    @Test
-    @DisplayName("Calculator as generic type argument: at least 1 (SearchPatterns has List<Calculator> field + use)")
-    void calculator_findsTypeArgumentUsages() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("typeName", "com.example.Calculator");
-        args.put("maxResults", 100);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        // SearchPatterns declares `private List<Calculator> calculatorList;` and inside
-        // useGenerics has `List<Calculator> calcs = new ArrayList<>();`. JDT may report 1
-        // or 2 depending on how `new ArrayList<>()`'s diamond inference is counted.
-        int total = ((Number) getData(r).get("totalCount")).intValue();
-        assertTrue(total >= 1,
-            "Expected at least 1 List<Calculator> usage; got: "
-                + total + " (" + getUsages(getData(r)) + ")");
-    }
 
     // ========== Behavior-matrix coverage ==========
 

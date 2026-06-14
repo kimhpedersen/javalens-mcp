@@ -39,35 +39,55 @@ class FindAnnotationUsagesToolTest {
     @SuppressWarnings("unchecked")
     private List<?> getUsages(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
-    @Test @DisplayName("finds annotation usages")
+    @Test @DisplayName("finds the exact 7 @Marker annotation usages")
     void findsAnnotationUsages() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("typeName", "java.lang.Override");
+        args.put("typeName", "com.example.Marker");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        assertFalse(getUsages(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalCount"));
-        assertEquals("java.lang.Override", getData(r).get("typeName"));
+        assertEquals(7, ((Number) getData(r).get("totalCount")).intValue());
+        assertEquals("com.example.Marker", getData(r).get("typeName"));
     }
 
     @Test @DisplayName("respects maxResults")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("typeName", "java.lang.Override");
+        args.put("typeName", "com.example.Marker");
         args.put("maxResults", 1);
-        assertTrue(getUsages(getData(tool.execute(args))).size() <= 1);
+        // @Marker is applied exactly 7 times; maxResults=1 caps to exactly 1.
+        assertEquals(1, getUsages(getData(tool.execute(args))).size());
     }
 
-    @Test @DisplayName("requires annotation")
+    @Test @DisplayName("missing typeName is rejected with INVALID_PARAMETER")
     void requiresAnnotation() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain typeName is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles unknown annotation")
+    @Test @DisplayName("unknown annotation is rejected with SYMBOL_NOT_FOUND naming the type")
     void handlesUnknownAnnotation() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.nonexistent.X");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("com.nonexistent.X"),
+            "message must name the unresolved type; got: " + r.getError().getMessage());
+    }
+
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Marker");
+        args.put("maxResults", -1);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains(">= 0"),
+            "message must explain the bound; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
