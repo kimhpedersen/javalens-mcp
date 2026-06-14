@@ -80,7 +80,7 @@ class AnalyzeDataFlowToolTest {
     }
 
     @Test
-    @DisplayName("should detect parameter as parameter kind")
+    @DisplayName("input is a parameter: kind=parameter, declared, read 3x, never written")
     void detectsParameterKind() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
@@ -92,14 +92,19 @@ class AnalyzeDataFlowToolTest {
         assertTrue(response.isSuccess());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> variables = (List<Map<String, Object>>) getData(response).get("variables");
-
-        boolean foundParameter = variables.stream()
-            .anyMatch(v -> "input".equals(v.get("name")) && "parameter".equals(v.get("kind")));
-        assertTrue(foundParameter, "Should detect 'input' as a parameter. Variables found: " + variables);
+        Map<String, Object> input = variables.stream()
+            .filter(v -> "input".equals(v.get("name"))).findFirst().orElseThrow();
+        assertEquals("parameter", input.get("kind"));
+        assertEquals(Boolean.TRUE, input.get("declared"));
+        // input read at `x = input`, `if (input > 0)`, `z = z + input` (3); never assigned.
+        assertEquals(3, ((Number) input.get("readCount")).intValue());
+        assertEquals(0, ((Number) input.get("writeCount")).intValue());
+        assertEquals(Boolean.TRUE, input.get("read"));
+        assertEquals(Boolean.FALSE, input.get("written"));
     }
 
     @Test
-    @DisplayName("should detect variables that are both read and written")
+    @DisplayName("local x: declared, written 2x, read 3x (both read and written)")
     void detectsReadAndWritten() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
@@ -111,16 +116,21 @@ class AnalyzeDataFlowToolTest {
         assertTrue(response.isSuccess());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> variables = (List<Map<String, Object>>) getData(response).get("variables");
-
-        // x is assigned from input, then reassigned, then read
-        boolean foundReadWrite = variables.stream()
-            .anyMatch(v -> "x".equals(v.get("name")) && (boolean) v.get("read") && (boolean) v.get("written"));
-        assertTrue(foundReadWrite, "Should detect variable 'x' as both read and written. Variables found: " + variables);
+        Map<String, Object> x = variables.stream()
+            .filter(v -> "x".equals(v.get("name"))).findFirst().orElseThrow();
+        assertEquals("local", x.get("kind"));
+        assertEquals(Boolean.TRUE, x.get("declared"));
+        // x written at `int x = input` + `x = x + 1` (2); read at `x = x+1` RHS,
+        // `y = x*2`, `z = x + y` (3).
+        assertEquals(2, ((Number) x.get("writeCount")).intValue());
+        assertEquals(3, ((Number) x.get("readCount")).intValue());
+        assertEquals(Boolean.TRUE, x.get("read"));
+        assertEquals(Boolean.TRUE, x.get("written"));
     }
 
     @Test
-    @DisplayName("should count return statements")
-    void countsReturnStatements() {
+    @DisplayName("default mode omits followCalls and interproceduralFlows keys")
+    void defaultMode_omitsInterproceduralKeys() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
         args.put("line", 76);
@@ -130,8 +140,27 @@ class AnalyzeDataFlowToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        int returnCount = (int) data.get("returnStatements");
-        assertTrue(returnCount > 0, "Should detect return statements");
+        assertFalse(data.containsKey("followCalls"),
+            "default mode must not emit followCalls; got: " + data.keySet());
+        assertFalse(data.containsKey("interproceduralFlows"),
+            "default mode must not emit interproceduralFlows; got: " + data.keySet());
+    }
+
+    @Test
+    @DisplayName("followCalls with maxCallDepth < 1 -> exact INVALID_PARAMETER")
+    void followCalls_maxCallDepthBelowOne_invalidParameter() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", patternsPath);
+        args.put("line", 76);
+        args.put("column", 15);
+        args.put("followCalls", true);
+        args.put("maxCallDepth", 0);
+
+        ToolResponse response = tool.execute(args);
+
+        assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'maxCallDepth': must be >= 1", response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -154,7 +183,7 @@ class AnalyzeDataFlowToolTest {
     // ========== Error Handling Tests ==========
 
     @Test
-    @DisplayName("should return error when filePath is missing")
+    @DisplayName("missing filePath is an exact INVALID_PARAMETER error")
     void returnsErrorForMissingFilePath() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("line", 5);
@@ -163,10 +192,13 @@ class AnalyzeDataFlowToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing",
+            response.getError().getMessage());
     }
 
     @Test
-    @DisplayName("should return error for non-method position")
+    @DisplayName("non-method position (package declaration) -> exact SYMBOL_NOT_FOUND")
     void returnsErrorForNonMethodPosition() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
@@ -175,7 +207,10 @@ class AnalyzeDataFlowToolTest {
 
         ToolResponse response = tool.execute(args);
 
-        assertNotNull(response);
+        assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
+        assertEquals("Symbol not found: No method found at " + patternsPath + ":0:0",
+            response.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -253,8 +288,8 @@ class AnalyzeDataFlowToolTest {
     }
 
     @Test
-    @DisplayName("Variables list includes input (parameter) and locals x, y, z")
-    void variables_setIncludesAllExpected() {
+    @DisplayName("Variables are exactly {input, x, y, z}")
+    void variables_setIsExact() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
         args.put("line", 76);
@@ -263,10 +298,9 @@ class AnalyzeDataFlowToolTest {
         assertTrue(r.isSuccess());
         java.util.Set<String> names = new java.util.HashSet<>();
         for (Map<String, Object> v : varsOf(r)) names.add((String) v.get("name"));
-        for (String expected : List.of("input", "x", "y", "z")) {
-            assertTrue(names.contains(expected),
-                "Variables must include " + expected + "; got: " + names);
-        }
+        assertEquals(java.util.Set.of("input", "x", "y", "z"), names,
+            "dataFlowExample tracks exactly the parameter input and locals x, y, z");
+        assertEquals(4, varsOf(r).size(), "no duplicate or phantom variables");
     }
 
     @Test
