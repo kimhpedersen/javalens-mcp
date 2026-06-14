@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.InlineMethodTool;
@@ -27,6 +29,7 @@ class InlineMethodToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private InlineMethodTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -35,6 +38,7 @@ class InlineMethodToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new InlineMethodTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -313,5 +317,27 @@ class InlineMethodToolTest {
         args.put("column", 0);
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: inlining doubleValue(x) emits exactly `(x * 2)` (paren-wrapped INFIX)")
+    void envelope_inlineDoubleValue_exactExpression() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 64);   // `int doubled = doubleValue(x);`
+        args.put("column", 22);
+        JsonNode payload = envelope.payload("inline_method", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "inline_method failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("doubleValue", data.get("methodName").asText());
+        assertEquals("RefactoringTarget", data.get("methodClass").asText());
+        JsonNode edits = data.get("edits");
+        assertEquals(1, edits.size(), "inline_method emits exactly one edit through the envelope");
+        assertEquals("(x * 2)", edits.get(0).get("newText").asText(),
+            "the paren-wrapped INFIX inline text must survive the envelope verbatim");
     }
 }
