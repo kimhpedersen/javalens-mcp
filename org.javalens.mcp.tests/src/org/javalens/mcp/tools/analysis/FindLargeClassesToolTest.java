@@ -140,7 +140,7 @@ class FindLargeClassesToolTest {
     // ========== Semantic-grade tests (LargeClass boundary fixture) ==========
 
     @Test
-    @DisplayName("default thresholds: LargeClass appears (21 methods > 20, 11 fields > 10); Calculator does not")
+    @DisplayName("default thresholds: LargeClass flagged with exact 21 methods/11 fields/36 lines and 2 violations; Calculator absent")
     void defaultThresholds_largeClassFlagged_calculatorNot() {
         ObjectNode args = objectMapper.createObjectNode();
         ToolResponse r = tool.execute(args);
@@ -148,12 +148,21 @@ class FindLargeClassesToolTest {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("largeClasses");
+        Map<String, Object> largeClass = classes.stream()
+            .filter(c -> "LargeClass".equals(c.get("typeName")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("LargeClass must be flagged; got: "
+                + classes.stream().map(c -> c.get("typeName")).toList()));
+        assertEquals(21, ((Number) largeClass.get("methodCount")).intValue());
+        assertEquals(11, ((Number) largeClass.get("fieldCount")).intValue());
+        // type span = endLine(38) - startLine(3) + 1.
+        assertEquals(36, ((Number) largeClass.get("lineCount")).intValue());
+        // 21 > 20 and 11 > 10 breach; 36 < 300 does not.
+        assertEquals(List.of("methods: 21 > 20", "fields: 11 > 10"), largeClass.get("violations"));
+
         java.util.Set<String> names = classes.stream()
             .map(c -> (String) c.get("typeName"))
             .collect(java.util.stream.Collectors.toSet());
-
-        assertTrue(names.contains("LargeClass"),
-            "LargeClass has 21 methods and 11 fields; exceeds default thresholds (20/10). Got: " + names);
         assertFalse(names.contains("Calculator"),
             "Calculator has few methods/fields; must not be flagged. Got: " + names);
     }
