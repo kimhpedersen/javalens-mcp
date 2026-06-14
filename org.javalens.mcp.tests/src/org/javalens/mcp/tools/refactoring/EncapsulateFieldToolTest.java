@@ -77,21 +77,50 @@ class EncapsulateFieldToolTest {
             "both EncapsulateTarget and EncapsulateReader must receive edits; got: "
                 + editsByFile.keySet());
 
+        // One edit per file (the declaring file's minimal-diff modifier change + appended
+        // accessor pair is a single replace; the reader's two accesses collapse to one).
+        assertEquals(2, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(2, ((Number) data.get("filesAffected")).intValue());
+        assertEquals(java.util.Set.of(
+            "src/main/java/com/example/encap/EncapsulateReader.java",
+            "src/main/java/com/example/encap/EncapsulateTarget.java"),
+            editsByFile.keySet().stream().map(k -> k.replace('\\', '/'))
+                .collect(java.util.stream.Collectors.toSet()));
+
+        // Exact declaring-file edit (CRLF-normalized): `public`->`private` minimal diff
+        // (keeps the leading `p`), twice() preserved, the generated getCount/setCount pair
+        // appended (tab-indented); the setCount close brace reuses the original `}`.
         String allTargetText = editsByFile.entrySet().stream()
             .filter(e -> e.getKey().endsWith("EncapsulateTarget.java"))
             .flatMap(e -> e.getValue().stream())
             .map(e -> String.valueOf(e.get("newText")))
-            .reduce("", String::concat);
-        assertTrue(allTargetText.contains("getCount") && allTargetText.contains("setCount"),
-            "declaring file must gain the accessor pair; got: " + allTargetText);
+            .reduce("", String::concat).replace("\r\n", "\n");
+        assertEquals(
+            "rivate int count;\n"
+            + "\n"
+            + "    public int twice() {\n"
+            + "        return count * 2;\n"
+            + "    }\n"
+            + "\n"
+            + "\tpublic int getCount() {\n"
+            + "\t\treturn count;\n"
+            + "\t}\n"
+            + "\n"
+            + "\tpublic void setCount(int count) {\n"
+            + "\t\tthis.count = count;\n"
+            + "\t",
+            allTargetText);
 
+        // Exact reader edit: both direct accesses rewritten through the accessors.
         String allReaderText = editsByFile.entrySet().stream()
             .filter(e -> e.getKey().endsWith("EncapsulateReader.java"))
             .flatMap(e -> e.getValue().stream())
             .map(e -> String.valueOf(e.get("newText")))
-            .reduce("", String::concat);
-        assertTrue(allReaderText.contains("getCount") || allReaderText.contains("setCount"),
-            "external accesses must be rewritten to accessor calls; got: " + allReaderText);
+            .reduce("", String::concat).replace("\r\n", "\n");
+        assertEquals(
+            "setCount(target.getCount() + 1);\n"
+            + "        return target.getCount()",
+            allReaderText);
     }
 
     @Test
@@ -128,6 +157,7 @@ class EncapsulateFieldToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(), "method position must be refused; got: " + r.getData());
         assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertEquals("Invalid parameter 'position': No field at position", r.getError().getMessage());
     }
 
     @Test
@@ -136,11 +166,17 @@ class EncapsulateFieldToolTest {
         ObjectNode noFile = mapper.createObjectNode();
         noFile.put("line", 8);
         noFile.put("column", 15);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse noFileResp = tool.execute(noFile);
+        assertFalse(noFileResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFileResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", noFileResp.getError().getMessage());
 
         ObjectNode noLine = mapper.createObjectNode();
         noLine.put("filePath", targetPath);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse noLineResp = tool.execute(noLine);
+        assertFalse(noLineResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noLineResp.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", noLineResp.getError().getMessage());
     }
 
     @Test
