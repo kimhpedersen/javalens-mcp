@@ -321,7 +321,7 @@ class FindLargeClassesToolTest {
     @Test
     @DisplayName("Through the real MCP envelope: default thresholds flag LargeClass, not Calculator")
     void envelope_defaultThresholds_largeClassFlagged() {
-        JsonNode payload = envelope.payload("find_large_classes", envelope.args());
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_large_classes", envelope.args());
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_large_classes failed through the envelope: " + payload);

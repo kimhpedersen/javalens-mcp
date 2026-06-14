@@ -243,7 +243,7 @@ class FindCatchBlocksToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_catch_blocks", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_catch_blocks", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_catch_blocks failed through the envelope: " + payload);

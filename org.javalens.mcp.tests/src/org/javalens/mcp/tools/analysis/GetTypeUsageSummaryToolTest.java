@@ -281,7 +281,7 @@ class GetTypeUsageSummaryToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.Animal");
         args.put("maxPerCategory", 50);
-        JsonNode payload = envelope.payload("get_type_usage_summary", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_type_usage_summary", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_type_usage_summary failed through the envelope: " + payload);

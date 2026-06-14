@@ -450,7 +450,7 @@ class InlineVariableToolTest {
         args.put("filePath", refactoringTargetPath);
         args.put("line", 26);
         args.put("column", 15);
-        JsonNode payload = envelope.payload("inline_variable", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("inline_variable", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "inline_variable failed through the envelope: " + payload);

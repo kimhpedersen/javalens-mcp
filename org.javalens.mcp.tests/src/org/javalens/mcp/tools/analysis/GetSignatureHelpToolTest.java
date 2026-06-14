@@ -341,7 +341,7 @@ class GetSignatureHelpToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 14);
         args.put("column", 15);
-        JsonNode payload = envelope.payload("get_signature_help", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_signature_help", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_signature_help failed through the envelope: " + payload);

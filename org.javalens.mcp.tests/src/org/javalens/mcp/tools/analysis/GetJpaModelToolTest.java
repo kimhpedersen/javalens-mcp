@@ -141,7 +141,7 @@ class GetJpaModelToolTest {
     @Test
     @DisplayName("Through the real registerTools() wiring: the assembled JPA model (Customer/customers + mappedBy) survives the envelope")
     void envelope_assembledEntityModel() {
-        JsonNode payload = envelope.payload("get_jpa_model", envelope.args());
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_jpa_model", envelope.args());
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_jpa_model failed through the envelope: " + payload);

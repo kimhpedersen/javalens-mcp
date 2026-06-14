@@ -444,7 +444,7 @@ class GetTypeHierarchyToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.IShape");
         args.put("maxDepth", 50);
-        JsonNode payload = envelope.payload("get_type_hierarchy", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_type_hierarchy", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_type_hierarchy failed through the envelope: " + payload);

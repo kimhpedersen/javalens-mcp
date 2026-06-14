@@ -451,7 +451,7 @@ class GetHoverInfoToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 14);
         args.put("column", 15);
-        JsonNode payload = envelope.payload("get_hover_info", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_hover_info", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_hover_info failed through the envelope: " + payload);

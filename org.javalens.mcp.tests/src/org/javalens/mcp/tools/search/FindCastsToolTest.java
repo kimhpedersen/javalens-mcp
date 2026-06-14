@@ -230,7 +230,7 @@ class FindCastsToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.Calculator");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_casts", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_casts", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_casts failed through the envelope: " + payload);

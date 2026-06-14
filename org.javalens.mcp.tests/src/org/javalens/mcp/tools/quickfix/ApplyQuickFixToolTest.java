@@ -367,7 +367,7 @@ class ApplyQuickFixToolTest {
         args.put("filePath", calculatorPath);
         args.put("fixId", "add_throws:java.io.IOException");
         args.put("line", 14); // 0-based: Calculator.add() declaration
-        JsonNode payload = envelope.payload("apply_quick_fix", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("apply_quick_fix", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "apply_quick_fix failed through the envelope: " + payload);

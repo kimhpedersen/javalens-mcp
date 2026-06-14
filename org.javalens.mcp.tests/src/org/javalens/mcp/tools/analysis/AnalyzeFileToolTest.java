@@ -331,7 +331,7 @@ class AnalyzeFileToolTest {
             .resolve("src/main/java/com/example/NamingViolationFixtures.java").toString();
         ObjectNode args = envelope.args();
         args.put("filePath", path);
-        JsonNode payload = envelope.payload("analyze_file", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("analyze_file", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "analyze_file failed through the envelope: " + payload);

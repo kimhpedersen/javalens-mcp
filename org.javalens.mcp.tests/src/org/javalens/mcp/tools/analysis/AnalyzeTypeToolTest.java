@@ -389,7 +389,7 @@ class AnalyzeTypeToolTest {
     void envelope_calculator_exactMemberCounts() {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.Calculator");
-        JsonNode payload = envelope.payload("analyze_type", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("analyze_type", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "analyze_type failed through the envelope: " + payload);

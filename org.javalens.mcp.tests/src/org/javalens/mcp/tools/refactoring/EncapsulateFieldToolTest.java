@@ -171,7 +171,7 @@ class EncapsulateFieldToolTest {
         args.put("filePath", targetPath);
         args.put("line", 7);    // 0-based; "    public int count;"
         args.put("column", 15);
-        JsonNode payload = envelope.payload("encapsulate_field", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("encapsulate_field", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "encapsulate_field failed through the envelope: " + payload);

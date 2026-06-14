@@ -198,7 +198,7 @@ class GetDiRegistrationsToolTest {
     void envelope_frameworkMaven_exactInventory() throws Exception {
         JdtServiceImpl svc = helper.loadProject("framework-maven");
         EnvelopeHarness fwEnvelope = new EnvelopeHarness(svc);
-        JsonNode payload = fwEnvelope.payload("get_di_registrations", fwEnvelope.args());
+        JsonNode payload = fwEnvelope.assertEnvelopeFidelity("get_di_registrations", fwEnvelope.args());
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_di_registrations failed through the envelope: " + payload);

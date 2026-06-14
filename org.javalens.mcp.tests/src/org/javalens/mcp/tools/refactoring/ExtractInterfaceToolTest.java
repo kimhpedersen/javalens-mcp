@@ -490,7 +490,7 @@ class ExtractInterfaceToolTest {
         args.put("line", 8);
         args.put("column", 13);
         args.put("interfaceName", "IExtractTarget");
-        JsonNode payload = envelope.payload("extract_interface", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("extract_interface", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "extract_interface failed through the envelope: " + payload);

@@ -398,7 +398,7 @@ class GetDocumentSymbolsToolTest {
     void envelope_calculator_exactChildren() {
         ObjectNode args = envelope.args();
         args.put("filePath", calculatorPath);
-        JsonNode payload = envelope.payload("get_document_symbols", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_document_symbols", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_document_symbols failed through the envelope: " + payload);

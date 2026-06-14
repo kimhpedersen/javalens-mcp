@@ -294,7 +294,7 @@ class GetJavadocToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 13);
         args.put("column", 15);
-        JsonNode payload = envelope.payload("get_javadoc", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_javadoc", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_javadoc failed through the envelope: " + payload);

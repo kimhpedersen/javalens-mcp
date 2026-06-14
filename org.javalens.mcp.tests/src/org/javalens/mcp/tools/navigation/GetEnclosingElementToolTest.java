@@ -342,7 +342,7 @@ class GetEnclosingElementToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 15);
         args.put("column", 10);
-        JsonNode payload = envelope.payload("get_enclosing_element", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_enclosing_element", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_enclosing_element failed through the envelope: " + payload);

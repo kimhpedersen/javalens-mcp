@@ -407,7 +407,7 @@ class FindReflectionUsageToolTest {
     @Test
     @DisplayName("Through the real MCP envelope: exactly seven reflection calls, none leaked from target/work")
     void envelope_exactlySeven_noLeak() {
-        JsonNode payload = envelope.payload("find_reflection_usage", envelope.args());
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_reflection_usage", envelope.args());
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_reflection_usage failed through the envelope: " + payload);
         JsonNode data = payload.get("data");

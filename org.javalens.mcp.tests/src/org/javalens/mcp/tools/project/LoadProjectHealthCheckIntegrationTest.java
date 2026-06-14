@@ -113,11 +113,11 @@ class LoadProjectHealthCheckIntegrationTest {
         // Drive load_project through the wire so its production callback flips the load state.
         ObjectNode loadArgs = envelope.args();
         loadArgs.put("projectPath", projectPath.toString());
-        JsonNode loadPayload = envelope.payload("load_project", loadArgs);
+        JsonNode loadPayload = envelope.assertEnvelopeFidelity("load_project", loadArgs);
         assertTrue(loadPayload.get("success").asBoolean(),
             () -> "load_project failed through the envelope: " + loadPayload);
 
-        JsonNode healthPayload = envelope.payload("health_check", envelope.args());
+        JsonNode healthPayload = envelope.assertEnvelopeFidelity("health_check", envelope.args());
         assertTrue(healthPayload.get("success").asBoolean(),
             () -> "health_check failed through the envelope: " + healthPayload);
         JsonNode project = healthPayload.get("data").get("project");

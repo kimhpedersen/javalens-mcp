@@ -300,7 +300,7 @@ class FindCircularDependenciesToolTest {
     void envelope_cycledemo_exactCycle() {
         ObjectNode args = envelope.args();
         args.put("packageFilter", "com.example.cycledemo");
-        JsonNode payload = envelope.payload("find_circular_dependencies", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_circular_dependencies", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_circular_dependencies failed through the envelope: " + payload);

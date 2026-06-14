@@ -125,7 +125,7 @@ class GetHttpEndpointsToolTest {
     @Test
     @DisplayName("Through the real registerTools() wiring: the composed route table (GET /api/orders/{id}) survives the envelope")
     void envelope_composedRouteTable() {
-        JsonNode payload = envelope.payload("get_http_endpoints", envelope.args());
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_http_endpoints", envelope.args());
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_http_endpoints failed through the envelope: " + payload);

@@ -391,7 +391,7 @@ class FindImplementationsToolTest {
     @DisplayName("Through the real MCP envelope: IShape returns exactly its seven transitive implementors")
     void envelope_iShape_returnsExactSevenImplementors() {
         ObjectNode args = argsAt(fixturePath("src/main/java/com/example/IShape.java"), 2, 17);
-        JsonNode payload = envelope.payload("find_implementations", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_implementations", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_implementations failed through the envelope: " + payload);

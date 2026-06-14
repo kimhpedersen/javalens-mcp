@@ -130,7 +130,7 @@ class DiagnoseAndFixToolTest {
     void envelope_unusedImport_problemAndEditCombined() {
         ObjectNode args = envelope.args();
         args.put("filePath", demoPath);
-        JsonNode payload = envelope.payload("diagnose_and_fix", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("diagnose_and_fix", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "diagnose_and_fix failed through the envelope: " + payload);

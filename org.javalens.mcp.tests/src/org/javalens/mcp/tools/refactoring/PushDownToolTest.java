@@ -130,7 +130,7 @@ class PushDownToolTest {
         args.put("filePath", basePath);
         args.put("line", 9);    // 0-based; "    public int movable() {"
         args.put("column", 15);
-        JsonNode payload = envelope.payload("push_down", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("push_down", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "push_down failed through the envelope: " + payload);

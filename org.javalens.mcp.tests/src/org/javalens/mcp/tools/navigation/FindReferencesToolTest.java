@@ -470,7 +470,7 @@ class FindReferencesToolTest {
         args.put("line", 6);
         args.put("column", 16);
         args.put("maxResults", 1000);
-        JsonNode payload = envelope.payload("find_references", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_references", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_references failed through the envelope: " + payload);

@@ -131,7 +131,7 @@ class PullUpToolTest {
         args.put("filePath", childPath);
         args.put("line", 6);    // 0-based; "    public int liftable() {"
         args.put("column", 15);
-        JsonNode payload = envelope.payload("pull_up", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("pull_up", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "pull_up failed through the envelope: " + payload);

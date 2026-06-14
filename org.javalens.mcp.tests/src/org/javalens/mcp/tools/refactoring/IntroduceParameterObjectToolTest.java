@@ -112,7 +112,7 @@ class IntroduceParameterObjectToolTest {
         args.put("filePath", targetPath);
         args.put("line", 6);    // 0-based; send(String host, int port, boolean secure)
         args.put("column", 18);
-        JsonNode payload = envelope.payload("introduce_parameter_object", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("introduce_parameter_object", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "introduce_parameter_object failed through the envelope: " + payload);

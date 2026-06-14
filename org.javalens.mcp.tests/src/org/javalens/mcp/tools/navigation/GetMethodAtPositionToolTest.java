@@ -415,7 +415,7 @@ class GetMethodAtPositionToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 14);
         args.put("column", 15);
-        JsonNode payload = envelope.payload("get_method_at_position", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_method_at_position", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_method_at_position failed through the envelope: " + payload);

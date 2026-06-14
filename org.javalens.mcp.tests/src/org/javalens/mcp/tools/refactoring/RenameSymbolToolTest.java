@@ -608,7 +608,7 @@ class RenameSymbolToolTest {
         args.put("line", 14);
         args.put("column", 15);
         args.put("newName", "sum");
-        JsonNode payload = envelope.payload("rename_symbol", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("rename_symbol", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "rename_symbol failed through the envelope: " + payload);

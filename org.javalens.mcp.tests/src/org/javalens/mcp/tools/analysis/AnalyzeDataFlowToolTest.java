@@ -358,7 +358,7 @@ class AnalyzeDataFlowToolTest {
         args.put("line", 4);
         args.put("column", 19);
         args.put("followCalls", true);
-        JsonNode payload = flowEnvelope.payload("analyze_data_flow", args);
+        JsonNode payload = flowEnvelope.assertEnvelopeFidelity("analyze_data_flow", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "analyze_data_flow failed through the envelope: " + payload);

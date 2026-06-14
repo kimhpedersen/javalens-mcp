@@ -259,7 +259,7 @@ class FindUnusedCodeToolTest {
     void envelope_unusedCode_exactMembers() {
         ObjectNode args = envelope.args();
         args.put("filePath", "src/main/java/com/example/UnusedCode.java");
-        JsonNode payload = envelope.payload("find_unused_code", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_unused_code", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_unused_code failed through the envelope: " + payload);

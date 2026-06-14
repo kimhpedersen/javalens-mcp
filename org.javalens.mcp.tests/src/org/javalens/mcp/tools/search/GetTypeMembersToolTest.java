@@ -404,7 +404,7 @@ class GetTypeMembersToolTest {
     void envelope_calculator_exactMembers() {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.Calculator");
-        JsonNode payload = envelope.payload("get_type_members", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_type_members", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_type_members failed through the envelope: " + payload);

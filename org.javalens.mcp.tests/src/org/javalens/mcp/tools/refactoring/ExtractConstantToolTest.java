@@ -398,7 +398,7 @@ class ExtractConstantToolTest {
         args.put("endLine", 35);
         args.put("endColumn", 33);
         args.put("constantName", "DEFAULT_PREFIX");
-        JsonNode payload = envelope.payload("extract_constant", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("extract_constant", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "extract_constant failed through the envelope: " + payload);

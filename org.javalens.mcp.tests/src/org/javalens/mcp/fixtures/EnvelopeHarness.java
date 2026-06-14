@@ -5,12 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.JavaLensApplication;
+import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.protocol.McpProtocolHandler;
+import org.javalens.mcp.tools.Tool;
 import org.javalens.mcp.tools.ToolRegistry;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -106,5 +109,32 @@ public final class EnvelopeHarness {
             throw new IllegalStateException(
                 "could not parse tool payload for " + toolName + ": " + rpc, e);
         }
+    }
+
+    /**
+     * Drive the tool through the envelope AND through {@code execute()} on the same
+     * production-registered instance with the same arguments, and assert the two
+     * payloads are canonically identical — proving the ENTIRE wire/serialization
+     * path preserves every field, not merely a headline value. Returns the parsed
+     * envelope payload so the caller can additionally assert its authored
+     * ground-truth values.
+     *
+     * <p>This makes the per-tool envelope seam symmetric with its {@code execute()}
+     * oracle: the execute() test pins every field exactly, and this proves all of
+     * them survive the JSON-RPC envelope unchanged.
+     */
+    public JsonNode assertEnvelopeFidelity(String toolName, ObjectNode arguments) {
+        JsonNode envelopePayload = payload(toolName, arguments);
+        Tool tool = registry.getTool(toolName)
+            .orElseThrow(() -> new IllegalStateException("tool not registered: " + toolName));
+        ToolResponse direct = tool.execute(arguments.deepCopy());
+        JsonNode executePayload = objectMapper.valueToTree(direct);
+        assertEquals(
+            PayloadCanonicalizer.canonical(executePayload),
+            PayloadCanonicalizer.canonical(envelopePayload),
+            () -> "MCP envelope payload diverged from execute() for tool '" + toolName
+                + "'\n  execute = " + PayloadCanonicalizer.canonical(executePayload)
+                + "\n  envelope = " + PayloadCanonicalizer.canonical(envelopePayload));
+        return envelopePayload;
     }
 }

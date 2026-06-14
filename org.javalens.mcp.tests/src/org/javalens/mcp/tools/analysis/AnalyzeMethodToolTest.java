@@ -406,7 +406,7 @@ class AnalyzeMethodToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 14);
         args.put("column", 15);
-        JsonNode payload = envelope.payload("analyze_method", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("analyze_method", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "analyze_method failed through the envelope: " + payload);

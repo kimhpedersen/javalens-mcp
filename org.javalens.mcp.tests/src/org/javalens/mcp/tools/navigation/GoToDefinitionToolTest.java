@@ -417,7 +417,7 @@ class GoToDefinitionToolTest {
         args.put("filePath", userServicePath);
         args.put("line", 58);
         args.put("column", 27);
-        JsonNode payload = envelope.payload("go_to_definition", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("go_to_definition", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "go_to_definition failed through the envelope: " + payload);

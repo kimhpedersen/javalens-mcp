@@ -323,7 +323,7 @@ class FindMethodReferencesToolTest {
         args.put("line", 8);
         args.put("column", 25);
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_method_references", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_method_references", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_method_references failed through the envelope: " + payload);

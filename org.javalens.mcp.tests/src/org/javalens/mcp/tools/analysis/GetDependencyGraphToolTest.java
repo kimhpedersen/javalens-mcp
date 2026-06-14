@@ -285,7 +285,7 @@ class GetDependencyGraphToolTest {
         ObjectNode args = envelope.args();
         args.put("scope", "type");
         args.put("name", "com.example.service.UserService");
-        JsonNode payload = envelope.payload("get_dependency_graph", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_dependency_graph", args);
 
         assertTrue(payload.get("success").asBoolean(), () -> "failed: " + payload);
         JsonNode edges = payload.get("data").get("edges");

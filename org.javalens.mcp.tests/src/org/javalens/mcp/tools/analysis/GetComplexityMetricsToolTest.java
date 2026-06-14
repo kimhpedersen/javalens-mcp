@@ -346,7 +346,7 @@ class GetComplexityMetricsToolTest {
         ObjectNode args = envelope.args();
         args.put("filePath", boundariesPath);
         args.put("includeDetails", true);
-        JsonNode payload = envelope.payload("get_complexity_metrics", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_complexity_metrics", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_complexity_metrics failed through the envelope: " + payload);

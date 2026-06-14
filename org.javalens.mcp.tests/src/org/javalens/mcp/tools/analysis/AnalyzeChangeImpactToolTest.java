@@ -354,7 +354,7 @@ class AnalyzeChangeImpactToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 5);   // Calculator class declaration (0-based)
         args.put("column", 13);
-        JsonNode payload = envelope.payload("analyze_change_impact", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("analyze_change_impact", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "analyze_change_impact failed through the envelope: " + payload);

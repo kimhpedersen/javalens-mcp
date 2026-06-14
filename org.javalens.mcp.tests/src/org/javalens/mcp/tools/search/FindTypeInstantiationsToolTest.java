@@ -269,7 +269,7 @@ class FindTypeInstantiationsToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.Calculator");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_type_instantiations", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_type_instantiations", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_type_instantiations failed through the envelope: " + payload);

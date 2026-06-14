@@ -437,7 +437,7 @@ class SearchSymbolsToolTest {
         ObjectNode args = envelope.args();
         args.put("query", "Calculator");
         args.put("kind", "class");
-        JsonNode payload = envelope.payload("search_symbols", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("search_symbols", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "search_symbols failed through the envelope: " + payload);

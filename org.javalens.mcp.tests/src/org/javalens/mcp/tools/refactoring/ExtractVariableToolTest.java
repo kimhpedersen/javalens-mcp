@@ -398,7 +398,7 @@ class ExtractVariableToolTest {
         args.put("endLine", 31);
         args.put("endColumn", 44);
         args.put("variableName", "calculated");
-        JsonNode payload = envelope.payload("extract_variable", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("extract_variable", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "extract_variable failed through the envelope: " + payload);

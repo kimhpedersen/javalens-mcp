@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.JavaLensApplication;
+import org.javalens.mcp.fixtures.PayloadCanonicalizer;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.tools.ToolInvocationInputs;
 import org.javalens.mcp.tools.ToolRegistry;
@@ -37,10 +38,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * so the per-tool protocol rule can no longer silently lapse.
  */
 class ProtocolParityTest {
-
-    /** Time-varying fields legitimately differing between two calls; scrubbed before compare. */
-    private static final Set<String> VOLATILE_FIELDS =
-        Set.of("uptime", "startedAt", "startTime", "loadedAt");
 
     private static TestProjectHelper helper;
     private static ToolRegistry registry;
@@ -120,7 +117,7 @@ class ProtocolParityTest {
             // per-tool behavior tests validate against known fixtures.
             org.javalens.mcp.models.ToolResponse direct =
                 registry.getTool(name).orElseThrow().execute(args.deepCopy());
-            String expected = canonical(objectMapper.valueToTree(direct));
+            String expected = PayloadCanonicalizer.canonical(objectMapper.valueToTree(direct));
 
             // Envelope path: the same input through processMessage.
             ObjectNode call = objectMapper.createObjectNode();
@@ -143,7 +140,7 @@ class ProtocolParityTest {
                     divergent.put(name, "no content array");
                     continue;
                 }
-                String actual = canonical(objectMapper.readTree(content.get(0).path("text").asText()));
+                String actual = PayloadCanonicalizer.canonical(objectMapper.readTree(content.get(0).path("text").asText()));
                 if (!expected.equals(actual)) {
                     divergent.put(name, "envelope payload != execute() payload\n  execute=" + expected
                         + "\n  envelope=" + actual);
@@ -293,29 +290,4 @@ class ProtocolParityTest {
         return null;
     }
 
-    /**
-     * Canonical string form of a payload: object keys sorted, ARRAY ELEMENTS
-     * sorted (search-match ordering is not part of a tool's contract and
-     * legitimately differs between two invocations), volatile and null fields
-     * dropped. Two payloads with the same content compare equal regardless of
-     * field or element order; genuine content divergence still differs.
-     */
-    private static String canonical(JsonNode node) {
-        if (node.isObject()) {
-            java.util.TreeMap<String, String> entries = new java.util.TreeMap<>();
-            node.fields().forEachRemaining(e -> {
-                if (!VOLATILE_FIELDS.contains(e.getKey()) && !e.getValue().isNull()) {
-                    entries.put(e.getKey(), canonical(e.getValue()));
-                }
-            });
-            return entries.toString();
-        }
-        if (node.isArray()) {
-            java.util.List<String> elements = new java.util.ArrayList<>();
-            node.forEach(e -> elements.add(canonical(e)));
-            java.util.Collections.sort(elements);
-            return elements.toString();
-        }
-        return node.toString();
-    }
 }

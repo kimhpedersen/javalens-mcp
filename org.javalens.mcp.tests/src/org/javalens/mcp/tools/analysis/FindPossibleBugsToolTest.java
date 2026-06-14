@@ -294,7 +294,7 @@ class FindPossibleBugsToolTest {
         ObjectNode args = envelope.args();
         args.put("filePath", "src/main/java/com/example/NullDerefPatterns.java");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_possible_bugs", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_possible_bugs", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_possible_bugs failed through the envelope: " + payload);

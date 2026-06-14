@@ -217,7 +217,7 @@ class FindAnnotationUsagesToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.Marker");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_annotation_usages", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_annotation_usages", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_annotation_usages failed through the envelope: " + payload);

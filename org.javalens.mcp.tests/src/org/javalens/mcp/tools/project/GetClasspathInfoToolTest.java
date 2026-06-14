@@ -368,7 +368,7 @@ class GetClasspathInfoToolTest {
     @DisplayName("Through the real MCP envelope: jre.systemModules lists the full core JDK module set")
     @SuppressWarnings("unchecked")
     void envelope_systemModules_includeCoreSet() {
-        JsonNode payload = envelope.payload("get_classpath_info", envelope.args());
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_classpath_info", envelope.args());
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_classpath_info failed through the envelope: " + payload);

@@ -110,7 +110,7 @@ class ExtractSuperclassToolTest {
         args.put("line", 6);    // 0-based; "    public int liftable() {"
         args.put("column", 15);
         args.put("superclassName", "LiftBase");
-        JsonNode payload = envelope.payload("extract_superclass", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("extract_superclass", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "extract_superclass failed through the envelope: " + payload);

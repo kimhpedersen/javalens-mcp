@@ -256,7 +256,7 @@ class ValidateSyntaxToolTest {
     void envelope_inlineError_exactLine() {
         ObjectNode args = envelope.args();
         args.put("content", "class T {\n    int x = ;\n}");
-        JsonNode payload = envelope.payload("validate_syntax", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("validate_syntax", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "validate_syntax failed through the envelope: " + payload);

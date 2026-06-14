@@ -451,7 +451,7 @@ class ConvertAnonymousToLambdaToolTest {
         args.put("filePath", anonymousExamplesPath);
         args.put("line", 19);
         args.put("column", 28);
-        JsonNode payload = envelope.payload("convert_anonymous_to_lambda", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("convert_anonymous_to_lambda", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "convert_anonymous_to_lambda failed through the envelope: " + payload);

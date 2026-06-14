@@ -813,7 +813,7 @@ class ChangeMethodSignatureToolTest {
         params.add(p3);
         args.set("newParameters", params);
 
-        JsonNode payload = envelope.payload("change_method_signature", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("change_method_signature", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "change_method_signature failed through the envelope: " + payload);

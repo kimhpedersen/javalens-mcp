@@ -388,7 +388,7 @@ class OrganizeImportsToolTest {
     void envelope_refactoringTarget_unusedImportsExactSet() {
         ObjectNode args = envelope.args();
         args.put("filePath", refactoringTargetPath);
-        JsonNode payload = envelope.payload("organize_imports", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("organize_imports", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "organize_imports failed through the envelope: " + payload);

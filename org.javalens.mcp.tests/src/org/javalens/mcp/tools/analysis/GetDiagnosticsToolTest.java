@@ -215,7 +215,7 @@ class GetDiagnosticsToolTest {
         args.put("filePath", refactoringTargetPath);
         args.put("severity", "warning");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("get_diagnostics", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_diagnostics", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_diagnostics failed through the envelope: " + payload);

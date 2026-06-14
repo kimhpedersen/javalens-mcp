@@ -103,7 +103,7 @@ class ApplyCleanupToolTest {
         ObjectNode args = envelope.args();
         args.put("filePath", loopDemoPath);
         args.put("cleanupId", "convert_loops");
-        JsonNode payload = envelope.payload("apply_cleanup", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("apply_cleanup", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "apply_cleanup failed through the envelope: " + payload);

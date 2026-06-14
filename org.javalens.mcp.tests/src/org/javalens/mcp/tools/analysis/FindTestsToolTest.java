@@ -390,7 +390,7 @@ class FindTestsToolTest {
     @Test
     @DisplayName("Through the real MCP envelope: TestngSampleTest is framework=TestNG with scenarioOne/Two")
     void envelope_testng_exactMethods() {
-        JsonNode payload = envelope.payload("find_tests", envelope.args());
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_tests", envelope.args());
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_tests failed through the envelope: " + payload);

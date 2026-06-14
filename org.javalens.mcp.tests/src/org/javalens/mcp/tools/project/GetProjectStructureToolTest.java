@@ -342,7 +342,7 @@ class GetProjectStructureToolTest {
         EnvelopeHarness localEnvelope = new EnvelopeHarness(svc);
         ObjectNode args = localEnvelope.args();
         args.put("includeFiles", true);
-        JsonNode payload = localEnvelope.payload("get_project_structure", args);
+        JsonNode payload = localEnvelope.assertEnvelopeFidelity("get_project_structure", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_project_structure failed through the envelope: " + payload);

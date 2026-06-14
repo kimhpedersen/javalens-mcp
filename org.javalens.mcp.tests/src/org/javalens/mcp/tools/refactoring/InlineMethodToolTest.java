@@ -328,7 +328,7 @@ class InlineMethodToolTest {
         args.put("filePath", refactoringTargetPath);
         args.put("line", 64);   // `int doubled = doubleValue(x);`
         args.put("column", 22);
-        JsonNode payload = envelope.payload("inline_method", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("inline_method", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "inline_method failed through the envelope: " + payload);

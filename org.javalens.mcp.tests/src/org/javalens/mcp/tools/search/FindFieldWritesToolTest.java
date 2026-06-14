@@ -385,7 +385,7 @@ class FindFieldWritesToolTest {
         args.put("line", 6);    // 0-based: `    private int lastResult;`
         args.put("column", 16); // on `lastResult`
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_field_writes", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_field_writes", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_field_writes failed through the envelope: " + payload);

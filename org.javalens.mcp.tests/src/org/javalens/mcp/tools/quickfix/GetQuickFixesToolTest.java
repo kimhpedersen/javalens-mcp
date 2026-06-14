@@ -424,7 +424,7 @@ class GetQuickFixesToolTest {
         args.put("filePath", helper.getFixturePath("broken-symbols")
             .resolve("src/main/java/com/example/BrokenSymbols.java").toString());
         args.put("line", 29); // 0-based: `Date d = null;`
-        JsonNode payload = localEnvelope.payload("get_quick_fixes", args);
+        JsonNode payload = localEnvelope.assertEnvelopeFidelity("get_quick_fixes", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_quick_fixes failed through the envelope: " + payload);

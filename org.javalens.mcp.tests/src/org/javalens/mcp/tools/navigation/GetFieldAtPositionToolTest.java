@@ -283,7 +283,7 @@ class GetFieldAtPositionToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 6);
         args.put("column", 16);
-        JsonNode payload = envelope.payload("get_field_at_position", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_field_at_position", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_field_at_position failed through the envelope: " + payload);

@@ -271,7 +271,7 @@ class FindAffectedTestsToolTest {
         args.put("filePath", projectPath.resolve("src/main/java/com/reach/TestedOnly.java").toString());
         args.put("line", 8);    // 0-based: onlyFromTest
         args.put("column", 16);
-        JsonNode payload = envelope.payload("find_affected_tests", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_affected_tests", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_affected_tests failed through the envelope: " + payload);

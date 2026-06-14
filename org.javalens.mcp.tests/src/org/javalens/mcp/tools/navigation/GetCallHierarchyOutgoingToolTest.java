@@ -256,7 +256,7 @@ class GetCallHierarchyOutgoingToolTest {
         args.put("filePath", calc);
         args.put("line", 45);
         args.put("column", 15);
-        JsonNode payload = envelope.payload("get_call_hierarchy_outgoing", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_call_hierarchy_outgoing", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_call_hierarchy_outgoing failed through the envelope: " + payload);

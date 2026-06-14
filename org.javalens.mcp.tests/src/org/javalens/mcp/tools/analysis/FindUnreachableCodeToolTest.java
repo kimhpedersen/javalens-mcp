@@ -229,7 +229,7 @@ class FindUnreachableCodeToolTest {
     @Test
     @DisplayName("Through the real registerTools() wiring: the exact 5-member dead-code inventory survives the envelope")
     void envelope_defaultRoots_exactInventory() {
-        JsonNode payload = envelope.payload("find_unreachable_code", envelope.args());
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_unreachable_code", envelope.args());
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_unreachable_code failed through the envelope: " + payload);

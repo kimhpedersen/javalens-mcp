@@ -323,7 +323,7 @@ class FindNamingViolationsToolTest {
     void envelope_badFieldName_exactLine() {
         ObjectNode args = envelope.args();
         args.put("filePath", "src/main/java/com/example/DiAndReflectionPatterns.java");
-        JsonNode payload = envelope.payload("find_naming_violations", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_naming_violations", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_naming_violations failed through the envelope: " + payload);

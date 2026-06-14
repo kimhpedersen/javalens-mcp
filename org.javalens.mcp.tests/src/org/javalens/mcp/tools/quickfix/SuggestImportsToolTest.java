@@ -349,7 +349,7 @@ class SuggestImportsToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "List");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("suggest_imports", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("suggest_imports", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "suggest_imports failed through the envelope: " + payload);

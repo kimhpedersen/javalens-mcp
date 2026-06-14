@@ -373,7 +373,7 @@ class AnalyzeControlFlowToolTest {
         args.put("filePath", cfp());
         args.put("line", 9);    // 0-based: simpleLinear
         args.put("column", 16);
-        JsonNode payload = envelope.payload("analyze_control_flow", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("analyze_control_flow", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "analyze_control_flow failed through the envelope: " + payload);

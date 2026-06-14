@@ -249,7 +249,7 @@ class FindThrowsDeclarationsToolTest {
         ObjectNode args = envelope.args();
         args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
-        JsonNode payload = envelope.payload("find_throws_declarations", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("find_throws_declarations", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_throws_declarations failed through the envelope: " + payload);

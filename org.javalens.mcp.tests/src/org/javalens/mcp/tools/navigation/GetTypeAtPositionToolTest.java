@@ -338,7 +338,7 @@ class GetTypeAtPositionToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 5);
         args.put("column", 13);
-        JsonNode payload = envelope.payload("get_type_at_position", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_type_at_position", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "get_type_at_position failed through the envelope: " + payload);

@@ -415,7 +415,7 @@ class ExtractMethodToolTest {
         args.put("endLine", 47);
         args.put("endColumn", 9);
         args.put("methodName", "calculateSum");
-        JsonNode payload = envelope.payload("extract_method", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("extract_method", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "extract_method failed through the envelope: " + payload);

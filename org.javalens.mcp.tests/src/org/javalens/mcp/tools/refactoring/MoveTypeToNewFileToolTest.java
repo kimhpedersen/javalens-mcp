@@ -129,7 +129,7 @@ class MoveTypeToNewFileToolTest {
         args.put("filePath", holderPath);
         args.put("line", 6);
         args.put("column", 24);
-        JsonNode payload = envelope.payload("move_type_to_new_file", args);
+        JsonNode payload = envelope.assertEnvelopeFidelity("move_type_to_new_file", args);
 
         assertTrue(payload.get("success").asBoolean(),
             () -> "move_type_to_new_file failed through the envelope: " + payload);
