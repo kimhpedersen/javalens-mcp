@@ -77,9 +77,19 @@ class MoveTypeToNewFileToolTest {
         List<Map<String, String>> createdFiles = (List<Map<String, String>>) data.get("createdFiles");
         assertEquals(1, createdFiles.size(),
             "exactly one new file for the extracted type; got: " + createdFiles);
-        String content = createdFiles.get(0).get("content");
-        assertTrue(content.contains("class NestedPayload") && content.contains("weight"),
-            "new file must declare NestedPayload with its members; got:\n" + content);
+        assertEquals("src/main/java/com/example/ipo/NestedPayload.java",
+            createdFiles.get(0).get("filePath").replace('\\', '/'));
+        // Exact moved-type file (CRLF-normalized); the body keeps the source's 4-space indent.
+        String content = createdFiles.get(0).get("content").replace("\r\n", "\n");
+        assertEquals(
+            "package com.example.ipo;\n"
+            + "\n"
+            + "public class NestedPayload {\n"
+            + "    public int weight() {\n"
+            + "        return 3;\n"
+            + "    }\n"
+            + "}",
+            content);
 
         Map<String, List<Map<String, Object>>> editsByFile =
             (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
@@ -88,8 +98,8 @@ class MoveTypeToNewFileToolTest {
             .flatMap(e -> e.getValue().stream())
             .map(e -> String.valueOf(e.get("newText")))
             .reduce("", String::concat);
-        assertFalse(holderNew.contains("class NestedPayload"),
-            "NestHolder must lose the nested declaration; got: " + holderNew);
+        // The lone NestHolder edit deletes the nested declaration -> empty replacement text.
+        assertEquals("", holderNew);
     }
 
     @Test
@@ -103,6 +113,8 @@ class MoveTypeToNewFileToolTest {
         assertFalse(r.isSuccess(),
             "a top-level type must be refused; got: " + r.getData());
         assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertEquals("Invalid parameter 'type': Type is already top-level; "
+            + "only member (nested) types can be moved out", r.getError().getMessage());
     }
 
     @Test
@@ -112,12 +124,18 @@ class MoveTypeToNewFileToolTest {
         wrongPos.put("filePath", holderPath);
         wrongPos.put("line", 0);
         wrongPos.put("column", 0);
-        assertFalse(tool.execute(wrongPos).isSuccess());
+        ToolResponse wrongPosResp = tool.execute(wrongPos);
+        assertFalse(wrongPosResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, wrongPosResp.getError().getCode());
+        assertEquals("Invalid parameter 'position': No type at position", wrongPosResp.getError().getMessage());
 
         ObjectNode noFile = mapper.createObjectNode();
         noFile.put("line", 6);
         noFile.put("column", 24);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse noFileResp = tool.execute(noFile);
+        assertFalse(noFileResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFileResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", noFileResp.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
