@@ -59,19 +59,40 @@ class FindCastsToolTest {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
         args.put("maxResults", 1);
-        assertTrue(getCasts(getData(tool.execute(args))).size() <= 1);
+        // Calculator has exactly 1 cast, so maxResults=1 returns exactly 1.
+        assertEquals(1, getCasts(getData(tool.execute(args))).size());
     }
 
-    @Test @DisplayName("requires typeName")
+    @Test @DisplayName("missing typeName is rejected with INVALID_PARAMETER")
     void requiresTypeName() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain typeName is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles unknown type")
+    @Test @DisplayName("unknown type is rejected with SYMBOL_NOT_FOUND naming the type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.nonexistent.X");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("com.nonexistent.X"),
+            "message must name the unresolved type; got: " + r.getError().getMessage());
+    }
+
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", -1);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains(">= 0"),
+            "message must explain the bound; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -100,7 +121,7 @@ class FindCastsToolTest {
     }
 
     @Test
-    @DisplayName("Cast entry includes filePath, line, column, offset, length")
+    @DisplayName("The single (Calculator) cast entry has exact filePath/line/column/length/context")
     void castEntry_includesFullLocation() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
@@ -109,17 +130,19 @@ class FindCastsToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         List<Map<String, Object>> casts = castsOf(r);
-        assertFalse(casts.isEmpty());
-        for (Map<String, Object> c : casts) {
-            String fp = ((String) c.get("filePath")).replace('\\', '/');
-            assertTrue(fp.endsWith("SearchPatterns.java"),
-                "(Calculator) cast must come from SearchPatterns.java; got: " + fp);
-            assertTrue(((Number) c.get("line")).intValue() >= 0, "line >= 0; got: " + c);
-            assertTrue(((Number) c.get("column")).intValue() >= 0, "column >= 0; got: " + c);
-            assertTrue(((Number) c.get("offset")).intValue() >= 0, "offset >= 0; got: " + c);
-            assertTrue(((Number) c.get("length")).intValue() > 0,
-                "length > 0 (a cast spans at least 1 char); got: " + c);
-        }
+        assertEquals(1, casts.size(), "exactly one (Calculator) cast; got: " + casts);
+        Map<String, Object> c = casts.get(0);
+        // SearchPatterns.java:80 (0-based 79) `Calculator calc = (Calculator) obj;` — the
+        // CAST type "Calculator" inside (Calculator) starts at 0-based column 31, length 10.
+        // (line+column+length+context fully specify the location; offset is the absolute
+        // char position, a redundant derivation of those, so it is not separately hard-pinned.)
+        assertTrue(((String) c.get("filePath")).replace('\\', '/').endsWith("SearchPatterns.java"),
+            "(Calculator) cast must come from SearchPatterns.java; got: " + c);
+        assertEquals(79, ((Number) c.get("line")).intValue(), "cast 0-based line; got: " + c);
+        assertEquals(31, ((Number) c.get("column")).intValue(), "cast type 0-based column; got: " + c);
+        assertEquals(10, ((Number) c.get("length")).intValue(), "\"Calculator\".length(); got: " + c);
+        assertEquals("Calculator calc = (Calculator) obj;", c.get("context"),
+            "exact trimmed source line; got: " + c.get("context"));
     }
 
     @Test

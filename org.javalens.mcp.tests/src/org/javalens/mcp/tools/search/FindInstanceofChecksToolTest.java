@@ -58,19 +58,40 @@ class FindInstanceofChecksToolTest {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
         args.put("maxResults", 1);
-        assertTrue(getChecks(getData(tool.execute(args))).size() <= 1);
+        // Calculator has exactly 2 instanceof checks; maxResults=1 caps to exactly 1.
+        assertEquals(1, getChecks(getData(tool.execute(args))).size());
     }
 
-    @Test @DisplayName("requires typeName")
+    @Test @DisplayName("missing typeName is rejected with INVALID_PARAMETER")
     void requiresTypeName() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain typeName is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles unknown type")
+    @Test @DisplayName("unknown type is rejected with SYMBOL_NOT_FOUND naming the type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.nonexistent.X");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("com.nonexistent.X"),
+            "message must name the unresolved type; got: " + r.getError().getMessage());
+    }
+
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", -1);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains(">= 0"),
+            "message must explain the bound; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -99,7 +120,7 @@ class FindInstanceofChecksToolTest {
     }
 
     @Test
-    @DisplayName("Check entry includes filePath, line, column, offset, length")
+    @DisplayName("Both instanceof Calculator entries have exact column/length/context on lines {78,99}")
     void checkEntry_includesFullLocation() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
@@ -108,16 +129,20 @@ class FindInstanceofChecksToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         List<Map<String, Object>> checks = checksOf(r);
-        assertFalse(checks.isEmpty());
+        assertEquals(2, checks.size(), "exactly two instanceof Calculator checks; got: " + checks);
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
         for (Map<String, Object> c : checks) {
-            String fp = ((String) c.get("filePath")).replace('\\', '/');
-            assertTrue(fp.endsWith("SearchPatterns.java"),
-                "instanceof Calculator must come from SearchPatterns.java; got: " + fp);
-            assertTrue(((Number) c.get("line")).intValue() >= 0, "line >= 0; got: " + c);
-            assertTrue(((Number) c.get("column")).intValue() >= 0, "column >= 0; got: " + c);
-            assertTrue(((Number) c.get("offset")).intValue() >= 0, "offset >= 0; got: " + c);
-            assertTrue(((Number) c.get("length")).intValue() > 0, "length > 0; got: " + c);
+            lines.add(((Number) c.get("line")).intValue());
+            // Both sites are `if (obj instanceof Calculator) {` at 8-space indent: the type
+            // name "Calculator" starts at 0-based column 27, length 10.
+            assertTrue(((String) c.get("filePath")).replace('\\', '/').endsWith("SearchPatterns.java"),
+                "instanceof Calculator must come from SearchPatterns.java; got: " + c);
+            assertEquals(27, ((Number) c.get("column")).intValue(), "type 0-based column; got: " + c);
+            assertEquals(10, ((Number) c.get("length")).intValue(), "\"Calculator\".length(); got: " + c);
+            assertEquals("if (obj instanceof Calculator) {", c.get("context"),
+                "exact trimmed source line; got: " + c.get("context"));
         }
+        assertEquals(java.util.Set.of(78, 99), lines, "the two 0-based lines; got: " + lines);
     }
 
     @Test
