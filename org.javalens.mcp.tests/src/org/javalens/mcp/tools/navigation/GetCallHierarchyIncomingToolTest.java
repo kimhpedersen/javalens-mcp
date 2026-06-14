@@ -66,42 +66,53 @@ class GetCallHierarchyIncomingToolTest {
             "callers must be a List; got: " + data.get("callers"));
     }
 
-    @Test @DisplayName("supports maxResults parameter")
+    @Test @DisplayName("maxResults caps add's 4 callers to exactly 2 and flags truncation")
     void supportsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", 14);
         args.put("column", 15);
-        args.put("maxResults", 5);
+        args.put("maxResults", 2);
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         @SuppressWarnings("unchecked")
         List<?> callers = (List<?>) getData(r).get("callers");
-        assertTrue(callers.size() <= 5);
+        assertEquals(2, callers.size(), "maxResults=2 caps add's 4 callers to exactly 2");
+        assertEquals(4, ((Number) getData(r).get("totalCallers")).intValue(),
+            "totalCallers is the pre-clip count");
+        assertEquals(Boolean.TRUE, r.getMeta().getTruncated());
     }
 
-    @Test @DisplayName("requires filePath, line, column parameters")
+    @Test @DisplayName("missing filePath / line rejected with INVALID_PARAMETER")
     void requiresParameters() {
         ObjectNode noFile = objectMapper.createObjectNode();
         noFile.put("line", 14);
         noFile.put("column", 15);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse rNoFile = tool.execute(noFile);
+        assertFalse(rNoFile.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rNoFile.getError().getCode());
 
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", calculatorPath);
         noLine.put("column", 15);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse rNoLine = tool.execute(noLine);
+        assertFalse(rNoLine.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rNoLine.getError().getCode());
     }
 
-    @Test @DisplayName("handles non-method position gracefully")
+    @Test @DisplayName("non-method position (class decl) rejected with INVALID_PARAMETER")
     void handlesNonMethodPosition() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", 5);  // Class declaration, not method
         args.put("column", 13);
 
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("method"),
+            "message must explain the position is not a method; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -128,10 +139,10 @@ class GetCallHierarchyIncomingToolTest {
             .map(s -> s.substring(s.lastIndexOf('/') + 1))
             .collect(java.util.stream.Collectors.toSet());
 
-        assertTrue(callerFiles.contains("UserService.java"),
-            "UserService.calculateTotal calls Calculator.add — must appear; got: " + callerFiles);
-        assertTrue(callerFiles.contains("SearchPatterns.java"),
-            "SearchPatterns.createObjects calls Calculator.add — must appear; got: " + callerFiles);
+        // Calculator.add's 4 callers span exactly 3 files: SearchPatterns.java (×2),
+        // UserService.java, SampleTest.java.
+        assertEquals(java.util.Set.of("SearchPatterns.java", "UserService.java", "SampleTest.java"),
+            callerFiles, "exact caller file set; got: " + callerFiles);
     }
 
     // ========== Behavior-matrix coverage ==========
