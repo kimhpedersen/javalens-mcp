@@ -63,37 +63,64 @@ class FindMethodReferencesToolTest {
         assertNotNull(data.get("totalCount"));
     }
 
-    @Test @DisplayName("requires filePath")
+    @Test @DisplayName("missing filePath is rejected with INVALID_PARAMETER")
     void requiresFilePath() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("line", 10);
         args.put("column", 5);
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain filePath is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("requires line")
+    @Test @DisplayName("missing line is rejected with INVALID_PARAMETER")
     void requiresLine() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", searchPatternsPath);
         args.put("column", 5);
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain line/column are required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("requires column")
+    @Test @DisplayName("missing column is rejected with INVALID_PARAMETER")
     void requiresColumn() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", searchPatternsPath);
         args.put("line", 10);
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain line/column are required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles non-existent file")
+    @Test @DisplayName("non-existent file resolves no element: SYMBOL_NOT_FOUND")
     void handlesNonExistentFile() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "/nonexistent/File.java");
         args.put("line", 10);
         args.put("column", 5);
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        // No fileNotFound path: a missing file yields no element at the position.
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+    }
+
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", searchPatternsPath);
+        args.put("line", 10);
+        args.put("column", 5);
+        args.put("maxResults", -1);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
     }
 
     // ========== Semantic-grade tests ==========
@@ -232,12 +259,9 @@ class FindMethodReferencesToolTest {
             "Position on constructor must resolve; got: " +
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("locations");
-        assertNotNull(refs);
-        // MethodRefUser uses `MethodRefTarget::new` once. The tool's method-reference
-        // search may or may not match constructors depending on JDT semantics — if
-        // implemented correctly, at least one match should appear.
-        assertTrue(refs.size() >= 1,
-            "MethodRefTarget::new must surface as a method reference; got: " + refs);
+        // MethodRefUser uses `MethodRefTarget::new` exactly once (a CreationReference).
+        assertEquals(1, refs.size(),
+            "MethodRefTarget::new must surface as exactly one method reference; got: " + refs);
     }
 
     @Test
@@ -249,13 +273,13 @@ class FindMethodReferencesToolTest {
         ToolResponse r = tool.execute(argsAtIdentifier(tgt, "formatId"));
         assertTrue(r.isSuccess());
         List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("locations");
-        assertFalse(refs.isEmpty());
+        // MethodRefTarget::formatId is consumed exactly once (MethodRefUser line 15, col 57).
+        assertEquals(1, refs.size(), "exactly one formatId reference; got: " + refs);
         Map<String, Object> ref = refs.get(0);
-        String fp = (String) ref.get("filePath");
-        assertNotNull(fp, "filePath missing: " + ref);
-        assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + ref);
-        assertTrue(((Number) ref.get("line")).intValue() >= 0, "line >= 0; got: " + ref);
-        assertTrue(((Number) ref.get("column")).intValue() >= 0, "column >= 0; got: " + ref);
+        assertTrue(((String) ref.get("filePath")).replace('\\', '/').endsWith("MethodRefUser.java"),
+            "formatId reference is in MethodRefUser.java; got: " + ref);
+        assertEquals(15, ((Number) ref.get("line")).intValue(), "0-based reference line; got: " + ref);
+        assertEquals(57, ((Number) ref.get("column")).intValue(), "0-based reference column; got: " + ref);
     }
 
     @Test
@@ -279,15 +303,18 @@ class FindMethodReferencesToolTest {
             "Position on SuperMethodParent.greet must resolve; got: " +
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("locations");
-        assertNotNull(refs);
-        boolean hasChildSite = refs.stream()
-            .map(ref -> (String) ref.get("filePath"))
-            .filter(java.util.Objects::nonNull)
-            .map(p -> p.replace('\\', '/'))
-            .anyMatch(p -> p.endsWith("SuperMethodChild.java"));
-        assertTrue(hasChildSite,
-            "super::greet in SuperMethodChild.greetReference must be reported as a method " +
-                "reference of SuperMethodParent.greet; got: " + refs);
+        // find_method_references finds ONLY method-reference EXPRESSIONS (`::`), per its
+        // contract — not invocations. So super::greet (SuperMethodReference, line 21) is
+        // reported; super.greet(name) (the SuperMethodInvocation on line 17) is correctly
+        // excluded. This pins both the inclusion and the isolation.
+        List<Map<String, Object>> childRefs = refs.stream()
+            .filter(ref -> ((String) ref.get("filePath")).replace('\\', '/').endsWith("SuperMethodChild.java"))
+            .toList();
+        assertEquals(1, childRefs.size(), "exactly the super::greet expression; got: " + refs);
+        Map<String, Object> superRef = childRefs.get(0);
+        assertEquals(21, ((Number) superRef.get("line")).intValue(), "super::greet 0-based line; got: " + superRef);
+        assertEquals(22, ((Number) superRef.get("column")).intValue(), "super::greet 0-based column; got: " + superRef);
+        assertEquals("return super::greet;", superRef.get("context"), "exact context; got: " + superRef);
     }
 
     @Test
@@ -314,7 +341,7 @@ class FindMethodReferencesToolTest {
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
 
     @Test
-    @DisplayName("Through the real MCP envelope: formatId reference at MethodRefUser line 15, column 40")
+    @DisplayName("Through the real MCP envelope: formatId reference at MethodRefUser line 15, column 57")
     void envelope_formatId_exactLocation() {
         String targetPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
