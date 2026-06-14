@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeControlFlowTool;
@@ -22,6 +24,7 @@ class AnalyzeControlFlowToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private AnalyzeControlFlowTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String patternsPath;
 
@@ -29,6 +32,7 @@ class AnalyzeControlFlowToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new AnalyzeControlFlowTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         patternsPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/DiAndReflectionPatterns.java").toString();
@@ -358,5 +362,27 @@ class AnalyzeControlFlowToolTest {
         // Either way, the count must be > 0 — confirm switch-expression cases are seen.
         assertTrue(branches >= 1,
             "Guarded-pattern switch expression must produce at least one branch; got: " + branches);
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: simpleLinear reports the exact all-zero-except-one-return profile")
+    void envelope_simpleLinear_exactProfile() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", cfp());
+        args.put("line", 9);    // 0-based: simpleLinear
+        args.put("column", 16);
+        JsonNode payload = envelope.payload("analyze_control_flow", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "analyze_control_flow failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("simpleLinear", data.get("method").asText());
+        assertEquals(0, data.get("branches").asInt(), "no branches through the envelope");
+        assertEquals(0, data.get("loops").get("total").asInt(), "no loops through the envelope");
+        assertEquals(1, data.get("returnPoints").size(), "exactly one return through the envelope");
+        assertEquals(0, data.get("throwPoints").size(), "no throws through the envelope");
+        assertEquals(0, data.get("maxNestingDepth").asInt(), "zero nesting through the envelope");
     }
 }

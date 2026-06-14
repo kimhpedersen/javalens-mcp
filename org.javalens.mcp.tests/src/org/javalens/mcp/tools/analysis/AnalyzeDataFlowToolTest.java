@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeDataFlowTool;
@@ -339,5 +341,36 @@ class AnalyzeDataFlowToolTest {
             "`this.counter += 5` is exactly one write; got: " + counter);
         assertEquals(1, ((Number) counter.get("readCount")).intValue(),
             "`this.counter += 5` is exactly one read; got: " + counter);
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: followCalls surfaces the interprocedural null flow to text.length()")
+    void envelope_followCalls_nullFlow() throws Exception {
+        // The headline interprocedural capability (#23) is exercised on flow-maven; build a
+        // local harness over the real registerTools() wiring on that fixture.
+        JdtServiceImpl flowService = helper.loadProject("flow-maven");
+        EnvelopeHarness flowEnvelope = new EnvelopeHarness(flowService);
+        ObjectNode args = flowEnvelope.args();
+        args.put("filePath", helper.getFixturePath("flow-maven")
+            .resolve("src/main/java/com/flow/NullFlow.java").toString());
+        args.put("line", 4);
+        args.put("column", 19);
+        args.put("followCalls", true);
+        JsonNode payload = flowEnvelope.payload("analyze_data_flow", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "analyze_data_flow failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertTrue(data.get("followCalls").asBoolean());
+        JsonNode flows = data.get("interproceduralFlows");
+        assertEquals(1, flows.size(), () -> "exactly one interprocedural flow through the envelope; got: " + flows);
+        JsonNode flow = flows.get(0);
+        assertEquals("null", flow.get("fact").asText());
+        assertEquals("value", flow.get("sourceVariable").asText());
+        assertEquals("dereference", flow.get("sink").get("kind").asText());
+        assertEquals("text.length()", flow.get("sink").get("expression").asText(),
+            "the null flow's dereference sink must survive the real-wiring envelope");
     }
 }
