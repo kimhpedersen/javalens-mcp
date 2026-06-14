@@ -44,12 +44,11 @@ class AnalyzeControlFlowToolTest {
     // ========== Control Flow Detection Tests ==========
 
     @Test
-    @DisplayName("should analyze control flow of a method with branches and loops")
+    @DisplayName("controlFlowExample: exact branch/loop/return/throw/try/nesting profile")
     void analyzesControlFlow() {
-        // controlFlowExample method has if, for, while, try-catch, throw, return
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
-        args.put("line", 42);  // controlFlowExample method
+        args.put("line", 42);  // controlFlowExample (0-based); col 18 = method name
         args.put("column", 18);
 
         ToolResponse response = tool.execute(args);
@@ -58,25 +57,39 @@ class AnalyzeControlFlowToolTest {
         Map<String, Object> data = getData(response);
 
         assertEquals("controlFlowExample", data.get("method"));
-        assertTrue((int) data.get("branches") > 0, "Should detect branches");
+        // 4 if-conditions (value<0, value==0, flag, i%2==0); no switch/ternary.
+        assertEquals(4, ((Number) data.get("branches")).intValue());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> loops = (Map<String, Object>) data.get("loops");
-        assertTrue((int) loops.get("total") > 0, "Should detect loops");
+        assertEquals(2, ((Number) loops.get("total")).intValue());
+        assertEquals(1, ((Number) loops.get("for")).intValue());
+        assertEquals(1, ((Number) loops.get("while")).intValue());
+        assertEquals(0, ((Number) loops.get("enhancedFor")).intValue());
+        assertEquals(0, ((Number) loops.get("doWhile")).intValue());
 
+        // return "zero" (0-based line 48), return result (0-based line 71).
         @SuppressWarnings("unchecked")
-        List<?> returnPoints = (List<?>) data.get("returnPoints");
-        assertTrue(returnPoints.size() > 0, "Should detect return statements");
+        List<Map<String, Object>> returnPoints = (List<Map<String, Object>>) data.get("returnPoints");
+        assertEquals(List.of(48, 71),
+            returnPoints.stream().map(p -> ((Number) p.get("line")).intValue()).toList());
 
+        // single throw of IllegalArgumentException at 0-based line 44.
         @SuppressWarnings("unchecked")
-        List<?> throwPoints = (List<?>) data.get("throwPoints");
-        assertTrue(throwPoints.size() > 0, "Should detect throw statements");
+        List<Map<String, Object>> throwPoints = (List<Map<String, Object>>) data.get("throwPoints");
+        assertEquals(1, throwPoints.size());
+        assertEquals(44, ((Number) throwPoints.get(0).get("line")).intValue());
+        assertEquals("new IllegalArgumentException(\"Negative value\")",
+            throwPoints.get(0).get("expression"));
 
-        assertTrue((int) data.get("maxNestingDepth") > 0, "Should report nesting depth");
+        assertEquals(0, ((Number) data.get("breakStatements")).intValue());
+        assertEquals(0, ((Number) data.get("continueStatements")).intValue());
+        // if(flag) -> for -> if(i%2==0) is the deepest chain.
+        assertEquals(3, ((Number) data.get("maxNestingDepth")).intValue());
     }
 
     @Test
-    @DisplayName("should detect try-catch blocks with caught types")
+    @DisplayName("controlFlowExample try-catch: exact line, caughtTypes [Exception], no finally")
     void detectsTryCatchBlocks() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
@@ -88,22 +101,18 @@ class AnalyzeControlFlowToolTest {
         assertTrue(response.isSuccess());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> tryCatchBlocks = (List<Map<String, Object>>) getData(response).get("tryCatchBlocks");
-        assertFalse(tryCatchBlocks.isEmpty(), "Should detect try-catch blocks");
-
-        Map<String, Object> firstBlock = tryCatchBlocks.get(0);
-        assertTrue(((Number) firstBlock.get("line")).intValue() >= 0,
-            "line >= 0; got: " + firstBlock);
-        @SuppressWarnings("unchecked")
-        List<String> caughtTypes = (List<String>) firstBlock.get("caughtTypes");
-        assertNotNull(caughtTypes, "Should include caught exception types");
-        assertFalse(caughtTypes.isEmpty(),
-            "A try-catch block must catch at least one type; got: " + firstBlock);
+        assertEquals(1, tryCatchBlocks.size());
+        Map<String, Object> block = tryCatchBlocks.get(0);
+        // try at 0-based line 60, catch (Exception e), no finally clause.
+        assertEquals(60, ((Number) block.get("line")).intValue());
+        assertEquals(List.of("Exception"), block.get("caughtTypes"));
+        assertEquals(false, block.get("hasFinally"));
     }
 
     // ========== Error Handling Tests ==========
 
     @Test
-    @DisplayName("should return error when filePath is missing")
+    @DisplayName("missing filePath is an exact INVALID_PARAMETER error")
     void returnsErrorForMissingFilePath() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("line", 5);
@@ -112,10 +121,13 @@ class AnalyzeControlFlowToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing",
+            response.getError().getMessage());
     }
 
     @Test
-    @DisplayName("should return error for non-method position")
+    @DisplayName("non-method position (package declaration) -> exact SYMBOL_NOT_FOUND")
     void returnsErrorForNonMethodPosition() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", patternsPath);
@@ -124,8 +136,10 @@ class AnalyzeControlFlowToolTest {
 
         ToolResponse response = tool.execute(args);
 
-        // Should handle gracefully — either error or success with no method
-        assertNotNull(response);
+        assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
+        assertEquals("Symbol not found: No method found at " + patternsPath + ":0:0",
+            response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests (ControlFlowPatterns fixture) ==========
@@ -254,13 +268,18 @@ class AnalyzeControlFlowToolTest {
     }
 
     @Test
-    @DisplayName("ternary: ConditionalExpression contributes a branch")
+    @DisplayName("ternary: exactly 1 branch (ConditionalExpression), 1 return, 0 nesting")
     void ternary_isBranch() {
         // 1-based line 26 → 0-based 25
         ToolResponse r = tool.execute(methodArgs(cfp(), 25, 16));
         assertTrue(r.isSuccess());
-        assertTrue(((Number) getData(r).get("branches")).intValue() >= 1,
-            "Ternary `x >= 0 ? x : -x` must register as a branch");
+        Map<String, Object> data = getData(r);
+        assertEquals("ternary", data.get("method"));
+        assertEquals(1, ((Number) data.get("branches")).intValue(),
+            "`x >= 0 ? x : -x` is exactly one ConditionalExpression branch");
+        assertEquals(1, ((List<?>) data.get("returnPoints")).size());
+        assertEquals(0, ((Number) data.get("maxNestingDepth")).intValue(),
+            "a ternary does not increase nesting depth");
     }
 
     @Test
@@ -274,17 +293,12 @@ class AnalyzeControlFlowToolTest {
         assertEquals(1, blocks.size(), "multiCatch has exactly one try-catch block");
         @SuppressWarnings("unchecked")
         List<String> caught = (List<String>) blocks.get(0).get("caughtTypes");
-        // JDT represents `A | B` as a UnionType.toString() like `NumberFormatException | IOException`
-        // — captured as a single entry. Either format is OK; assert both names are present.
-        String all = String.join(" ", caught);
-        assertTrue(all.contains("NumberFormatException"),
-            "caughtTypes must mention NumberFormatException; got: " + caught);
-        assertTrue(all.contains("IOException"),
-            "caughtTypes must mention IOException; got: " + caught);
+        // JDT renders `A | B` as a single UnionType.toString() entry joined with "|" (no spaces).
+        assertEquals(List.of("NumberFormatException|IOException"), caught);
     }
 
     @Test
-    @DisplayName("nestedTry: 2 tryCatchBlocks; maxNestingDepth >= 2")
+    @DisplayName("nestedTry: 2 tryCatchBlocks; maxNestingDepth exactly 2")
     void nestedTry_blockCountAndDepth() {
         // 1-based line 129 → 0-based 128
         ToolResponse r = tool.execute(methodArgs(cfp(), 128, 16));
@@ -293,18 +307,18 @@ class AnalyzeControlFlowToolTest {
         @SuppressWarnings("unchecked")
         List<?> blocks = (List<?>) data.get("tryCatchBlocks");
         assertEquals(2, blocks.size(), "nestedTry has two try-catch blocks");
-        assertTrue(((Number) data.get("maxNestingDepth")).intValue() >= 2,
-            "Nested try must produce nesting depth >= 2");
+        assertEquals(2, ((Number) data.get("maxNestingDepth")).intValue(),
+            "outer try -> inner try is exactly depth 2");
     }
 
     @Test
-    @DisplayName("deeplyNested: maxNestingDepth >= 4 (if -> for -> if -> while)")
+    @DisplayName("deeplyNested: maxNestingDepth exactly 4 (if -> for -> if -> while)")
     void deeplyNested_depth() {
         // 1-based line 147 → 0-based 146
         ToolResponse r = tool.execute(methodArgs(cfp(), 146, 16));
         assertTrue(r.isSuccess());
-        assertTrue(((Number) getData(r).get("maxNestingDepth")).intValue() >= 4,
-            "deeplyNested must produce maxNestingDepth >= 4");
+        assertEquals(4, ((Number) getData(r).get("maxNestingDepth")).intValue(),
+            "if -> for -> if -> while is exactly depth 4");
     }
 
     @Test
@@ -356,12 +370,14 @@ class AnalyzeControlFlowToolTest {
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         Map<String, Object> data = getData(r);
         assertEquals("classify", data.get("method"));
-        int branches = ((Number) data.get("branches")).intValue();
-        // The contract is "non-default cases". Either the tool counts each Integer-when
-        // case as a separate branch (3) or guards collapse to a single Integer branch (1).
-        // Either way, the count must be > 0 — confirm switch-expression cases are seen.
-        assertTrue(branches >= 1,
-            "Guarded-pattern switch expression must produce at least one branch; got: " + branches);
+        // All 4 case labels count as branches: the three `Integer ... when`/plain-Integer
+        // cases plus the merged `case null, default` label, whose SwitchCase.isDefault()
+        // is false (the default flag is not set on a fused null+default label in this JDT),
+        // so it is NOT excluded.
+        assertEquals(4, ((Number) data.get("branches")).intValue(),
+            "classify has 4 non-default switch-expression case labels; got: " + data.get("branches"));
+        assertEquals(1, ((List<?>) data.get("returnPoints")).size(),
+            "classify is a single `return switch(...)`; got: " + data.get("returnPoints"));
     }
 
     // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
