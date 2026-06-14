@@ -42,7 +42,7 @@ class GetJavadocToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("parses javadoc with complete response including tags")
+    @Test @DisplayName("Calculator.add: symbol add, kind method, documented")
     void parsesJavadocComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -54,20 +54,11 @@ class GetJavadocToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("add", data.get("symbol"));
-        String kind = (String) data.get("kind");
-        assertNotNull(kind, "kind missing");
-        assertFalse(kind.isBlank(), "kind non-blank; got: " + data);
-        assertTrue(data.get("hasDocumentation") instanceof Boolean,
-            "hasDocumentation must be Boolean; got: " + data);
-
-        if ((Boolean) data.get("hasDocumentation")) {
-            String summary = (String) data.get("summary");
-            assertNotNull(summary, "documented symbol must have summary");
-            assertFalse(summary.isBlank(), "summary non-blank; got: " + data);
-        }
+        assertEquals("method", data.get("kind"));
+        assertEquals(true, data.get("hasDocumentation"));
     }
 
-    @Test @DisplayName("returns hasDocumentation false for undocumented symbol")
+    @Test @DisplayName("undocumented field lastResult: kind field, hasDocumentation false")
     void handlesUndocumentedSymbol() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -78,26 +69,33 @@ class GetJavadocToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertTrue(data.get("hasDocumentation") instanceof Boolean,
-            "hasDocumentation must be Boolean; got: " + data);
+        assertEquals("lastResult", data.get("symbol"));
+        assertEquals("field", data.get("kind"));
         assertEquals(false, data.get("hasDocumentation"),
             "lastResult has no Javadoc; hasDocumentation must be false");
     }
 
-    @Test @DisplayName("requires filePath, line, column parameters")
+    @Test @DisplayName("missing filePath/line each yield exact INVALID_PARAMETER")
     void requiresParameters() {
         ObjectNode noFile = objectMapper.createObjectNode();
         noFile.put("line", 14);
         noFile.put("column", 15);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse noFileResp = tool.execute(noFile);
+        assertFalse(noFileResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFileResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing",
+            noFileResp.getError().getMessage());
 
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", calculatorPath);
         noLine.put("column", 15);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse noLineResp = tool.execute(noLine);
+        assertFalse(noLineResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noLineResp.getError().getCode());
+        assertEquals("Invalid parameter 'line': Must be >= 0", noLineResp.getError().getMessage());
     }
 
-    @Test @DisplayName("handles non-member position gracefully")
+    @Test @DisplayName("package-declaration position -> INVALID_PARAMETER (not a Javadoc-bearing member)")
     void handlesNonMemberPosition() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -106,6 +104,9 @@ class GetJavadocToolTest {
 
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'position': Symbol at position does not have Javadoc",
+            r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -125,10 +126,8 @@ class GetJavadocToolTest {
         assertEquals("add", data.get("symbol"));
         assertEquals(true, data.get("hasDocumentation"));
 
-        String summary = (String) data.get("summary");
-        assertNotNull(summary);
-        assertTrue(summary.toLowerCase().contains("adds"),
-            "Calculator.add javadoc summary mentions 'Adds two numbers'; got: " + summary);
+        assertEquals("Adds two numbers.", data.get("summary"),
+            "Calculator.add javadoc summary; got: " + getData(r));
     }
 
     // ========== Behavior-matrix coverage ==========
