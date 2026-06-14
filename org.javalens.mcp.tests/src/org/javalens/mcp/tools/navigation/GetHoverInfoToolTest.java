@@ -64,10 +64,8 @@ class GetHoverInfoToolTest {
         assertEquals("Calculator", data.get("name"));
         assertEquals("class", data.get("kind"));
 
-        assertNotNull(data.get("signature"));
-        String sig = data.get("signature").toString();
-        assertTrue(sig.contains("class"));
-        assertTrue(sig.contains("Calculator"));
+        assertEquals("public class Calculator", data.get("signature"),
+            "exact class hover signature; got: " + data.get("signature"));
     }
 
     @Test
@@ -91,19 +89,11 @@ class GetHoverInfoToolTest {
         assertTrue(fp.endsWith("Calculator.java"),
             "filePath must point to Calculator.java; got: " + fp);
 
-        String sig = (String) data.get("signature");
-        assertNotNull(sig, "signature missing");
-        assertTrue(sig.contains("add"));
-        assertTrue(sig.contains("int"));
-
-        List<String> modifiers = (List<String>) data.get("modifiers");
-        assertNotNull(modifiers);
-        assertTrue(modifiers.contains("public"));
-
-        String docComment = (String) data.get("docComment");
-        if (docComment != null) {
-            assertTrue(docComment.contains("Add") || docComment.contains("sum"));
-        }
+        assertEquals("public int add(int a, int b)", data.get("signature"),
+            "exact method hover signature; got: " + data.get("signature"));
+        assertEquals(List.of("public"), data.get("modifiers"),
+            "Calculator.add is exactly `public`; got: " + data.get("modifiers"));
+        // docComment is pinned non-null + content by addHover_docCommentPresent.
     }
 
     @Test
@@ -121,10 +111,8 @@ class GetHoverInfoToolTest {
         assertEquals("lastResult", data.get("name"));
         assertEquals("field", data.get("kind"));
 
-        assertNotNull(data.get("signature"));
-        String sig = data.get("signature").toString();
-        assertTrue(sig.contains("int"));
-        assertTrue(sig.contains("lastResult"));
+        assertEquals("private int lastResult", data.get("signature"),
+            "exact field hover signature; got: " + data.get("signature"));
     }
 
     // ========== Semantic-grade tests ==========
@@ -151,43 +139,46 @@ class GetHoverInfoToolTest {
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing or invalid parameters return error")
+    @DisplayName("Missing filePath / negative line / negative column all rejected with INVALID_PARAMETER")
     void parameterValidation_returnsErrors() {
-        // Missing filePath
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("line", 14);
         args1.put("column", 15);
-        assertFalse(tool.execute(args1).isSuccess());
-        assertNotNull(tool.execute(args1).getError());
+        ToolResponse r1 = tool.execute(args1);
+        assertFalse(r1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r1.getError().getCode());
 
-        // Negative line
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", calculatorPath);
         args2.put("line", -1);
         args2.put("column", 15);
-        assertFalse(tool.execute(args2).isSuccess());
+        ToolResponse r2 = tool.execute(args2);
+        assertFalse(r2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r2.getError().getCode());
 
-        // Negative column
         ObjectNode args3 = objectMapper.createObjectNode();
         args3.put("filePath", calculatorPath);
         args3.put("line", 14);
         args3.put("column", -1);
-        assertFalse(tool.execute(args3).isSuccess());
+        ToolResponse r3 = tool.execute(args3);
+        assertFalse(r3.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r3.getError().getCode());
     }
 
     // ========== Edge Case Tests ==========
 
     @Test
-    @DisplayName("Position with no symbol handles gracefully")
+    @DisplayName("Position on a blank line (no symbol) returns SYMBOL_NOT_FOUND")
     void positionWithNoSymbol_handlesGracefully() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-        args.put("line", 0);
+        args.put("line", 1);  // blank line between package and Javadoc
         args.put("column", 0);
 
         ToolResponse response = tool.execute(args);
 
-        assertNotNull(response);
+        assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
     }
 
     // ========== Behavior-matrix coverage ==========
