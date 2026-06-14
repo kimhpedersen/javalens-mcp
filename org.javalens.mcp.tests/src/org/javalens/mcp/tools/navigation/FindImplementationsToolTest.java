@@ -70,22 +70,14 @@ class FindImplementationsToolTest {
         Map<String, Object> data = getData(response);
         assertEquals("Calculator", data.get("symbol"));
         assertEquals(false, data.get("isInterface"));
-        int total = ((Number) data.get("totalImplementations")).intValue();
-        assertTrue(total >= 0, "totalImplementations >= 0; got: " + data);
-
-        List<Map<String, Object>> implementations = getImplementations(data);
-        assertNotNull(implementations);
-        assertEquals(total, implementations.size(),
-            "totalImplementations must equal implementations list size; got: " + data);
-        for (Map<String, Object> impl : implementations) {
-            String qn = (String) impl.get("qualifiedName");
-            assertNotNull(qn, "qualifiedName missing: " + impl);
-            assertTrue(qn.contains("."), "qualifiedName must include package; got: " + impl);
-        }
+        // Calculator is a concrete class with no subtypes: exactly 0 implementations.
+        assertEquals(0, ((Number) data.get("totalImplementations")).intValue(),
+            "Calculator has no subtypes; got: " + data);
+        assertEquals(0, getImplementations(data).size());
     }
 
     @Test
-    @DisplayName("Method position finds containing type implementations")
+    @DisplayName("Method position resolves to the containing type Calculator (0 implementations)")
     void methodPosition_findsContainingTypeImplementations() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -96,53 +88,63 @@ class FindImplementationsToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(data.get("symbol"));
+        // A method position resolves to its containing type; Calculator has no subtypes.
+        assertEquals("Calculator", data.get("symbol"));
+        assertEquals(0, ((Number) data.get("totalImplementations")).intValue(),
+            "Calculator has no subtypes; got: " + data);
     }
 
     // ========== Optional Parameters Tests ==========
 
     @Test
-    @DisplayName("maxResults limits number of implementations returned")
+    @DisplayName("maxResults caps IShape's 7 implementations to exactly 3 and flags truncation")
     void maxResults_limitsImplementations() {
+        // IShape has 7 implementors; cap at 3 exercises a real overflow (Calculator has 0,
+        // so it could never overflow any cap).
+        String iShapePath = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 5);
-        args.put("column", 13);
-        args.put("maxResults", 5);
+        args.put("filePath", iShapePath);
+        args.put("line", 4);
+        args.put("column", 17);
+        args.put("maxResults", 3);
 
         ToolResponse response = tool.execute(args);
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        List<Map<String, Object>> implementations = getImplementations(data);
-        assertTrue(implementations.size() <= 5);
+        assertEquals(3, getImplementations(data).size(), "maxResults=3 caps to exactly 3");
+        assertEquals(7, ((Number) data.get("totalImplementations")).intValue(),
+            "totalImplementations is the pre-clip count; got: " + data);
+        assertEquals(Boolean.TRUE, response.getMeta().getTruncated());
     }
 
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing or invalid parameters return error")
+    @DisplayName("Missing filePath / negative line / negative column all rejected with INVALID_PARAMETER")
     void parameterValidation_returnsErrors() {
-        // Missing filePath
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("line", 5);
         args1.put("column", 10);
-        assertFalse(tool.execute(args1).isSuccess());
-        assertNotNull(tool.execute(args1).getError());
+        ToolResponse r1 = tool.execute(args1);
+        assertFalse(r1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r1.getError().getCode());
 
-        // Negative line
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", calculatorPath);
         args2.put("line", -1);
         args2.put("column", 10);
-        assertFalse(tool.execute(args2).isSuccess());
+        ToolResponse r2 = tool.execute(args2);
+        assertFalse(r2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r2.getError().getCode());
 
-        // Negative column
         ObjectNode args3 = objectMapper.createObjectNode();
         args3.put("filePath", calculatorPath);
         args3.put("line", 5);
         args3.put("column", -1);
-        assertFalse(tool.execute(args3).isSuccess());
+        ToolResponse r3 = tool.execute(args3);
+        assertFalse(r3.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r3.getError().getCode());
     }
 
     // ========== Edge Case Tests ==========
