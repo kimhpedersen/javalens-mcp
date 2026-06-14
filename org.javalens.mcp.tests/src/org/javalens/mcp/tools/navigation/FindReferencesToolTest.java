@@ -73,26 +73,23 @@ class FindReferencesToolTest {
         // Symbol info — exact
         assertEquals("Calculator", data.get("symbol"));
         assertEquals("class", data.get("symbolKind"));
-        int totalCount = ((Number) data.get("totalCount")).intValue();
-        assertTrue(totalCount > 0, "Calculator is referenced in fixtures; totalCount must be > 0");
 
-        // References list with location details
+        // Calculator's type references: exactly 17, spanning exactly these four files
+        // (matches analyze_change_impact's blast radius: SearchPatterns 11, TypeKindsFixture 1,
+        // UserService 3, SampleTest 2).
         List<Map<String, Object>> references = getReferences(data);
-        assertNotNull(references, "references must be present");
-        assertEquals(totalCount, references.size(),
-            "totalCount must equal references.size(); got: total=" + totalCount + " size=" + references.size());
-        assertTrue(references.stream().anyMatch(ref ->
-            ref.get("filePath") != null &&
-            ref.get("filePath").toString().contains("UserService")),
-            "Calculator must be referenced in UserService.java; got: " + references);
-
-        // Each reference entry has a valid filePath, line, column
-        Map<String, Object> ref = references.get(0);
-        String filePath = (String) ref.get("filePath");
-        assertNotNull(filePath, "ref filePath missing: " + ref);
-        assertTrue(filePath.endsWith(".java"), "filePath must point to a .java file; got: " + ref);
-        assertTrue(((Number) ref.get("line")).intValue() >= 0, "line must be >= 0; got: " + ref);
-        assertTrue(((Number) ref.get("column")).intValue() >= 0, "column must be >= 0; got: " + ref);
+        assertEquals(17, ((Number) data.get("totalCount")).intValue(),
+            "Calculator type reference count; got: " + references);
+        assertEquals(17, references.size(), "totalCount must equal references.size()");
+        java.util.Set<String> files = new java.util.TreeSet<>();
+        for (Map<String, Object> ref : references) {
+            String fp = ((String) ref.get("filePath")).replace('\\', '/');
+            assertTrue(fp.endsWith(".java"), "filePath must be a .java file; got: " + ref);
+            files.add(fp.substring(fp.lastIndexOf('/') + 1));
+        }
+        assertEquals(java.util.Set.of("SearchPatterns.java", "TypeKindsFixture.java",
+            "UserService.java", "SampleTest.java"), files,
+            "Calculator references span exactly these four files; got: " + files);
     }
 
     @Test
@@ -128,9 +125,13 @@ class FindReferencesToolTest {
         assertEquals("lastResult", data.get("symbol"));
         assertEquals("field", data.get("symbolKind"));
 
+        // lastResult is accessed exactly 7 times, all within Calculator.java.
         List<Map<String, Object>> references = getReferences(data);
-        assertNotNull(references);
-        assertFalse(references.isEmpty());
+        assertEquals(7, references.size(), "lastResult access count; got: " + references);
+        for (Map<String, Object> ref : references) {
+            assertTrue(((String) ref.get("filePath")).replace('\\', '/').endsWith("Calculator.java"),
+                "lastResult is private — all accesses are in Calculator.java; got: " + ref);
+        }
     }
 
     // ========== Optional Parameters Tests ==========
@@ -149,33 +150,47 @@ class FindReferencesToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         List<Map<String, Object>> references = getReferences(data);
-        assertTrue(references.size() <= 1);
+        // Calculator has 17 references; maxResults=1 caps to exactly 1 and flags truncation.
+        assertEquals(1, references.size());
+        assertEquals(Boolean.TRUE, response.getMeta().getTruncated());
     }
 
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing or invalid parameters return error")
+    @DisplayName("Missing filePath / negative line / negative maxResults all rejected with INVALID_PARAMETER")
     void parameterValidation_returnsErrors() {
-        // Missing filePath
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("line", 5);
         args1.put("column", 10);
-        assertFalse(tool.execute(args1).isSuccess());
-        assertNotNull(tool.execute(args1).getError());
+        ToolResponse r1 = tool.execute(args1);
+        assertFalse(r1.isSuccess());
+        assertEquals("INVALID_PARAMETER", r1.getError().getCode());
+        assertTrue(r1.getError().getMessage().toLowerCase().contains("required"),
+            "missing filePath message; got: " + r1.getError().getMessage());
 
-        // Negative line
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", calculatorPath);
         args2.put("line", -1);
         args2.put("column", 10);
-        assertFalse(tool.execute(args2).isSuccess());
+        ToolResponse r2 = tool.execute(args2);
+        assertFalse(r2.isSuccess());
+        assertEquals("INVALID_PARAMETER", r2.getError().getCode());
+
+        ObjectNode args3 = objectMapper.createObjectNode();
+        args3.put("filePath", calculatorPath);
+        args3.put("line", 5);
+        args3.put("column", 13);
+        args3.put("maxResults", -1);
+        ToolResponse r3 = tool.execute(args3);
+        assertFalse(r3.isSuccess());
+        assertEquals("INVALID_PARAMETER", r3.getError().getCode());
     }
 
     // ========== Edge Case Tests ==========
 
     @Test
-    @DisplayName("Symbol with no external references returns empty or minimal list")
+    @DisplayName("HelloWorld has only its 2 self-references (new HelloWorld() in main), no external use")
     void symbolWithNoReferences_returnsEmptyList() {
         String helloWorldPath = projectPath.resolve("src/main/java/com/example/HelloWorld.java").toString();
         ObjectNode args = objectMapper.createObjectNode();
@@ -187,7 +202,18 @@ class FindReferencesToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(getReferences(data));
+        assertEquals("HelloWorld", data.get("symbol"));
+        // Only `HelloWorld hello = new HelloWorld();` in its own main (0-based line 51,
+        // the type ref at column 8 and the constructor type ref at column 31). No external use.
+        List<Map<String, Object>> refs = getReferences(data);
+        assertEquals(2, refs.size(), "exactly the 2 self-references; got: " + refs);
+        java.util.Set<Integer> cols = new java.util.TreeSet<>();
+        for (Map<String, Object> ref : refs) {
+            assertTrue(((String) ref.get("filePath")).replace('\\', '/').endsWith("HelloWorld.java"));
+            assertEquals(51, ((Number) ref.get("line")).intValue(), "self-ref 0-based line; got: " + ref);
+            cols.add(((Number) ref.get("column")).intValue());
+        }
+        assertEquals(java.util.Set.of(8, 31), cols, "the two 0-based columns; got: " + cols);
     }
 
     // ========== Semantic-grade tests (exact-content assertions) ==========
