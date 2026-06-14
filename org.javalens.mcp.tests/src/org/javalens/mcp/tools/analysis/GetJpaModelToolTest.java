@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetJpaModelTool;
@@ -28,12 +30,14 @@ class GetJpaModelToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetJpaModelTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("framework-maven");
         tool = new GetJpaModelTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -130,5 +134,23 @@ class GetJpaModelToolTest {
         ToolResponse r = unloaded.execute(objectMapper.createObjectNode());
         assertFalse(r.isSuccess());
         assertEquals("PROJECT_NOT_LOADED", r.getError().getCode());
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: the assembled JPA model (Customer/customers + mappedBy) survives the envelope")
+    void envelope_assembledEntityModel() {
+        JsonNode payload = envelope.payload("get_jpa_model", envelope.args());
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_jpa_model failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(2, data.get("entityCount").asInt(), "exactly two entities through the envelope");
+        JsonNode customer = data.get("entities").get(0);
+        assertEquals("com.fw.Customer", customer.get("name").asText());
+        assertEquals("customers", customer.get("table").asText());
+        assertEquals("customer", customer.get("relationships").get(0).get("mappedBy").asText(),
+            "the mappedBy inverse side must survive the real-wiring envelope");
     }
 }

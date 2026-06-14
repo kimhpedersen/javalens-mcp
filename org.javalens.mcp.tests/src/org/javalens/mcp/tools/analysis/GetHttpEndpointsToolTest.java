@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetHttpEndpointsTool;
@@ -27,12 +29,14 @@ class GetHttpEndpointsToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetHttpEndpointsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("framework-maven");
         tool = new GetHttpEndpointsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -114,5 +118,23 @@ class GetHttpEndpointsToolTest {
         ToolResponse r = unloaded.execute(objectMapper.createObjectNode());
         assertFalse(r.isSuccess());
         assertEquals("PROJECT_NOT_LOADED", r.getError().getCode());
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: the composed route table (GET /api/orders/{id}) survives the envelope")
+    void envelope_composedRouteTable() {
+        JsonNode payload = envelope.payload("get_http_endpoints", envelope.args());
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_http_endpoints failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(5, data.get("endpointCount").asInt(), "exactly five endpoints through the envelope");
+        JsonNode second = data.get("endpoints").get(1);
+        assertEquals("GET", second.get("httpMethod").asText());
+        assertEquals("/api/orders/{id}", second.get("path").asText(),
+            "the class prefix + method path must compose through the real-wiring envelope");
+        assertEquals("com.fw.OrderController#get(long)", second.get("handler").asText());
     }
 }

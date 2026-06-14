@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetDiRegistrationsTool;
@@ -144,5 +146,72 @@ class GetDiRegistrationsToolTest {
                 "summary." + key + " must equal " + key + ".size(); got summary="
                     + summary.get(key) + " listSize=" + list.size());
         }
+    }
+
+    // ========== Spring-fixture detection (exact inventory derived from framework-maven source) ==========
+
+    /**
+     * framework-maven ground truth (hand-counted from com.fw source):
+     *  - components (@Component/@Service/@RestController): GreetingService(@Service),
+     *    OrderController(@RestController), StatusController(@RestController),
+     *    WiredConsumer(@Component) = 4
+     *  - configurations (@Configuration): AppConfig = 1
+     *  - beans (@Bean): AppConfig.makeThing = 1
+     *  - injectionPoints (@Autowired): WiredConsumer = 1
+     */
+    @Test
+    @DisplayName("framework-maven: exact DI inventory — 4 components, 1 configuration, 1 bean, 1 injection point")
+    @SuppressWarnings("unchecked")
+    void frameworkMaven_exactRegistrationInventory() throws Exception {
+        JdtServiceImpl svc = helper.loadProject("framework-maven");
+        GetDiRegistrationsTool fwTool = new GetDiRegistrationsTool(() -> svc);
+
+        ToolResponse r = fwTool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+        Map<String, Object> data = getData(r);
+
+        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+        assertEquals(4, summary.get("components"), "4 stereotype-annotated components; got: " + summary);
+        assertEquals(1, summary.get("configurations"), "AppConfig is the only @Configuration; got: " + summary);
+        assertEquals(1, summary.get("beans"), "one @Bean method; got: " + summary);
+        assertEquals(1, summary.get("injectionPoints"), "one @Autowired site; got: " + summary);
+
+        List<Map<String, Object>> components = (List<Map<String, Object>>) data.get("components");
+        Map<String, Long> byAnnotation = components.stream().collect(
+            java.util.stream.Collectors.groupingBy(m -> (String) m.get("annotation"),
+                java.util.stream.Collectors.counting()));
+        assertEquals(Map.of("@Service", 1L, "@RestController", 2L, "@Component", 1L), byAnnotation,
+            "component annotation multiset must match the fixture; got: " + byAnnotation);
+        java.util.Set<String> componentFiles = components.stream()
+            .map(m -> ((String) m.get("filePath")).replace('\\', '/'))
+            .map(p -> p.substring(p.lastIndexOf('/') + 1))
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of("GreetingService.java", "OrderController.java",
+            "StatusController.java", "WiredConsumer.java"), componentFiles,
+            "the four component declarations must come from exactly these files; got: " + componentFiles);
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: the framework-maven DI inventory (4/1/1/1) survives the envelope")
+    void envelope_frameworkMaven_exactInventory() throws Exception {
+        JdtServiceImpl svc = helper.loadProject("framework-maven");
+        EnvelopeHarness fwEnvelope = new EnvelopeHarness(svc);
+        JsonNode payload = fwEnvelope.payload("get_di_registrations", fwEnvelope.args());
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_di_registrations failed through the envelope: " + payload);
+        JsonNode summary = payload.get("data").get("summary");
+        assertEquals(4, summary.get("components").asInt(), "4 components through the envelope");
+        assertEquals(1, summary.get("configurations").asInt(), "1 configuration through the envelope");
+        assertEquals(1, summary.get("beans").asInt(), "1 bean through the envelope");
+        assertEquals(1, summary.get("injectionPoints").asInt(), "1 injection point through the envelope");
+        java.util.Map<String, Integer> byAnnotation = new java.util.HashMap<>();
+        for (JsonNode c : payload.get("data").get("components")) {
+            byAnnotation.merge(c.get("annotation").asText(), 1, Integer::sum);
+        }
+        assertEquals(java.util.Map.of("@Service", 1, "@RestController", 2, "@Component", 1), byAnnotation,
+            "the component annotation multiset must survive the real-wiring envelope; got: " + byAnnotation);
     }
 }
