@@ -42,7 +42,7 @@ class FindFieldWritesToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("finds field writes with complete response")
+    @Test @DisplayName("RefactoringTarget.userName has exactly 2 WRITE locations on lines {98,114}")
     void findsFieldWritesComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
@@ -54,17 +54,20 @@ class FindFieldWritesToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("userName", data.get("field"));
-        assertNotNull(data.get("declaringType"));
-        assertNotNull(data.get("totalWriteLocations"));
+        assertEquals("RefactoringTarget", data.get("declaringType"));
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> writes = (List<Map<String, Object>>) data.get("writeLocations");
-        assertNotNull(writes);
-        if (!writes.isEmpty()) {
-            Map<String, Object> write = writes.get(0);
-            assertNotNull(write.get("line"));
-            assertEquals("WRITE", write.get("accessType"));
+        // `userName = "test"` (0-based line 98) and `this.userName = userName` (line 114).
+        // The bare declaration is not a write; the reads at 101/108 are excluded.
+        assertEquals(2, writes.size(), "exactly 2 userName writes; got: " + writes);
+        assertEquals(2, ((Number) data.get("totalWriteLocations")).intValue());
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (Map<String, Object> w : writes) {
+            assertEquals("WRITE", w.get("accessType"), "every entry is a WRITE; got: " + w);
+            lines.add(((Number) w.get("line")).intValue());
         }
+        assertEquals(java.util.Set.of(98, 114), lines, "the two 0-based write lines; got: " + lines);
     }
 
     @Test @DisplayName("supports maxResults parameter")
@@ -80,31 +83,53 @@ class FindFieldWritesToolTest {
         assertTrue(r.isSuccess());
         @SuppressWarnings("unchecked")
         List<?> writes = (List<?>) getData(r).get("writeLocations");
-        assertTrue(writes.size() <= 1);
+        // userName has 2 writes; maxResults=1 caps to exactly 1.
+        assertEquals(1, writes.size());
     }
 
-    @Test @DisplayName("requires filePath, line, column parameters")
+    @Test @DisplayName("missing filePath / line are rejected with INVALID_PARAMETER")
     void requiresParameters() {
         ObjectNode noFile = objectMapper.createObjectNode();
         noFile.put("line", 13);
         noFile.put("column", 19);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse rNoFile = tool.execute(noFile);
+        assertFalse(rNoFile.isSuccess());
+        assertEquals("INVALID_PARAMETER", rNoFile.getError().getCode());
+        assertTrue(rNoFile.getError().getMessage().toLowerCase().contains("required"),
+            "missing filePath message; got: " + rNoFile.getError().getMessage());
 
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", refactoringTargetPath);
         noLine.put("column", 19);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse rNoLine = tool.execute(noLine);
+        assertFalse(rNoLine.isSuccess());
+        assertEquals("INVALID_PARAMETER", rNoLine.getError().getCode());
     }
 
-    @Test @DisplayName("handles non-field position gracefully")
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 15);
+        args.put("column", 19);
+        args.put("maxResults", -1);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+    }
+
+    @Test @DisplayName("position resolving to no symbol is rejected with SYMBOL_NOT_FOUND")
     void handlesNonFieldPosition() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
-        args.put("line", 20);  // Method, not field
+        args.put("line", 20);  // resolves to no symbol at this position
         args.put("column", 16);
 
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("symbol"),
+            "message must explain no symbol was found; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -127,12 +152,12 @@ class FindFieldWritesToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> writes = (List<Map<String, Object>>) data.get("writeLocations");
         assertNotNull(writes);
-        // 4 explicit writes: FieldHolder() default ctor `this.pet = new Animal()`, FieldHolder(Animal)
+        // Exactly 4 writes: FieldHolder() default ctor `this.pet = new Animal()`, FieldHolder(Animal)
         // ctor `this.pet = pet`, WidgetHelper.swap `holder.pet = newPet`, WidgetHelper.extract
-        // `holder.pet = null`. Some implementations may also count the declaration as a write;
-        // assert at least the 4 explicit assignment writes are present.
-        assertTrue(writes.size() >= 4,
-            "Expected at least 4 writes to FieldHolder.pet; got " + writes.size() + " writes: " + writes);
+        // `holder.pet = null`. The bare `Animal pet;` declaration has no initializer, so it is
+        // not a write.
+        assertEquals(4, writes.size(),
+            "FieldHolder.pet has exactly 4 writes; got " + writes.size() + " writes: " + writes);
         for (Map<String, Object> w : writes) {
             assertEquals("WRITE", w.get("accessType"));
         }
@@ -284,8 +309,8 @@ class FindFieldWritesToolTest {
             "Position on field reference must resolve to the field; got: " +
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         assertEquals("pet", getData(r).get("field"));
-        // Same 4 writes as positioning on the declaration.
-        assertTrue(writesOf(r).size() >= 4,
+        // Same exact 4 writes as positioning on the declaration.
+        assertEquals(4, writesOf(r).size(),
             "Same field writes expected when positioning on a reference; got: " + writesOf(r));
     }
 
