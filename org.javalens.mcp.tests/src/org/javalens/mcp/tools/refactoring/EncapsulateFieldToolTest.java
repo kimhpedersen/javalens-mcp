@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.EncapsulateFieldTool;
@@ -31,6 +33,7 @@ class EncapsulateFieldToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private EncapsulateFieldTool tool;
+    private EnvelopeHarness envelope;
     private String targetPath;
     private ObjectMapper mapper;
 
@@ -38,6 +41,7 @@ class EncapsulateFieldToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("java25-maven");
         tool = new EncapsulateFieldTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         targetPath = helper.getFixturePath("java25-maven")
             .resolve("src/main/java/com/example/encap/EncapsulateTarget.java").toString();
         mapper = new ObjectMapper();
@@ -156,5 +160,41 @@ class EncapsulateFieldToolTest {
                     ? "ok" : null, "newText missing on non-delete edit: " + edit);
             }
         }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: encapsulating count yields getCount/setCount and edits across both files")
+    void envelope_encapsulate_rewritesDeclarationAndExternalAccess() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", targetPath);
+        args.put("line", 7);    // 0-based; "    public int count;"
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("encapsulate_field", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "encapsulate_field failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("count", data.get("fieldName").asText());
+        assertEquals("getCount", data.get("getterName").asText());
+        assertEquals("setCount", data.get("setterName").asText());
+        JsonNode editsByFile = data.get("editsByFile");
+        assertEquals(2, editsByFile.size(),
+            "both EncapsulateTarget and EncapsulateReader must receive edits through the envelope; got: "
+                + editsByFile);
+        StringBuilder targetText = new StringBuilder();
+        StringBuilder readerText = new StringBuilder();
+        java.util.Iterator<String> files = editsByFile.fieldNames();
+        while (files.hasNext()) {
+            String file = files.next();
+            StringBuilder sink = file.endsWith("EncapsulateTarget.java") ? targetText
+                : file.endsWith("EncapsulateReader.java") ? readerText : new StringBuilder();
+            for (JsonNode edit : editsByFile.get(file)) sink.append(edit.path("newText").asText());
+        }
+        assertTrue(targetText.toString().contains("getCount") && targetText.toString().contains("setCount"),
+            "declaring file must gain the accessor pair through the envelope; got: " + targetText);
+        assertTrue(readerText.toString().contains("getCount") || readerText.toString().contains("setCount"),
+            "external accesses must be rewritten to accessor calls through the envelope; got: " + readerText);
     }
 }
