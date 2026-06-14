@@ -52,51 +52,52 @@ class GetCallHierarchyOutgoingToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        String method = (String) data.get("method");
-        assertNotNull(method, "method missing");
-        assertFalse(method.isBlank(), "method non-blank; got: " + data);
-        String declaringClass = (String) data.get("declaringClass");
-        assertNotNull(declaringClass, "declaringClass missing");
-        assertTrue(declaringClass.contains("."), "declaringClass FQN; got: " + data);
-        assertNotNull(data.get("signature"), "signature missing");
+        assertEquals("com.example.RefactoringTarget", data.get("declaringClass"),
+            "outgoing call hierarchy reports the FQN declaring class; got: " + data);
 
         int totalCallees = ((Number) data.get("totalCallees")).intValue();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> callees = (List<Map<String, Object>>) data.get("callees");
-        assertNotNull(callees, "callees list missing");
         assertEquals(totalCallees, callees.size(),
             "totalCallees must equal callees list size; got: " + data);
-        if (!callees.isEmpty()) {
-            Map<String, Object> callee = callees.get(0);
-            String calleeMethod = (String) callee.get("method");
-            assertNotNull(calleeMethod, "callee method missing: " + callee);
-            assertFalse(calleeMethod.isBlank(), "callee method non-blank: " + callee);
+        // Unconditional (no silent-pass guard): every callee carries the contractual fields.
+        assertFalse(callees.isEmpty(), "the method has callees; got: " + data);
+        for (Map<String, Object> callee : callees) {
+            assertNotNull(callee.get("method"), "callee method missing: " + callee);
             assertNotNull(callee.get("declaringClass"), "callee declaringClass missing: " + callee);
             assertNotNull(callee.get("callType"), "callee callType missing: " + callee);
         }
     }
 
-    @Test @DisplayName("requires filePath, line, column parameters")
+    @Test @DisplayName("missing filePath / line rejected with INVALID_PARAMETER")
     void requiresParameters() {
         ObjectNode noFile = objectMapper.createObjectNode();
         noFile.put("line", 20);
         noFile.put("column", 18);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse rNoFile = tool.execute(noFile);
+        assertFalse(rNoFile.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rNoFile.getError().getCode());
 
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", refactoringTargetPath);
         noLine.put("column", 18);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse rNoLine = tool.execute(noLine);
+        assertFalse(rNoLine.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rNoLine.getError().getCode());
     }
 
-    @Test @DisplayName("handles non-method position gracefully")
+    @Test @DisplayName("non-method position (field decl) rejected with INVALID_PARAMETER")
     void handlesNonMethodPosition() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
         args.put("line", 13);  // Field declaration
         args.put("column", 19);
 
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("method"),
+            "message must explain the position is not within a method; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -118,12 +119,22 @@ class GetCallHierarchyOutgoingToolTest {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> callees = (List<Map<String, Object>>) data.get("callees");
-        java.util.Set<String> calleeNames = callees.stream()
-            .map(c -> (String) c.get("method"))
-            .filter(java.util.Objects::nonNull)
-            .collect(java.util.stream.Collectors.toSet());
-        assertTrue(calleeNames.contains("formatMessage"),
-            "printMessages calls formatMessage twice — must appear in callees; got: " + calleeNames);
+        // The in-project formatMessage callee carries the full contractual record:
+        // returnType String, isFromSource=true (resolves to project source), a callLocation
+        // with a non-negative line.
+        Map<String, Object> formatMessage = callees.stream()
+            .filter(c -> "formatMessage".equals(c.get("method")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("printMessages must call formatMessage; got: " + callees));
+        assertEquals("String", formatMessage.get("returnType"),
+            "formatMessage returns String; got: " + formatMessage);
+        assertEquals(Boolean.TRUE, formatMessage.get("isFromSource"),
+            "formatMessage is a project method; got: " + formatMessage);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> callLocation = (Map<String, Object>) formatMessage.get("callLocation");
+        assertNotNull(callLocation, "callLocation must be present: " + formatMessage);
+        assertTrue(((Number) callLocation.get("line")).intValue() >= 0,
+            "callLocation line present; got: " + callLocation);
     }
 
     // ========== Behavior-matrix coverage ==========
