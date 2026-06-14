@@ -164,6 +164,136 @@ class ProtocolParityTest {
     }
 
     /**
+     * Path segments that betray a JDT search-scope leak: JavaLens's own Eclipse
+     * workspace metadata, which lives under the build directory and must NEVER
+     * appear in any tool payload (it is not part of the user's project). The
+     * find_reflection_usage golden froze 839 such entries; this gate makes that
+     * class of leak fail the build for EVERY tool at once.
+     */
+    private static final java.util.List<String> FORBIDDEN_PATH_SEGMENTS =
+        java.util.List.of("javalens-WS", "target/work", "target\\work", ".metadata");
+
+    @Test
+    @DisplayName("fixture-scope gate: no tool payload leaks a path into the JDT workspace metadata")
+    void noToolPayloadEscapesTheFixture() throws Exception {
+        Map<String, String> leaks = new TreeMap<>();
+        int id = 1;
+        for (String name : new TreeSet<>(registry.getToolNames())) {
+            ObjectNode args = inputs.get(name);
+            if (args == null) {
+                continue;
+            }
+            ObjectNode call = objectMapper.createObjectNode();
+            call.put("jsonrpc", "2.0");
+            call.put("id", id++);
+            call.put("method", "tools/call");
+            ObjectNode params = call.putObject("params");
+            params.put("name", name);
+            params.set("arguments", args.deepCopy());
+            String response = handler.processMessage(objectMapper.writeValueAsString(call));
+
+            JsonNode rpc = objectMapper.readTree(response);
+            JsonNode content = rpc.path("result").path("content");
+            if (!content.isArray() || content.isEmpty()) {
+                continue; // error envelopes carry no payload paths to leak
+            }
+            JsonNode payload = objectMapper.readTree(content.get(0).path("text").asText());
+            String leak = firstLeakingValue(payload);
+            if (leak != null) {
+                leaks.put(name, leak);
+            }
+        }
+        assertTrue(leaks.isEmpty(),
+            "Tools whose payload leaked a path into the JDT workspace metadata (search-scope "
+                + "escape — the find_reflection_usage class): " + leaks);
+    }
+
+    @Test
+    @DisplayName("non-degeneracy gate: every tool returns populated success data OR an explicitly-coded refusal — never a hollow success")
+    void noToolReturnsAHollowSuccess() throws Exception {
+        Map<String, String> degenerate = new TreeMap<>();
+        int id = 1;
+        for (String name : new TreeSet<>(registry.getToolNames())) {
+            ObjectNode args = inputs.get(name);
+            if (args == null) {
+                continue;
+            }
+            ObjectNode call = objectMapper.createObjectNode();
+            call.put("jsonrpc", "2.0");
+            call.put("id", id++);
+            call.put("method", "tools/call");
+            ObjectNode params = call.putObject("params");
+            params.put("name", name);
+            params.set("arguments", args.deepCopy());
+            JsonNode rpc = objectMapper.readTree(handler.processMessage(objectMapper.writeValueAsString(call)));
+
+            JsonNode content = rpc.path("result").path("content");
+            if (!content.isArray() || content.isEmpty()) {
+                degenerate.put(name, "no content array in JSON-RPC result");
+                continue;
+            }
+            JsonNode payload = objectMapper.readTree(content.get(0).path("text").asText());
+            boolean success = payload.path("success").asBoolean(false);
+            if (success) {
+                // A success must carry real content — not a hollow {} / [] masquerading
+                // as coverage (the degenerate-golden class this gate makes unrepeatable).
+                JsonNode data = payload.get("data");
+                if (data == null || data.isNull() || isStructurallyEmpty(data)) {
+                    degenerate.put(name, "success with empty data: " + payload);
+                }
+            } else {
+                // A refusal is non-degenerate ONLY if it is explicitly coded — never a
+                // silent failure. The tool's real capability is pinned by its own
+                // authored envelope_ test on the fixture where it applies.
+                String code = payload.path("error").path("code").asText("");
+                if (code.isBlank()) {
+                    degenerate.put(name, "uncoded failure: " + payload);
+                }
+            }
+        }
+        assertTrue(degenerate.isEmpty(),
+            "Tools whose curated parity input yields a degenerate payload (hollow success or "
+                + "uncoded failure) — upgrade the ToolInvocationInputs entry to exercise the tool, "
+                + "or confirm the refusal is explicitly coded: " + degenerate);
+    }
+
+    /** An object with no fields or an array with no elements — a structurally-empty payload. */
+    private static boolean isStructurallyEmpty(JsonNode data) {
+        if (data.isObject() || data.isArray()) {
+            return data.isEmpty();
+        }
+        return false;
+    }
+
+    /** Recursively returns the first string value containing a forbidden workspace segment, or null. */
+    private static String firstLeakingValue(JsonNode node) {
+        if (node.isObject()) {
+            java.util.Iterator<Map.Entry<String, JsonNode>> it = node.fields();
+            while (it.hasNext()) {
+                String leak = firstLeakingValue(it.next().getValue());
+                if (leak != null) return leak;
+            }
+            return null;
+        }
+        if (node.isArray()) {
+            for (JsonNode e : node) {
+                String leak = firstLeakingValue(e);
+                if (leak != null) return leak;
+            }
+            return null;
+        }
+        if (node.isTextual()) {
+            String text = node.asText();
+            for (String forbidden : FORBIDDEN_PATH_SEGMENTS) {
+                if (text.contains(forbidden)) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Canonical string form of a payload: object keys sorted, ARRAY ELEMENTS
      * sorted (search-match ordering is not part of a tool's contract and
      * legitimately differs between two invocations), volatile and null fields
