@@ -1,9 +1,11 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ChangeMethodSignatureTool;
@@ -28,6 +30,7 @@ class ChangeMethodSignatureToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ChangeMethodSignatureTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -36,6 +39,7 @@ class ChangeMethodSignatureToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new ChangeMethodSignatureTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -768,5 +772,57 @@ class ChangeMethodSignatureToolTest {
             (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
         int sum = byFile.values().stream().mapToInt(List::size).sum();
         assertEquals(total, sum);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    /** Locate the isDeclaration=true edit across all files in a JsonNode editsByFile. */
+    private JsonNode findDeclarationEditNode(JsonNode data) {
+        JsonNode byFile = data.get("editsByFile");
+        for (JsonNode fileEdits : byFile) {
+            for (JsonNode edit : fileEdits) {
+                if (edit.path("isDeclaration").asBoolean()) {
+                    return edit;
+                }
+            }
+        }
+        throw new AssertionError("No declaration edit found in editsByFile: " + byFile);
+    }
+
+    @Test
+    @DisplayName("Through the real MCP envelope: adding `String prefix` yields newSignature `String formatMessage(String message, int count, String prefix)`")
+    void envelope_addParameter_exactNewSignature() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 71);
+        args.put("column", 18);
+
+        ArrayNode params = objectMapper.createArrayNode();
+        ObjectNode p1 = objectMapper.createObjectNode();
+        p1.put("name", "message");
+        p1.put("type", "String");
+        params.add(p1);
+        ObjectNode p2 = objectMapper.createObjectNode();
+        p2.put("name", "count");
+        p2.put("type", "int");
+        params.add(p2);
+        ObjectNode p3 = objectMapper.createObjectNode();
+        p3.put("name", "prefix");
+        p3.put("type", "String");
+        p3.put("defaultValue", "\"\"");
+        params.add(p3);
+        args.set("newParameters", params);
+
+        JsonNode payload = envelope.payload("change_method_signature", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "change_method_signature failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(2, data.get("oldParameterCount").asInt(), "old param count through the envelope");
+        assertEquals(3, data.get("newParameterCount").asInt(), "new param count through the envelope");
+        JsonNode declEdit = findDeclarationEditNode(data);
+        assertEquals("String formatMessage(String message, int count, String prefix)",
+            declEdit.get("newSignature").asText(),
+            "the rewritten declaration signature must survive the envelope verbatim");
     }
 }
