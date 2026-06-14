@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeChangeImpactTool;
@@ -24,6 +26,7 @@ class AnalyzeChangeImpactToolTest {
 
     private JdtServiceImpl service;
     private AnalyzeChangeImpactTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
@@ -31,6 +34,7 @@ class AnalyzeChangeImpactToolTest {
     void setUp() throws Exception {
         service = helper.loadProject("simple-maven");
         tool = new AnalyzeChangeImpactTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/Calculator.java").toString();
@@ -339,5 +343,36 @@ class AnalyzeChangeImpactToolTest {
         assertTrue(hasMethodRefUser,
             "MethodRefUser.java holds MethodRefTarget::formatId — must appear in affectedFiles; "
                 + "got: " + affectedFiles);
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: Calculator type selection reports the exact 17-reference blast radius")
+    void envelope_typeSelection_exactBlastRadius() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 5);   // Calculator class declaration (0-based)
+        args.put("column", 13);
+        JsonNode payload = envelope.payload("analyze_change_impact", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "analyze_change_impact failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("Calculator", data.get("symbol").asText());
+        assertEquals("SourceType", data.get("symbolType").asText());
+        assertEquals(17, data.get("totalReferences").asInt(),
+            "the class blast radius must survive the real-wiring envelope");
+        java.util.Map<String, Integer> byFile = new java.util.HashMap<>();
+        for (JsonNode f : data.get("affectedFiles")) {
+            byFile.put(f.get("filePath").asText().replace('\\', '/'), f.get("referenceCount").asInt());
+        }
+        assertEquals(java.util.Map.of(
+            "src/main/java/com/example/SearchPatterns.java", 11,
+            "src/main/java/com/example/TypeKindsFixture.java", 1,
+            "src/main/java/com/example/service/UserService.java", 3,
+            "src/test/java/com/example/SampleTest.java", 2),
+            byFile,
+            "the per-file reference counts must survive the real-wiring envelope");
     }
 }
