@@ -46,21 +46,24 @@ class AnalyzeChangeImpactToolTest {
     // ========== Impact Analysis Tests ==========
 
     @Test
-    @DisplayName("should analyze impact of a method")
+    @DisplayName("Calculator.add impact: exact symbol identity and reference totals")
     void analyzesMethodImpact() {
         ObjectNode args = objectMapper.createObjectNode();
+        // Calculator.add is selected at its Javadoc-inclusive range; col 15 = "add".
         args.put("filePath", calculatorPath);
-        args.put("line", 5);  // add method in Calculator
+        args.put("line", 13);
         args.put("column", 15);
 
         ToolResponse response = tool.execute(args);
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(data.get("symbol"), "Should include symbol name");
-        assertNotNull(data.get("symbolType"), "Should include symbol type");
-        assertNotNull(data.get("affectedFiles"), "Should include affected files");
-        assertNotNull(data.get("callSites"), "Should include call sites");
+        assertEquals("add", data.get("symbol"));
+        assertEquals("SourceMethod", data.get("symbolType"));
+        assertEquals(1, ((Number) data.get("depth")).intValue());
+        // Four invocations of Calculator.add(int,int): SearchPatterns x2, UserService, SampleTest.
+        assertEquals(4, ((Number) data.get("directReferences")).intValue());
+        assertEquals(4, ((Number) data.get("totalReferences")).intValue());
     }
 
     @Test
@@ -98,7 +101,7 @@ class AnalyzeChangeImpactToolTest {
     // ========== Error Handling Tests ==========
 
     @Test
-    @DisplayName("should return error when filePath is missing")
+    @DisplayName("missing filePath is an exact INVALID_PARAMETER error")
     void returnsErrorForMissingFilePath() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("line", 5);
@@ -107,28 +110,32 @@ class AnalyzeChangeImpactToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing",
+            response.getError().getMessage());
     }
 
     @Test
-    @DisplayName("should return symbol not found for invalid position")
-    void returnsSymbolNotFoundForInvalidPosition() {
+    @DisplayName("a blank line resolves to no symbol: exact SYMBOL_NOT_FOUND")
+    void returnsSymbolNotFoundForBlankLine() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-        args.put("line", 0);
+        args.put("line", 1);   // blank line between the package decl and Calculator's Javadoc
         args.put("column", 0);
 
         ToolResponse response = tool.execute(args);
 
-        // Position 0:0 is typically the package declaration or empty — may or may not find a symbol
-        // Either success with no references or symbolNotFound is acceptable
-        assertNotNull(response);
+        assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
+        assertEquals("Symbol not found: No symbol found at " + calculatorPath + ":1:0",
+            response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
 
     @Test
-    @DisplayName("Calculator.add impact at depth=1: UserService.java is among affected files")
-    void calculatorAdd_depth1_includesUserService() {
+    @DisplayName("Calculator.add impact at depth=1: exact per-file reference blast radius")
+    void calculatorAdd_depth1_exactAffectedFiles() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         // Calculator.add() is on 0-based line 13 (column 15 for "add")
@@ -142,14 +149,18 @@ class AnalyzeChangeImpactToolTest {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> affectedFiles = (List<Map<String, Object>>) data.get("affectedFiles");
-        boolean hasUserService = affectedFiles.stream()
-            .map(m -> (String) m.get("filePath"))
-            .filter(java.util.Objects::nonNull)
-            .map(s -> s.replace('\\', '/'))
-            .anyMatch(s -> s.endsWith("UserService.java"));
-        assertTrue(hasUserService,
-            "UserService.calculateTotal calls Calculator.add — must appear in depth-1 affected files; got: "
-                + affectedFiles);
+        Map<String, Integer> byFile = new java.util.HashMap<>();
+        for (Map<String, Object> f : affectedFiles) {
+            byFile.put(((String) f.get("filePath")).replace('\\', '/'),
+                ((Number) f.get("referenceCount")).intValue());
+        }
+        // SearchPatterns calls add twice (lines 59, 81); UserService.calculateSum and
+        // SampleTest each call it once. No self-reference inside Calculator.java.
+        assertEquals(Map.of(
+            "src/main/java/com/example/SearchPatterns.java", 2,
+            "src/main/java/com/example/service/UserService.java", 1,
+            "src/test/java/com/example/SampleTest.java", 1),
+            byFile);
     }
 
     @Test
