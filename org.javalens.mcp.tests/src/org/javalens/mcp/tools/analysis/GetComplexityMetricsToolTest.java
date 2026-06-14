@@ -40,7 +40,7 @@ class GetComplexityMetricsToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("calculates metrics comprehensively")
+    @Test @DisplayName("Calculator: exact LOC, summary, and risk profile (all methods trivial)")
     void calculatesMetricsComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -50,37 +50,35 @@ class GetComplexityMetricsToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // File metrics
+        // File metrics — exact (49 lines: 5 blank, 25 Javadoc comment, 19 code).
         @SuppressWarnings("unchecked")
         Map<String, Object> file = (Map<String, Object>) data.get("file");
-        String path = (String) file.get("path");
-        assertNotNull(path, "file.path missing");
-        assertTrue(path.endsWith(".java"), "file.path ends with .java; got: " + file);
-        assertTrue((Integer) file.get("physicalLOC") > 0);
+        assertTrue(((String) file.get("path")).endsWith("Calculator.java"));
+        assertEquals(49, ((Number) file.get("physicalLOC")).intValue());
+        assertEquals(5, ((Number) file.get("blankLines")).intValue());
+        assertEquals(25, ((Number) file.get("commentLines")).intValue());
+        assertEquals(19, ((Number) file.get("codeLOC")).intValue());
 
-        // Summary — all metric counts non-negative; methodCount > 0 (Calculator has methods)
+        // Summary — the 4 methods (add/subtract/multiply/getLastResult) have no
+        // decision points: CC 1 each, cognitive 0 each.
         @SuppressWarnings("unchecked")
         Map<String, Object> summary = (Map<String, Object>) data.get("summary");
-        assertTrue(((Number) summary.get("totalCyclomaticComplexity")).intValue() >= 0,
-            "totalCyclomaticComplexity >= 0; got: " + summary);
-        assertTrue(((Number) summary.get("totalCognitiveComplexity")).intValue() >= 0,
-            "totalCognitiveComplexity >= 0; got: " + summary);
-        assertTrue(((Number) summary.get("methodCount")).intValue() > 0,
-            "Calculator has methods; methodCount > 0; got: " + summary);
+        assertEquals(4, ((Number) summary.get("methodCount")).intValue());
+        assertEquals(4, ((Number) summary.get("totalCyclomaticComplexity")).intValue());
+        assertEquals(0, ((Number) summary.get("totalCognitiveComplexity")).intValue());
+        assertEquals(1, ((Number) summary.get("maxMethodCC")).intValue());
+        assertEquals(1.0, ((Number) summary.get("averageMethodCC")).doubleValue());
 
-        // Risk assessment — counts non-negative
+        // Risk — all 4 methods are low risk (CC <= 5).
         @SuppressWarnings("unchecked")
         Map<String, Object> risk = (Map<String, Object>) data.get("riskAssessment");
-        assertTrue(((Number) risk.get("highRiskMethods")).intValue() >= 0,
-            "highRiskMethods >= 0; got: " + risk);
-        assertTrue(((Number) risk.get("lowRiskMethods")).intValue() >= 0,
-            "lowRiskMethods >= 0; got: " + risk);
+        assertEquals(4, ((Number) risk.get("lowRiskMethods")).intValue());
+        assertEquals(0, ((Number) risk.get("mediumRiskMethods")).intValue());
+        assertEquals(0, ((Number) risk.get("highRiskMethods")).intValue());
 
-        // Method details included by default — non-empty
         @SuppressWarnings("unchecked")
         List<?> methods = (List<?>) data.get("methods");
-        assertNotNull(methods, "methods list must be present by default");
-        assertFalse(methods.isEmpty(), "Calculator has methods; details list must be non-empty");
+        assertEquals(4, methods.size(), "method details present with exactly the 4 methods");
     }
 
     @Test @DisplayName("respects includeDetails option")
@@ -95,20 +93,29 @@ class GetComplexityMetricsToolTest {
         assertNull(getData(r).get("methods"));
     }
 
-    @Test @DisplayName("requires filePath")
+    @Test @DisplayName("missing filePath -> exact INVALID_PARAMETER")
     void requiresFilePath() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles invalid inputs")
+    @Test @DisplayName("non-existent file -> FILE_NOT_FOUND; empty filePath -> INVALID_PARAMETER")
     void handlesInvalidInputs() {
         ObjectNode badPath = objectMapper.createObjectNode();
         badPath.put("filePath", "/nonexistent/File.java");
-        assertFalse(tool.execute(badPath).isSuccess());
+        ToolResponse badResp = tool.execute(badPath);
+        assertFalse(badResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, badResp.getError().getCode());
+        assertEquals("File not found: /nonexistent/File.java", badResp.getError().getMessage());
 
         ObjectNode emptyPath = objectMapper.createObjectNode();
         emptyPath.put("filePath", "");
-        assertFalse(tool.execute(emptyPath).isSuccess());
+        ToolResponse emptyResp = tool.execute(emptyPath);
+        assertFalse(emptyResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, emptyResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", emptyResp.getError().getMessage());
     }
 
     // ========== Semantic-grade tests (CC boundaries from ComplexityBoundaries) ==========
@@ -213,9 +220,9 @@ class GetComplexityMetricsToolTest {
         }
         Integer describeCC = ccByName.get("describe");
         assertNotNull(describeCC, "describe must appear in methods; got: " + ccByName);
-        assertTrue(describeCC >= 4,
-            "describe has 4 non-default SwitchCase nodes (null, String s, Integer i, int[] arr); "
-                + "CC must reflect them. Got: " + describeCC);
+        // base 1 + 4 non-default SwitchCase (null, String s, Integer i, int[] arr); default excluded.
+        assertEquals(5, (int) describeCC,
+            "describe CC = 1 base + 4 non-default switch cases. Got: " + describeCC);
     }
 
     @Test
