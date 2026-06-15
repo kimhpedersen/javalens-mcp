@@ -176,8 +176,13 @@ class ConvertAnonymousToLambdaToolTest {
 
         ToolResponse response = tool.execute(args);
 
-        // Should refuse because lambda 'this' has different semantics
+        // At this position the cursor is not on the `new` keyword, so the tool resolves
+        // no anonymous class. (The bare-this/super rebinding refusal proper is covered by
+        // superMethodInvocationInBody_isRefused.)
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'position': No anonymous class found at position. "
+            + "Position cursor on 'new' keyword.", response.getError().getMessage());
     }
 
     @Test
@@ -190,8 +195,12 @@ class ConvertAnonymousToLambdaToolTest {
 
         ToolResponse response = tool.execute(args);
 
-        // Should refuse because it has multiple methods
+        // The interface itself has multiple abstract methods, so it fails the
+        // functional-interface (single-abstract-method) check before the body-decl check.
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'type': Not a functional interface - must have exactly "
+            + "one abstract method", response.getError().getMessage());
     }
 
     @Test
@@ -204,8 +213,10 @@ class ConvertAnonymousToLambdaToolTest {
 
         ToolResponse response = tool.execute(args);
 
-        // Should refuse because ArrayList is not a functional interface
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'type': Not a functional interface - must have exactly "
+            + "one abstract method", response.getError().getMessage());
     }
 
     // ========== Required Parameter Tests ==========
@@ -220,26 +231,28 @@ class ConvertAnonymousToLambdaToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     @Test
     @DisplayName("requires line and column parameters")
     void requiresLineAndColumn() {
-        // Missing line
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("filePath", anonymousExamplesPath);
         args1.put("column", 27);
-
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", response1.getError().getMessage());
 
-        // Missing column
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", anonymousExamplesPath);
         args2.put("line", 18);
-
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response2.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", response2.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -254,7 +267,11 @@ class ConvertAnonymousToLambdaToolTest {
 
         ToolResponse response = tool.execute(args);
 
+        // Line 10 col 13 is the outer class declaration; the offset does not resolve to a
+        // valid expression node.
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'position': Invalid position", response.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -363,6 +380,8 @@ class ConvertAnonymousToLambdaToolTest {
         args.put("column", 28);
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, r.getError().getCode());
+        assertEquals("File not found: /nonexistent/Path.java", r.getError().getMessage());
     }
 
     // ========== Refusal-decision completeness ==========
@@ -382,6 +401,10 @@ class ConvertAnonymousToLambdaToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Anonymous class whose SAM body invokes super.toString() must be refused; got success: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'anonymousClass': Method uses bare `this` or a `super` "
+            + "reference whose binding differs in a lambda body. Manual review required.",
+            r.getError().getMessage());
     }
 
     @Test
@@ -417,6 +440,10 @@ class ConvertAnonymousToLambdaToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Anonymous class with a field declared alongside the SAM must be refused; got success: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'anonymousClass': Anonymous class declares non-method "
+            + "members (field, initializer, or nested type) that cannot be represented in a "
+            + "lambda. Manual review required.", r.getError().getMessage());
     }
 
     // ========== Exact converted-text content ==========
