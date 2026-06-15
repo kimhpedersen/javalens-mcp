@@ -60,24 +60,33 @@ class DiagnoseAndFixToolTest {
             + (r.getError() != null ? r.getError().getCode() + " " + r.getError().getMessage() : "n/a"));
 
         Map<String, Object> data = getData(r);
+        assertEquals(1, ((Number) data.get("problemCount")).intValue(),
+            "exactly one fixable problem; got: " + data.get("problems"));
         List<Map<String, Object>> problems = (List<Map<String, Object>>) data.get("problems");
         assertEquals(1, problems.size(),
             "exactly the unused-import warning; got: " + problems);
         Map<String, Object> problem = problems.get(0);
-        assertTrue(String.valueOf(problem.get("message")).contains("java.util.Map"),
-            "the problem must be the unused Map import; got: " + problem);
-        assertTrue(String.valueOf(problem.get("fixId")).startsWith("remove_import"),
-            "the chosen fix must be remove_import; got: " + problem);
+        // DiagnoseFixDemo uses List but never Map -> a single unused-import warning.
+        assertEquals("The import java.util.Map is never used", problem.get("message"));
+        assertEquals("warning", problem.get("severity"));
+        assertEquals(3, ((Number) problem.get("line")).intValue(),
+            "the Map import is at 0-based line 3; got: " + problem);
+        // Map is the second import (index 1; List is index 0), so the top fix removes it.
+        assertEquals("remove_import:1", problem.get("fixId"));
+        assertEquals("Remove unused import", problem.get("fixLabel"));
 
         Map<String, List<Map<String, Object>>> editsByFile =
             (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
         assertEquals(1, editsByFile.size(),
             "edits for exactly the diagnosed file; got: " + editsByFile.keySet());
         List<Map<String, Object>> edits = editsByFile.values().iterator().next();
-        assertFalse(edits.isEmpty(), "the remove_import edit must be computed; got: " + edits);
-        // The delete edit carries offsets (apply_quick_fix's shape); verify the
-        // range actually covers the unused import in the source.
+        assertEquals(1, edits.size(), "exactly one remove_import delete edit; got: " + edits);
         Map<String, Object> delete = edits.get(0);
+        assertEquals("delete", delete.get("type"));
+        assertEquals(3, ((Number) delete.get("startLine")).intValue(),
+            "the delete removes the import at 0-based line 3; got: " + delete);
+        // The deleted byte range is exactly the Map import statement (plus its trailing
+        // newline, which .strip() removes); offsets index the same source the tool read.
         String source;
         try {
             source = java.nio.file.Files.readString(java.nio.file.Path.of(demoPath));
@@ -86,11 +95,10 @@ class DiagnoseAndFixToolTest {
         }
         int start = ((Number) delete.get("startOffset")).intValue();
         int end = ((Number) delete.get("endOffset")).intValue();
-        assertTrue(source.substring(start, end).contains("java.util.Map"),
-            "the deleted range must cover the Map import; got range [" + start + "," + end
-                + ") = " + source.substring(start, end));
+        assertEquals("import java.util.Map;", source.substring(start, end).strip(),
+            "the deleted range must be exactly the Map import; got [" + start + "," + end + ")");
 
-        assertTrue(((Number) data.get("totalEdits")).intValue() >= 1);
+        assertEquals(1, ((Number) data.get("totalEdits")).intValue());
     }
 
     @Test
@@ -116,11 +124,18 @@ class DiagnoseAndFixToolTest {
     @Test
     @DisplayName("missing filePath and unknown file are rejected")
     void invalidInputs_rejected() {
-        assertFalse(tool.execute(mapper.createObjectNode()).isSuccess());
+        ToolResponse missingFilePath = tool.execute(mapper.createObjectNode());
+        assertFalse(missingFilePath.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, missingFilePath.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", missingFilePath.getError().getMessage());
 
+        // An unknown file fails at the diagnostics step, which surfaces FILE_NOT_FOUND.
         ObjectNode unknown = mapper.createObjectNode();
         unknown.put("filePath", "/nonexistent/Nope.java");
-        assertFalse(tool.execute(unknown).isSuccess());
+        ToolResponse unknownFile = tool.execute(unknown);
+        assertFalse(unknownFile.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, unknownFile.getError().getCode());
+        assertEquals("File not found: /nonexistent/Nope.java", unknownFile.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
@@ -138,12 +153,13 @@ class DiagnoseAndFixToolTest {
         JsonNode problems = data.get("problems");
         assertEquals(1, problems.size(), "exactly the unused-import warning through the envelope");
         JsonNode problem = problems.get(0);
-        assertTrue(problem.get("message").asText().contains("java.util.Map"),
-            "the problem must be the unused Map import through the envelope; got: " + problem);
-        assertTrue(problem.get("fixId").asText().startsWith("remove_import"),
-            "the chosen fix must be remove_import through the envelope; got: " + problem);
+        assertEquals("The import java.util.Map is never used", problem.get("message").asText());
+        assertEquals("warning", problem.get("severity").asText());
+        assertEquals(3, problem.get("line").asInt());
+        assertEquals("remove_import:1", problem.get("fixId").asText());
+        assertEquals("Remove unused import", problem.get("fixLabel").asText());
         assertEquals(1, data.get("editsByFile").size(),
             "edits for exactly the diagnosed file through the envelope; got: " + data.get("editsByFile"));
-        assertTrue(data.get("totalEdits").asInt() >= 1, "at least one edit through the envelope");
+        assertEquals(1, data.get("totalEdits").asInt(), "exactly one edit through the envelope");
     }
 }
