@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.5.1] - 2026-06-13
+## [1.5.1] - 2026-06-15
 
 ### Fixed
 
@@ -9,6 +9,7 @@
 - `health_check` reported "no project loaded" after a successful `load_project` **tool** call. The loading state was flipped to LOADED only by the `JAVA_PROJECT_PATH` auto-load path; the tool's registration set the service but not the state. Loading via the tool now reflects LOADED in `health_check`.
 - `find_reflection_usage` returned matches from JavaLens's own Eclipse workspace metadata — hundreds of absolute-path entries under the build directory — mixed in with the real project reflection sites. Its reference search ran against the full workspace scope instead of the project's sources; it now searches a sources-only scope filtered to `.java` files, so only project matches are returned.
 - `get_dependency_graph` fabricated dependency nodes for primitives and `java.lang` types — `int`, `boolean`, `String` and the like rendered as `<context-package>.int` — and counted them as edges, inflating the graph. Unqualified type names are now resolved through the declaring type (so `String` resolves to `java.lang.String` and is filtered as external), primitives are dropped, and names that don't resolve are omitted instead of guessed into the context package.
+- `apply_quick_fix` accepted a fix ID with an empty parameter (e.g. `add_import:`) and emitted a malformed edit (`import ;`) while reporting success. A trailing-empty parameter is now rejected as an invalid fix-ID format.
 
 ### Tests
 
