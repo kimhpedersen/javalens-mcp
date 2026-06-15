@@ -45,9 +45,8 @@ class HealthCheckToolTest {
         String message = (String) data.get("message");
         assertNotNull(message, "message missing");
         assertFalse(message.isBlank(), "message non-blank; got: " + data);
-        String version = (String) data.get("version");
-        assertNotNull(version, "version missing");
-        assertFalse(version.isBlank(), "version non-blank; got: " + data);
+        // version is the server version reported by the protocol handler.
+        assertEquals(org.javalens.mcp.protocol.McpProtocolHandler.serverVersion(), data.get("version"));
         assertNotNull(data.get("uptime"), "uptime missing");
 
         // Project info
@@ -181,20 +180,20 @@ class HealthCheckToolTest {
             (Map<String, Object>) getData(r).get("configuration");
         assertNotNull(configuration);
 
-        // timeoutSeconds defaults to 30 when JAVALENS_TIMEOUT_SECONDS env var is unset.
-        // It's clamped to [5, 300] when set. The default-30 contract is what
-        // documentation-facing AI agents rely on.
-        Object timeout = configuration.get("timeoutSeconds");
-        assertNotNull(timeout, "timeoutSeconds must be present");
-        int t = ((Number) timeout).intValue();
-        assertTrue(t >= 5 && t <= 300,
-            "timeoutSeconds must be in [5, 300] (clamped); got: " + t);
+        // Default config when JAVALENS_TIMEOUT_SECONDS / JAVALENS_ABSOLUTE_PATHS are unset
+        // (the build environment): timeout 30, absolutePaths false.
+        assertEquals(30, ((Number) configuration.get("timeoutSeconds")).intValue());
+        assertEquals(Boolean.FALSE, configuration.get("absolutePaths"));
+    }
 
-        // absolutePaths is a boolean flag from JAVALENS_ABSOLUTE_PATHS env var.
-        Object absolutePaths = configuration.get("absolutePaths");
-        assertNotNull(absolutePaths, "absolutePaths must be present");
-        assertTrue(absolutePaths instanceof Boolean,
-            "absolutePaths must be a boolean; got " + absolutePaths.getClass());
+    @Test
+    @DisplayName("diskSync reports the env default 'strict' when no service is wired")
+    void diskSync_reportsStrictDefault() {
+        ToolResponse r = toolWithProject.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        // service supplier returns null here, so diskSync falls back to the
+        // JAVALENS_DISK_SYNC env default, which is "strict" (#26 ships strict-default).
+        assertEquals("strict", getData(r).get("diskSync"));
     }
 
     @Test
