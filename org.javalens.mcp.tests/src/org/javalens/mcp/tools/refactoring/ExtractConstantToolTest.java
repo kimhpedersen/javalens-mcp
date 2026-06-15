@@ -132,6 +132,8 @@ class ExtractConstantToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'constantName': Required", response.getError().getMessage());
     }
 
     @Test
@@ -147,6 +149,8 @@ class ExtractConstantToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -165,6 +169,9 @@ class ExtractConstantToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'constantName': Not a valid Java identifier",
+            response.getError().getMessage());
     }
 
     @Test
@@ -181,6 +188,9 @@ class ExtractConstantToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'positions': All positions must be >= 0",
+            response.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -209,9 +219,7 @@ class ExtractConstantToolTest {
     void expressionText_matchesSelection() {
         ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
         assertTrue(r.isSuccess());
-        String expr = (String) getData(r).get("expressionText");
-        assertTrue(expr.contains("PREFIX_"),
-            "expressionText must contain PREFIX_; got: " + expr);
+        assertEquals("\"PREFIX_\"", getData(r).get("expressionText"));
     }
 
     @Test
@@ -219,11 +227,8 @@ class ExtractConstantToolTest {
     void declaration_shape() {
         ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
         assertTrue(r.isSuccess());
-        String decl = (String) getData(r).get("declaration");
-        assertNotNull(decl);
-        assertTrue(decl.startsWith("private static final String DEFAULT_PREFIX = "),
-            "declaration must start with `private static final String DEFAULT_PREFIX = `; got: " + decl);
-        assertTrue(decl.endsWith(";"), "declaration must end with `;`; got: " + decl);
+        assertEquals("private static final String DEFAULT_PREFIX = \"PREFIX_\";",
+            getData(r).get("declaration"));
     }
 
     @Test
@@ -304,9 +309,18 @@ class ExtractConstantToolTest {
         args.put("constantName", "DEFAULT_PREFIX");
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'positions': Invalid selection range", r.getError().getMessage());
     }
 
     // ========== Static-context extractability ==========
+
+    private void assertStaticRefusal(ToolResponse r, String reasonSuffix) {
+        assertFalse(r.isSuccess(), "static-context refusal expected; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'selection': Expression cannot be extracted to a "
+            + "static final constant: " + reasonSuffix, r.getError().getMessage());
+    }
 
     @Test
     @DisplayName("Refuses extraction when expression references a method parameter")
@@ -324,9 +338,7 @@ class ExtractConstantToolTest {
         args.put("constantName", "INPUT_REF");
 
         ToolResponse r = tool.execute(args);
-        assertFalse(r.isSuccess(),
-            "Expression referencing a method parameter must not be extracted to a static "
-                + "final constant; got: " + r.getData());
+        assertStaticRefusal(r, "references local variable or parameter `input`");
     }
 
     @Test
@@ -343,9 +355,7 @@ class ExtractConstantToolTest {
         args.put("constantName", "LOCAL_REF");
 
         ToolResponse r = tool.execute(args);
-        assertFalse(r.isSuccess(),
-            "Expression referencing a local variable must not be extracted to a static "
-                + "final constant; got: " + r.getData());
+        assertStaticRefusal(r, "references local variable or parameter `oldName`");
     }
 
     @Test
@@ -362,9 +372,7 @@ class ExtractConstantToolTest {
         args.put("constantName", "FIELD_REF");
 
         ToolResponse r = tool.execute(args);
-        assertFalse(r.isSuccess(),
-            "Expression referencing an instance field must not be extracted to a static "
-                + "final constant; got: " + r.getData());
+        assertStaticRefusal(r, "references instance field `userName`");
     }
 
     @Test
@@ -381,9 +389,7 @@ class ExtractConstantToolTest {
         args.put("constantName", "METHOD_CALL");
 
         ToolResponse r = tool.execute(args);
-        assertFalse(r.isSuccess(),
-            "Expression calling an instance method must not be extracted to a static "
-                + "final constant; got: " + r.getData());
+        assertStaticRefusal(r, "calls instance method `formatMessage` via implicit `this`");
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
