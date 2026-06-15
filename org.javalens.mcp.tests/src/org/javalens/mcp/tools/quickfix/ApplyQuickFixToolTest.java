@@ -77,13 +77,16 @@ class ApplyQuickFixToolTest {
         Map<String, Object> edit = edits.get(0);
         assertEquals("insert", edit.get("type"),
             "Adding an import is an insertion; got: " + edit);
-        assertTrue(((Number) edit.get("offset")).intValue() >= 0, "offset >= 0; got: " + edit);
-        assertTrue(((Number) edit.get("line")).intValue() >= 0, "line >= 0; got: " + edit);
+        // The insert lands at the start of 0-based line 2 (the `/**` javadoc), right after
+        // the package line and the blank line that follow it. The raw byte offset varies
+        // with the checkout's line-ending normalization (CRLF vs LF), so it is asserted
+        // relationally; the line number is determinate.
+        assertEquals(2, ((Number) edit.get("line")).intValue(),
+            "import insert lands at 0-based line 2; got: " + edit);
+        assertTrue(((Number) edit.get("offset")).intValue() > 0, "offset is into the source; got: " + edit);
 
-        String newText = (String) edit.get("newText");
-        assertNotNull(newText, "Insert edit must carry the text to insert");
-        assertTrue(newText.contains("import java.util.Date;"),
-            "Insert text must contain the full import statement; got: " + newText);
+        assertEquals("\nimport java.util.Date;\n",
+            ((String) edit.get("newText")).replace("\r\n", "\n"));
     }
 
     @Test
@@ -156,7 +159,8 @@ class ApplyQuickFixToolTest {
         ToolResponse response = tool.execute(args);
         assertFalse(response.isSuccess(),
             "add_throws on a non-method position must fail with an error response");
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': No method found at line 0", response.getError().getMessage());
     }
 
     @Test
@@ -182,14 +186,15 @@ class ApplyQuickFixToolTest {
         assertEquals("replace", edit.get("type"),
             "Wrapping is a replacement of the original statement; got: " + edit);
 
-        String newText = (String) edit.get("newText");
-        assertNotNull(newText);
-        assertTrue(newText.startsWith("try {"),
-            "Wrapped block must start with `try {`; got: " + newText);
-        assertTrue(newText.contains("lastResult = a + b;"),
-            "Wrapped block must preserve the original statement; got: " + newText);
-        assertTrue(newText.contains("catch (java.io.IOException e)"),
-            "Wrapped block must catch the requested exception type; got: " + newText);
+        // Exact JDT-rendered wrapped block (CRLF-normalized).
+        assertEquals(
+            "try {\n"
+            + "            lastResult = a + b;\n"
+            + "        } catch (java.io.IOException e) {\n"
+            + "            // TODO: handle exception\n"
+            + "            e.printStackTrace();\n"
+            + "        }",
+            ((String) edit.get("newText")).replace("\r\n", "\n"));
     }
 
     @Test
@@ -204,7 +209,8 @@ class ApplyQuickFixToolTest {
         ToolResponse response = tool.execute(args);
         assertFalse(response.isSuccess(),
             "surround_try_catch on a non-statement line must fail with an error response");
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': No statement found at line 0", response.getError().getMessage());
     }
 
     @Test
@@ -216,7 +222,8 @@ class ApplyQuickFixToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     @Test
@@ -228,7 +235,8 @@ class ApplyQuickFixToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': Required", response.getError().getMessage());
     }
 
     @Test
@@ -241,29 +249,36 @@ class ApplyQuickFixToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': Invalid format. Expected type:param",
+            response.getError().getMessage());
     }
 
     @Test
     @DisplayName("handles unknown fix type and non-existent file")
     void handlesErrorCases() {
-        // Test unknown fix type
+        // Unknown fix type: the switch default throws IllegalArgument' "Unknown fix type: <type>",
+        // surfaced as an invalid_parameter error naming the fixId.
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("filePath", calculatorPath);
         args1.put("fixId", "unknown_type:value");
 
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
-        assertNotNull(response1.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': Unknown fix type: unknown_type",
+            response1.getError().getMessage());
 
-        // Test non-existent file
+        // Non-existent file: the compilation unit cannot be resolved -> FILE_NOT_FOUND.
+        String missing = projectPath.resolve("NonExistent.java").toString();
         ObjectNode args2 = objectMapper.createObjectNode();
-        args2.put("filePath", projectPath.resolve("NonExistent.java").toString());
+        args2.put("filePath", missing);
         args2.put("fixId", "add_import:java.util.List");
 
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
-        assertNotNull(response2.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, response2.getError().getCode());
+        assertEquals("File not found: " + missing, response2.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -276,22 +291,24 @@ class ApplyQuickFixToolTest {
         args.put("fixId", "add_import");
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
-        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': Invalid format. Expected type:param",
+            r.getError().getMessage());
     }
 
     @Test
-    @DisplayName("remove_import with out-of-range index does not throw — returns empty edits or error")
+    @DisplayName("remove_import with out-of-range index is rejected with the index in the message")
     void removeImport_outOfRangeIndex() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", searchPatternsPath);
         args.put("fixId", "remove_import:9999");
         ToolResponse r = tool.execute(args);
-        // The tool may return success with 0 edits, or an error. Either is acceptable —
-        // the contract is "must not crash silently with stale data".
-        if (r.isSuccess()) {
-            assertTrue(getEdits(getData(r)).isEmpty(),
-                "Out-of-range remove_import index must yield 0 edits if success; got: " + getData(r));
-        }
+        // applyRemoveImport throws IllegalArgument for an out-of-range index, surfaced
+        // as an invalid_parameter error naming the offending index.
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': Import index out of range: 9999",
+            r.getError().getMessage());
     }
 
     @Test
@@ -310,29 +327,28 @@ class ApplyQuickFixToolTest {
     }
 
     @Test
-    @DisplayName("Empty fixId param part rejected as invalid format (e.g., `add_import:`)")
+    @DisplayName("Empty fixId param part (`add_import:`) is rejected as invalid format")
     void emptyFixParam_handled() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("fixId", "add_import:");
         ToolResponse r = tool.execute(args);
-        // Should either succeed with empty/odd import OR fail cleanly. Verify no crash.
-        if (!r.isSuccess()) {
-            assertNotNull(r.getError());
-        }
+        // A trailing colon leaves an empty parameter; the tool must reject it rather than
+        // emit a malformed `import ;` edit and report success.
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'fixId': Invalid format. Expected type:param",
+            r.getError().getMessage());
     }
 
     @Test
-    @DisplayName("add_throws on a constructor with this(...) delegation: throws is added to that constructor's signature")
-    @SuppressWarnings("unchecked")
+    @DisplayName("add_throws on a constructor with this(...) delegation: inserts ` throws java.io.IOException` on that constructor")
     void addThrows_onConstructorWithThisDelegation_addsToTargetConstructor() {
         // ConstructorTarget(String name) at 0-based line 7 delegates to
-        // ConstructorTarget(String name, int count) via `this(name, 0)`. Applying
-        // add_throws:IOException to the 1-arg constructor's declaration should add
-        // the throws clause to its signature. The this() call site does NOT need
-        // updating — calling this(args) only requires throws on the CALLER (if the
-        // delegated-to constructor's body throws). This test pins that the operation
-        // succeeds and produces a single insert edit for the throws clause.
+        // ConstructorTarget(String name, int count) via `this(name, 0)`. A constructor is
+        // a MethodDeclaration in JDT, so add_throws finds it and — since it has no existing
+        // throws clause — inserts ` throws X` after the parameter list's closing paren. The
+        // this() call site does NOT need updating: it is the only edit produced.
         String constructorTargetPath = projectPath
             .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
         ObjectNode args = objectMapper.createObjectNode();
@@ -347,15 +363,13 @@ class ApplyQuickFixToolTest {
         Map<String, Object> data = getData(r);
         assertEquals("add_throws", data.get("fixType"));
 
-        List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("edits");
+        List<Map<String, Object>> edits = getEdits(data);
         assertEquals(1, edits.size(),
             "add_throws emits exactly one insert edit for the throws clause; got: " + edits);
         Map<String, Object> edit = edits.get(0);
         assertEquals("insert", edit.get("type"));
-        String newText = (String) edit.get("newText");
-        assertNotNull(newText);
-        assertTrue(newText.contains("throws") && newText.contains("java.io.IOException"),
-            "Insert text must contain `throws java.io.IOException`; got: " + newText);
+        assertEquals(" throws java.io.IOException", edit.get("newText"),
+            "First-throws insertion on the constructor must produce ` throws X`; got: " + edit);
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========

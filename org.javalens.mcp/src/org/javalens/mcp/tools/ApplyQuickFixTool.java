@@ -94,9 +94,10 @@ public class ApplyQuickFixTool extends AbstractTool {
                 return ToolResponse.fileNotFound(filePath);
             }
 
-            // Parse fixId: {type}:{param}
+            // Parse fixId: {type}:{param} — both sides must be non-empty. A trailing
+            // colon (empty param) would otherwise emit malformed edits like `import ;`.
             int colonIndex = fixId.indexOf(':');
-            if (colonIndex <= 0) {
+            if (colonIndex <= 0 || colonIndex == fixId.length() - 1) {
                 return ToolResponse.invalidParameter("fixId", "Invalid format. Expected type:param");
             }
 
