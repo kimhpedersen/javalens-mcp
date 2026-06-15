@@ -115,18 +115,22 @@ class SuggestImportsToolTest {
     }
 
     @Test
-    @DisplayName("respects maxResults parameter")
+    @DisplayName("maxResults=1 caps to exactly java.util.List and meta.truncated is true")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "List");
-        args.put("maxResults", 3);
+        args.put("maxResults", 1);
 
         ToolResponse response = tool.execute(args);
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         List<Map<String, Object>> candidates = getCandidates(data);
-        assertTrue(candidates.size() <= 3);
+        // List resolves to >1 candidate (java.util.List, java.awt.List, ...), so the cap fires.
+        assertEquals(1, candidates.size());
+        assertEquals(1, ((Number) data.get("totalCandidates")).intValue());
+        assertEquals("java.util.List", candidates.get(0).get("fullyQualifiedName"));
+        assertEquals(Boolean.TRUE, response.getMeta().getTruncated());
     }
 
     @Test
@@ -152,7 +156,8 @@ class SuggestImportsToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'typeName': Required", response.getError().getMessage());
     }
 
     @Test
@@ -164,7 +169,8 @@ class SuggestImportsToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'typeName': Required", response.getError().getMessage());
     }
 
     @Test
@@ -281,8 +287,8 @@ class SuggestImportsToolTest {
         assertFalse(r.isSuccess());
         assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
             r.getError().getCode());
-        assertTrue(r.getError().getMessage().contains("maxResults"),
-            "Error must name maxResults; got: " + r.getError().getMessage());
+        assertEquals("Invalid parameter 'maxResults': Must be >= 0; got: -1",
+            r.getError().getMessage());
     }
 
     @Test
