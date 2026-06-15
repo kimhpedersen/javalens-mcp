@@ -70,20 +70,9 @@ class ExtractVariableToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify variable info — exact name and Java-valid type
         assertEquals("calculated", data.get("variableName"));
-        String variableType = (String) data.get("variableType");
-        assertNotNull(variableType, "variableType missing");
-        assertFalse(variableType.isBlank(), "variableType non-blank; got: " + data);
-
-        // Verify edit structure — non-empty
-        List<Map<String, Object>> edits = getEdits(data);
-        assertFalse(edits.isEmpty(), "edits must be non-empty");
-
-        Map<String, Object> firstEdit = edits.get(0);
-        String newText = (String) firstEdit.get("newText");
-        assertNotNull(newText, "newText missing on first edit");
-        assertFalse(newText.isBlank(), "newText non-blank on first edit; got: " + firstEdit);
+        assertEquals("int", data.get("variableType"));
+        assertEquals(2, getEdits(data).size(), "insert (declaration) + replace (expression)");
     }
 
     // ========== Optional Parameter Tests ==========
@@ -103,10 +92,10 @@ class ExtractVariableToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        String autoName = (String) data.get("variableName");
-        assertNotNull(autoName, "variableName missing on auto-suggest");
-        assertFalse(autoName.isBlank(),
-            "auto-suggested variable name must be non-blank; got: " + data);
+        // `input.length() * 2 + 10` is an int InfixExpression; the type-based suggester
+        // yields "int" (reserved), so it falls back to "intValue".
+        assertEquals("intValue", data.get("variableName"));
+        assertEquals("int intValue = input.length() * 2 + 10;", data.get("declaration"));
     }
 
     // ========== Required Parameter Tests ==========
@@ -123,28 +112,32 @@ class ExtractVariableToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     @Test
     @DisplayName("requires start and end position parameters")
     void requiresPositionParameters() {
-        // Missing start position
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("filePath", refactoringTargetPath);
         args1.put("endLine", 31);
         args1.put("endColumn", 44);
-
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'positions': All positions must be >= 0",
+            response1.getError().getMessage());
 
-        // Missing end position
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", refactoringTargetPath);
         args2.put("startLine", 31);
         args2.put("startColumn", 21);
-
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response2.getError().getCode());
+        assertEquals("Invalid parameter 'positions': All positions must be >= 0",
+            response2.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -163,6 +156,9 @@ class ExtractVariableToolTest {
 
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'variableName': Not a valid Java identifier",
+            response1.getError().getMessage());
 
         // Test reserved word
         ObjectNode args2 = objectMapper.createObjectNode();
@@ -175,6 +171,9 @@ class ExtractVariableToolTest {
 
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response2.getError().getCode());
+        assertEquals("Invalid parameter 'variableName': Not a valid Java identifier",
+            response2.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -229,25 +228,15 @@ class ExtractVariableToolTest {
     void expressionText_matchesSelection() {
         ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
         assertTrue(r.isSuccess());
-        String expr = (String) getData(r).get("expressionText");
-        assertNotNull(expr);
-        // Order of normalisation may vary; assert key tokens are present.
-        assertTrue(expr.contains("input.length()"),
-            "expressionText must contain input.length(); got: " + expr);
-        assertTrue(expr.contains("10"),
-            "expressionText must contain the literal 10; got: " + expr);
+        assertEquals("input.length() * 2 + 10", getData(r).get("expressionText"));
     }
 
     @Test
-    @DisplayName("declaration string is `int <name> = <expr>;`")
+    @DisplayName("declaration string is `int calculated = input.length() * 2 + 10;`")
     void declaration_shape() {
         ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
         assertTrue(r.isSuccess());
-        String decl = (String) getData(r).get("declaration");
-        assertNotNull(decl);
-        assertTrue(decl.startsWith("int calculated = "),
-            "declaration must start with `int calculated = `; got: " + decl);
-        assertTrue(decl.endsWith(";"), "declaration must end with `;`; got: " + decl);
+        assertEquals("int calculated = input.length() * 2 + 10;", getData(r).get("declaration"));
     }
 
     @Test
@@ -316,6 +305,10 @@ class ExtractVariableToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Extraction from a for-loop condition must be refused; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'selection': Extracting this expression would change "
+            + "evaluation semantics: expression is a for-loop condition (re-evaluated each iteration)",
+            r.getError().getMessage());
     }
 
     @Test
@@ -334,6 +327,10 @@ class ExtractVariableToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Extraction from the right operand of `&&` must be refused; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'selection': Extracting this expression would change "
+            + "evaluation semantics: expression sits on the conditional side of `&&` "
+            + "(would lose short-circuit guard)", r.getError().getMessage());
     }
 
     @Test
@@ -349,6 +346,10 @@ class ExtractVariableToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Extraction from a while-loop condition must be refused; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'selection': Extracting this expression would change "
+            + "evaluation semantics: expression is a while-loop condition (re-evaluated each iteration)",
+            r.getError().getMessage());
     }
 
     @Test
@@ -363,6 +364,8 @@ class ExtractVariableToolTest {
         args.put("variableName", "calculated");
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(), "Inverted range must be rejected");
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'positions': Invalid selection range", r.getError().getMessage());
     }
 
     // ========== Exact edit range ==========
