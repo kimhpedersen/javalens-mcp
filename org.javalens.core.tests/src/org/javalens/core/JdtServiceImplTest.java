@@ -499,4 +499,38 @@ class JdtServiceImplTest {
         assertNull(type,
             "getTypeAtPosition at the package line must yield null; got: " + type);
     }
+
+    // ========== dispose() ==========
+
+    @Test
+    @DisplayName("dispose() removes the session's workspace project")
+    void dispose_removesWorkspaceProject() {
+        IJavaProject javaProject = service.getJavaProject();
+        String projectName = javaProject.getProject().getName();
+        assertTrue(javaProject.getProject().exists(), "Project must exist before dispose()");
+
+        service.dispose();
+
+        assertFalse(javaProject.getProject().exists(),
+            "dispose() must remove the workspace project " + projectName);
+    }
+
+    @Test
+    @DisplayName("dispose() does not delete the project's files on disk")
+    void dispose_doesNotDeleteFilesOnDisk() {
+        Path calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java");
+        assertTrue(java.nio.file.Files.exists(calculatorPath), "Fixture file must exist before dispose()");
+
+        service.dispose();
+
+        assertTrue(java.nio.file.Files.exists(calculatorPath),
+            "dispose() must only unlink the workspace project, never touch external source files");
+    }
+
+    @Test
+    @DisplayName("dispose() before any loadProject() is a harmless no-op")
+    void dispose_beforeLoad_doesNotThrow() {
+        JdtServiceImpl neverLoaded = new JdtServiceImpl();
+        neverLoaded.dispose(); // must not throw
+    }
 }

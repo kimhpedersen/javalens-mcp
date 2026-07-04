@@ -125,30 +125,30 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    @DisplayName("createLinkedProject sweeps stale UUID-suffixed projects from prior sessions")
-    void createLinkedProject_sweepsStaleProjectsFromPriorSessions() throws CoreException {
-        // Simulate a prior session that crashed without cleanup by creating
-        // a project with a synthetic UUID suffix.
-        String baseName = "sweep-test";
-        WorkspaceManager priorSession = new WorkspaceManager();
-        priorSession.initialize();
-        IProject priorProject = priorSession.createLinkedProject(baseName, fixturePath);
-        String priorName = priorProject.getName();
-        assertTrue(priorProject.exists(),
-            "Precondition: prior-session project must exist before the sweep test runs");
+    @DisplayName("createLinkedProject does not touch another session's project, even with the same base name")
+    void createLinkedProject_doesNotSweepAnotherSessionsProject() throws CoreException {
+        // Prior versions of createLinkedProject swept any other workspace project
+        // matching "{baseName}-{8-hex}", on the theory that it must be an orphan from
+        // a crashed process. That's unsafe once more than one project can be live at
+        // once (e.g. two sessions on two different but same-named-directory projects):
+        // a name pattern can't distinguish a dead orphan from a live sibling. Cleanup
+        // is now always explicit via deleteProject/dispose(), never an implicit sweep.
+        String baseName = "sibling-test";
+        WorkspaceManager firstSession = new WorkspaceManager();
+        firstSession.initialize();
+        IProject firstProject = firstSession.createLinkedProject(baseName, fixturePath);
+        String firstName = firstProject.getName();
+        assertTrue(firstProject.exists(), "Precondition: first session's project must exist");
 
-        // A NEW session (different UUID) calls createLinkedProject. The prior
-        // project should be swept because it matches the {baseName}-{8-hex}
-        // pattern and isn't the new session's own.
-        WorkspaceManager newSession = new WorkspaceManager();
-        newSession.initialize();
-        IProject newProject = newSession.createLinkedProject(baseName, fixturePath);
-        assertTrue(newProject.exists(), "New session's project must exist");
+        WorkspaceManager secondSession = new WorkspaceManager();
+        secondSession.initialize();
+        IProject secondProject = secondSession.createLinkedProject(baseName, fixturePath);
+        assertTrue(secondProject.exists(), "Second session's project must exist");
 
-        IProject staleHandle = newSession.getRoot().getProject(priorName);
-        assertFalse(staleHandle.exists(),
-            "Stale prior-session project (" + priorName + ") must be swept by the new "
-                + "session's createLinkedProject; got: still exists.");
+        IProject firstHandle = secondSession.getRoot().getProject(firstName);
+        assertTrue(firstHandle.exists(),
+            "First session's project (" + firstName + ") must survive a second session's "
+                + "createLinkedProject with the same base name; got: it was deleted.");
     }
 
     @Test
@@ -272,31 +272,6 @@ class WorkspaceManagerTest {
     void refresh_doesNotThrow() throws CoreException {
         // Just verify refresh doesn't throw
         assertDoesNotThrow(() -> workspaceManager.refresh());
-    }
-
-    @Test
-    @DisplayName("sweepStaleProjects only matches its own baseName — projects with other base names are preserved")
-    void sweepStaleProjects_scopedToBaseName() throws CoreException {
-        // Create a stale project under baseName "other-base". A subsequent
-        // createLinkedProject call with a DIFFERENT baseName must NOT sweep it
-        // — the regex must be scoped to the requested baseName, not any
-        // UUID-suffixed name.
-        WorkspaceManager priorOther = new WorkspaceManager();
-        priorOther.initialize();
-        IProject otherProject = priorOther.createLinkedProject("other-base", fixturePath);
-        String otherName = otherProject.getName();
-        assertTrue(otherProject.exists(), "Precondition: other-base project must exist");
-
-        // New session calls createLinkedProject with baseName "scope-test".
-        // The other-base-{hex} project must survive because its base name differs.
-        WorkspaceManager newSession = new WorkspaceManager();
-        newSession.initialize();
-        newSession.createLinkedProject("scope-test", fixturePath);
-
-        IProject preservedHandle = newSession.getRoot().getProject(otherName);
-        assertTrue(preservedHandle.exists(),
-            "sweepStaleProjects must scope to its baseName; the other-base project "
-                + "(" + otherName + ") should survive. Got: swept incorrectly.");
     }
 
     @Test

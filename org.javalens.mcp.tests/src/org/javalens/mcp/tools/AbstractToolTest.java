@@ -5,15 +5,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
-import org.javalens.mcp.JavaLensApplication;
 import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ErrorInfo;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.session.LoadedProject;
+import org.javalens.mcp.session.Session;
+import org.javalens.mcp.session.SessionContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.nio.file.Path;
 
 import java.util.List;
 import java.util.Map;
@@ -70,33 +74,44 @@ class AbstractToolTest {
     // ========== execute() dispatch ==========
 
     @AfterEach
-    void clearStaticInstance() throws Exception {
-        // Tests that flipped JavaLensApplication's static instance MUST restore it; any
-        // test that left LOADING/FAILED state would corrupt every subsequent dispatch
-        // test. Clears the static reference back to null (the test-environment default).
-        Field instanceField = JavaLensApplication.class.getDeclaredField("instance");
-        instanceField.setAccessible(true);
-        instanceField.set(null, null);
+    void clearSessionContext() {
+        // Tests that bind a session via forceLoadingState MUST unbind it; any test
+        // that left LOADING/FAILED bound would corrupt every subsequent dispatch
+        // test on the same thread. Restores the "no session bound" test-environment
+        // default that AbstractTool.execute() falls back to.
+        SessionContext.clear();
     }
 
     /**
-     * Force {@link JavaLensApplication#getLoadingState()} to return the given state by
-     * constructing a JavaLensApplication, setting its private loadingState field, and
-     * planting it as the static instance. No production-code hook required.
+     * Binds a {@link Session} (via {@link SessionContext}) whose
+     * {@code getLoadingState()}/{@code getLoadingError()} report the given state, by
+     * reflectively constructing a {@link Session} and a {@link LoadedProject} and
+     * attaching one to the other. Both classes intentionally have no public
+     * constructor/state-setting API outside {@code org.javalens.mcp.session} — normal
+     * production code goes through {@code ProjectRegistry}, but forcing LOADING/FAILED
+     * here without a real (fixture-backed) load needs to reach past that.
      */
     private static void forceLoadingState(ProjectLoadingState state, String errorMessage) throws Exception {
-        JavaLensApplication app = new JavaLensApplication();
-        Field stateField = JavaLensApplication.class.getDeclaredField("loadingState");
-        stateField.setAccessible(true);
-        stateField.set(app, state);
+        Constructor<Session> sessionCtor = Session.class.getDeclaredConstructor(String.class, ToolRegistry.class);
+        sessionCtor.setAccessible(true);
+        Session session = sessionCtor.newInstance("test-session", new ToolRegistry());
+
+        Constructor<LoadedProject> projectCtor = LoadedProject.class.getDeclaredConstructor(Path.class);
+        projectCtor.setAccessible(true);
+        LoadedProject project = projectCtor.newInstance(Path.of("/tmp/abstract-tool-test"));
+        setField(project, "loadingState", state);
         if (errorMessage != null) {
-            Field errorField = JavaLensApplication.class.getDeclaredField("loadingError");
-            errorField.setAccessible(true);
-            errorField.set(app, errorMessage);
+            setField(project, "loadingError", errorMessage);
         }
-        Field instanceField = JavaLensApplication.class.getDeclaredField("instance");
-        instanceField.setAccessible(true);
-        instanceField.set(null, app);
+
+        setField(session, "attachedProject", project);
+        SessionContext.bind(session);
+    }
+
+    private static void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     @Test
@@ -131,9 +146,9 @@ class AbstractToolTest {
     @Test
     @DisplayName("execute() with null service returns project-not-loaded (default loading-state branch)")
     void execute_nullService_returnsNotLoaded() {
-        // JavaLensApplication.getLoadingState() returns NOT_LOADED when its static
-        // `instance` field is null (no app started) — which is the test environment.
-        // The switch hits the `default` arm and produces ToolResponse.projectNotLoaded().
+        // SessionContext.current() returns null when no session is bound — the test
+        // environment default (nothing calls SessionContext.bind in this test). The
+        // switch hits the `default` arm and produces ToolResponse.projectNotLoaded().
         TestTool tool = new TestTool(() -> null);
         ToolResponse response = tool.execute(objectMapper.createObjectNode());
 

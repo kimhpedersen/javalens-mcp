@@ -193,4 +193,13 @@ public interface IJdtService {
     default List<LoadWarning> getWarnings() {
         return List.of();
     }
+
+    /**
+     * Release any workspace resources (e.g. the backing Eclipse project) held
+     * by this service instance. Safe to call more than once and when no
+     * project was ever loaded. Default no-op for implementations with
+     * nothing to release (e.g. test fakes).
+     */
+    default void dispose() {
+    }
 }

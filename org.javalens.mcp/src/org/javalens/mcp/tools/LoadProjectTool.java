@@ -5,6 +5,9 @@ import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.session.ProjectRegistry;
+import org.javalens.mcp.session.Session;
+import org.javalens.mcp.session.SessionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,7 +17,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 
 /**
  * Load a Java project for analysis.
@@ -26,10 +28,16 @@ public class LoadProjectTool implements Tool {
 
     private static final Logger log = LoggerFactory.getLogger(LoadProjectTool.class);
 
-    private final Consumer<IJdtService> serviceSetter;
+    private final ProjectRegistry projectRegistry;
 
-    public LoadProjectTool(Consumer<IJdtService> serviceSetter) {
-        this.serviceSetter = serviceSetter;
+    /**
+     * @param projectRegistry the shared registry to attach the current session (via
+     *        {@link SessionContext#current()}) to once this call's load succeeds —
+     *        this is what lets a different session attaching to the same path later
+     *        reuse the result instead of reloading.
+     */
+    public LoadProjectTool(ProjectRegistry projectRegistry) {
+        this.projectRegistry = projectRegistry;
     }
 
     @Override
@@ -93,6 +101,15 @@ public class LoadProjectTool implements Tool {
 
         String projectPath = arguments.get("projectPath").asText();
 
+        Session session = SessionContext.current();
+        if (session == null) {
+            // Every real transport binds a session before dispatching any tool call
+            // (stdio binds one ambient session at startup; a future HTTP transport
+            // binds one per request). Only reachable from a test that never bound one.
+            return ToolResponse.internalError(new IllegalStateException(
+                "No active session bound — load_project cannot store its result"));
+        }
+
         try {
             Path path = Path.of(projectPath).toAbsolutePath().normalize();
 
@@ -111,12 +128,27 @@ public class LoadProjectTool implements Tool {
 
             log.info("Loading project: {}", path);
 
+            // Capture the outgoing service BEFORE loading the new one: if loadProject()
+            // below throws, the previous service must stay registered and untouched (a
+            // failed reload shouldn't leave the caller with nothing usable).
+            IJdtService previous = session.getJdtService();
+
             // Create and initialize the JDT service
             JdtServiceImpl service = new JdtServiceImpl();
             service.loadProject(path);
 
-            // Store service for other tools to use
-            serviceSetter.accept(service);
+            // Register the freshly-loaded service with the shared registry and attach
+            // this session to it, so a different session attaching to the same path
+            // later reuses it instead of reloading (see ProjectRegistry.registerLoaded).
+            projectRegistry.registerLoaded(session, service);
+
+            // Only now, after the new service has taken over successfully, release the
+            // old one's workspace project. There's no automatic sweep for this (see
+            // WorkspaceManager's class Javadoc) - without this, every reload within the
+            // same session would leak the previous project's workspace entry.
+            if (previous != null) {
+                previous.dispose();
+            }
 
             // Build response
             Map<String, Object> result = new LinkedHashMap<>();

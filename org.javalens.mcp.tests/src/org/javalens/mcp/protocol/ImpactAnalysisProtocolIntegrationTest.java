@@ -2,19 +2,24 @@ package org.javalens.mcp.protocol;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.javalens.core.IJdtService;
 import org.javalens.mcp.fixtures.TestProjectHelper;
+import org.javalens.mcp.session.ProjectRegistry;
+import org.javalens.mcp.session.Session;
+import org.javalens.mcp.session.SessionContext;
+import org.javalens.mcp.session.SessionManager;
 import org.javalens.mcp.tools.AnalyzeChangeImpactTool;
 import org.javalens.mcp.tools.FindAffectedTestsTool;
 import org.javalens.mcp.tools.FindUnreachableCodeTool;
 import org.javalens.mcp.tools.LoadProjectTool;
 import org.javalens.mcp.tools.ToolRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -32,12 +37,15 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class ImpactAnalysisProtocolIntegrationTest {
 
+    /** Long enough that the background sweep never fires mid-test. */
+    private static final Duration NO_BACKGROUND_SWEEP = Duration.ofHours(1);
+
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
 
     private McpProtocolHandler handler;
     private ObjectMapper objectMapper;
-    private volatile IJdtService sharedService;
+    private ProjectRegistry projectRegistry;
     private Path projectPath;
 
     @BeforeEach
@@ -45,15 +53,25 @@ class ImpactAnalysisProtocolIntegrationTest {
         objectMapper = new ObjectMapper();
         ToolRegistry toolRegistry = new ToolRegistry();
         handler = new McpProtocolHandler(toolRegistry);
-        sharedService = null;
+        projectRegistry = new ProjectRegistry(NO_BACKGROUND_SWEEP, NO_BACKGROUND_SWEEP);
+        SessionManager sessionManager = new SessionManager(toolRegistry, projectRegistry,
+            NO_BACKGROUND_SWEEP, NO_BACKGROUND_SWEEP);
+        Session session = sessionManager.create();
+        SessionContext.bind(session);
 
         // Replicate JavaLensApplication's registration pattern for the tools under test.
-        toolRegistry.register(new LoadProjectTool(service -> this.sharedService = service));
-        toolRegistry.register(new FindUnreachableCodeTool(() -> this.sharedService));
-        toolRegistry.register(new AnalyzeChangeImpactTool(() -> this.sharedService));
-        toolRegistry.register(new FindAffectedTestsTool(() -> this.sharedService));
+        toolRegistry.register(new LoadProjectTool(projectRegistry));
+        toolRegistry.register(new FindUnreachableCodeTool(() -> SessionContext.current().getJdtService()));
+        toolRegistry.register(new AnalyzeChangeImpactTool(() -> SessionContext.current().getJdtService()));
+        toolRegistry.register(new FindAffectedTestsTool(() -> SessionContext.current().getJdtService()));
 
         projectPath = helper.getFixturePath("reachability-maven");
+    }
+
+    @AfterEach
+    void tearDown() {
+        SessionContext.clear();
+        projectRegistry.close();
     }
 
     private JsonNode call(String request) throws Exception {

@@ -316,6 +316,18 @@ public class JdtServiceImpl implements IJdtService {
         }
     }
 
+    /**
+     * Removes this session's workspace project (created by {@link #loadProject}),
+     * freeing its JDT index/model memory. Does not touch the project's files on
+     * disk. No-op if {@link #loadProject} was never called.
+     */
+    @Override
+    public void dispose() {
+        if (javaProject != null) {
+            workspaceManager.deleteProject(javaProject.getProject().getName());
+        }
+    }
+
     @Override
     public IPathUtils getPathUtils() {
         return pathUtils;

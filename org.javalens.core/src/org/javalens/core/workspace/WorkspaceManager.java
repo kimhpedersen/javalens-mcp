@@ -21,6 +21,19 @@ import java.util.UUID;
  *
  * Each session gets a unique UUID-based project name to support
  * multiple concurrent sessions without conflicts.
+ *
+ * <p>Cleanup of a no-longer-needed project is always explicit, via
+ * {@link #deleteProject}, called by the code that knows the project is no
+ * longer live (e.g. on disposing an {@code IJdtService}). This class does
+ * NOT sweep other UUID-suffixed projects that happen to share a base name:
+ * an earlier version did, on the assumption that any same-base-name project
+ * still around was an orphan from a crashed process, but that's only true
+ * when at most one project is ever live per base name at a time. Once more
+ * than one genuinely different project can be loaded concurrently (as
+ * multi-session serving does), two unrelated projects can share a base name
+ * while both are very much alive, and a name-pattern sweep can't tell the
+ * difference — it would delete a live sibling's workspace entry out from
+ * under it.
  */
 public class WorkspaceManager {
 
@@ -120,11 +133,6 @@ public class WorkspaceManager {
         // Append session ID to make project name unique per session
         String uniqueName = name + "-" + sessionId;
 
-        // Defense in depth: sweep stale UUID-suffixed projects from prior sessions
-        // that may have survived a hard kill before the JavaLensLauncher shutdown
-        // hook could clean them. The pattern is "{name}-{8-hex}".
-        sweepStaleProjects(name, uniqueName);
-
         IProject project = root.getProject(uniqueName);
 
         if (project.exists()) {
@@ -172,33 +180,6 @@ public class WorkspaceManager {
         IPath linkPath = new Path(externalPath.toAbsolutePath().toString());
         folder.createLink(linkPath, org.eclipse.core.resources.IResource.NONE, new NullProgressMonitor());
         log.debug("Created linked folder: {} -> {}", folderName, externalPath);
-    }
-
-    /**
-     * Remove UUID-suffixed projects from prior sessions that survived a hard
-     * kill (the JavaLensLauncher shutdown hook didn't fire). Matches the
-     * pattern {@code "{baseName}-{8-hex}"} and skips the current session's
-     * own project. Best-effort: failures are logged at WARN and do not block
-     * the new session.
-     */
-    private void sweepStaleProjects(String baseName, String currentUniqueName) {
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-            java.util.regex.Pattern.quote(baseName) + "-[a-f0-9]{8}");
-        int swept = 0;
-        for (IProject existing : root.getProjects()) {
-            String existingName = existing.getName();
-            if (existingName.equals(currentUniqueName)) continue;
-            if (!pattern.matcher(existingName).matches()) continue;
-            try {
-                existing.delete(false, true, new NullProgressMonitor());
-                swept++;
-            } catch (CoreException e) {
-                log.warn("Failed to sweep stale project {}: {}", existingName, e.getMessage());
-            }
-        }
-        if (swept > 0) {
-            log.info("Swept {} stale UUID-suffixed project(s) from prior sessions", swept);
-        }
     }
 
     /**

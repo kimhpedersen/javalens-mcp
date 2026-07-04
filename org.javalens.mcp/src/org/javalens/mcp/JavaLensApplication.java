@@ -79,6 +79,11 @@ import org.javalens.mcp.tools.GetDiRegistrationsTool;
 import org.javalens.mcp.tools.FindReflectionUsageTool;
 import org.javalens.mcp.tools.FindLargeClassesTool;
 import org.javalens.mcp.tools.FindNamingViolationsTool;
+import org.javalens.mcp.session.LoadedProject;
+import org.javalens.mcp.session.ProjectRegistry;
+import org.javalens.mcp.session.Session;
+import org.javalens.mcp.session.SessionContext;
+import org.javalens.mcp.session.SessionManager;
 import org.javalens.mcp.tools.ToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,6 +96,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -99,49 +105,44 @@ import java.util.concurrent.CompletableFuture;
  *
  * <p>Session isolation is handled by the JavaLensLauncher wrapper which
  * injects a unique UUID into the workspace path before OSGi starts.
+ *
+ * <p>Project state (the loaded {@code IJdtService}, its loading state/error)
+ * lives on a {@link Session} attached to a {@link LoadedProject} in the
+ * shared {@link ProjectRegistry} — not on this class — so the same wiring
+ * here works whether one ambient session serves the whole process (stdio,
+ * today) or many concurrent sessions each get their own (a future HTTP
+ * transport). Tool code reads the ambient session via {@link SessionContext},
+ * never through a field on this class.
  */
 public class JavaLensApplication implements IApplication {
 
     private static final Logger log = LoggerFactory.getLogger(JavaLensApplication.class);
 
+    /**
+     * Stdio mode has exactly one session for the entire process lifetime —
+     * unlike a real multi-session server, it must never be idle-evicted just
+     * because the user paused for a while, so its timeout is effectively
+     * infinite rather than SessionManager's normal (multi-tenant-tuned) default.
+     */
+    private static final Duration STDIO_SESSION_IDLE_TIMEOUT = Duration.ofDays(3650);
+
     private volatile boolean running = true;
-    private volatile IJdtService jdtService;
-    private volatile ProjectLoadingState loadingState = ProjectLoadingState.NOT_LOADED;
-    private volatile String loadingError = null;
     private ToolRegistry toolRegistry;
-    private McpProtocolHandler protocolHandler;
-
-    // Static instance for loading state access by tools
-    private static volatile JavaLensApplication instance;
-
-    /**
-     * Get the current project loading state.
-     * Used by tools to provide appropriate feedback when project is loading.
-     */
-    public static ProjectLoadingState getLoadingState() {
-        JavaLensApplication app = instance;
-        return app != null ? app.loadingState : ProjectLoadingState.NOT_LOADED;
-    }
-
-    /**
-     * Get the loading error message if loading failed.
-     */
-    public static String getLoadingError() {
-        JavaLensApplication app = instance;
-        return app != null ? app.loadingError : null;
-    }
+    private ProjectRegistry projectRegistry;
+    private SessionManager sessionManager;
+    private Session session;
 
     @Override
     public Object start(IApplicationContext context) throws Exception {
         log.info("JavaLens MCP Server starting...");
-        instance = this;
 
-        // Initialize tool registry and register tools
         toolRegistry = new ToolRegistry();
-        registerTools();
+        projectRegistry = new ProjectRegistry();
+        sessionManager = new SessionManager(toolRegistry, projectRegistry,
+            STDIO_SESSION_IDLE_TIMEOUT, STDIO_SESSION_IDLE_TIMEOUT);
+        session = sessionManager.create();
 
-        // Initialize protocol handler
-        protocolHandler = new McpProtocolHandler(toolRegistry);
+        registerTools();
 
         log.info("Registered {} tools", toolRegistry.getToolCount());
 
@@ -166,166 +167,181 @@ public class JavaLensApplication implements IApplication {
         String projectPath = System.getenv("JAVA_PROJECT_PATH");
         if (projectPath == null || projectPath.isBlank()) {
             log.debug("JAVA_PROJECT_PATH not set, waiting for load_project call");
-            // State remains NOT_LOADED
+            // Session stays unattached (NOT_LOADED)
             return;
         }
 
         Path path = Path.of(projectPath).toAbsolutePath().normalize();
         if (!Files.exists(path)) {
             log.warn("JAVA_PROJECT_PATH points to non-existent path: {}", projectPath);
-            loadingState = ProjectLoadingState.FAILED;
-            loadingError = "JAVA_PROJECT_PATH points to non-existent path: " + projectPath;
+            projectRegistry.registerFailed(session, path,
+                "JAVA_PROJECT_PATH points to non-existent path: " + projectPath);
             return;
         }
 
         if (!Files.isDirectory(path)) {
             log.warn("JAVA_PROJECT_PATH is not a directory: {}", projectPath);
-            loadingState = ProjectLoadingState.FAILED;
-            loadingError = "JAVA_PROJECT_PATH is not a directory: " + projectPath;
+            projectRegistry.registerFailed(session, path,
+                "JAVA_PROJECT_PATH is not a directory: " + projectPath);
             return;
         }
 
         log.info("Auto-loading project from JAVA_PROJECT_PATH: {}", path);
-        loadingState = ProjectLoadingState.LOADING;
 
         try {
             JdtServiceImpl service = new JdtServiceImpl();
             service.loadProject(path);
-            this.jdtService = service;
-            loadingState = ProjectLoadingState.LOADED;
+            projectRegistry.registerLoaded(session, service);
             log.info("Project auto-loaded successfully: {} files, {} packages",
                 service.getSourceFileCount(), service.getPackageCount());
         } catch (Exception e) {
             log.error("Failed to auto-load project from JAVA_PROJECT_PATH: {}", e.getMessage(), e);
-            loadingState = ProjectLoadingState.FAILED;
-            loadingError = e.getMessage();
+            projectRegistry.registerFailed(session, path, e.getMessage());
         }
+    }
+
+    /** Resolves the ambient session's attached project, if any. Bound once at
+     * startup for stdio's single long-lived session (see {@link #start}). */
+    private IJdtService currentJdtService() {
+        Session s = SessionContext.current();
+        return s == null ? null : s.getJdtService();
+    }
+
+    private ProjectLoadingState currentLoadingState() {
+        Session s = SessionContext.current();
+        return s == null ? ProjectLoadingState.NOT_LOADED : s.getLoadingState();
+    }
+
+    private String currentLoadingError() {
+        Session s = SessionContext.current();
+        return s == null ? null : s.getLoadingError();
     }
 
     private void registerTools() {
         // Register HealthCheckTool with suppliers for project status, tool count, and loading state
         toolRegistry.register(new HealthCheckTool(
-            () -> jdtService != null,
+            () -> currentJdtService() != null,
             () -> toolRegistry.getToolCount(),
-            () -> loadingState,
-            () -> loadingError,
-            () -> jdtService
+            this::currentLoadingState,
+            this::currentLoadingError,
+            this::currentJdtService
         ));
 
-        // Register LoadProjectTool - stores the JdtService AND flips the
-        // loading state to LOADED. The state was previously set only by the
-        // JAVA_PROJECT_PATH auto-load path, so a project loaded via the tool
-        // left health_check reporting "not loaded" though every tool worked
-        // (issue #30 thread). The callback fires only on a successful load.
-        toolRegistry.register(new LoadProjectTool(
-            service -> {
-                this.jdtService = service;
-                this.loadingState = ProjectLoadingState.LOADED;
-                this.loadingError = null;
-            }
-        ));
+        // Register LoadProjectTool - it attaches the current session (via
+        // SessionContext) to the freshly-loaded project in projectRegistry, which is
+        // also what makes loadingState/loadingError immediately reflect LOADED
+        // (issue #30 thread: previously the state was only set by the
+        // JAVA_PROJECT_PATH auto-load path, so a project loaded via the tool left
+        // health_check reporting "not loaded" though every tool worked).
+        toolRegistry.register(new LoadProjectTool(projectRegistry));
 
         // Batch 1: Core Navigation Tools
-        toolRegistry.register(new SearchSymbolsTool(() -> jdtService));
-        toolRegistry.register(new GoToDefinitionTool(() -> jdtService));
-        toolRegistry.register(new FindReferencesTool(() -> jdtService));
-        toolRegistry.register(new FindImplementationsTool(() -> jdtService));
+        toolRegistry.register(new SearchSymbolsTool(this::currentJdtService));
+        toolRegistry.register(new GoToDefinitionTool(this::currentJdtService));
+        toolRegistry.register(new FindReferencesTool(this::currentJdtService));
+        toolRegistry.register(new FindImplementationsTool(this::currentJdtService));
 
         // Batch 2: Type Hierarchy & Document Symbols
-        toolRegistry.register(new GetTypeHierarchyTool(() -> jdtService));
-        toolRegistry.register(new GetDocumentSymbolsTool(() -> jdtService));
-        toolRegistry.register(new GetTypeMembersTool(() -> jdtService));
-        toolRegistry.register(new GetClasspathInfoTool(() -> jdtService));
+        toolRegistry.register(new GetTypeHierarchyTool(this::currentJdtService));
+        toolRegistry.register(new GetDocumentSymbolsTool(this::currentJdtService));
+        toolRegistry.register(new GetTypeMembersTool(this::currentJdtService));
+        toolRegistry.register(new GetClasspathInfoTool(this::currentJdtService));
 
         // Batch 3: Project Structure & Position Info
-        toolRegistry.register(new GetProjectStructureTool(() -> jdtService));
-        toolRegistry.register(new GetSymbolInfoTool(() -> jdtService));
-        toolRegistry.register(new GetTypeAtPositionTool(() -> jdtService));
-        toolRegistry.register(new GetMethodAtPositionTool(() -> jdtService));
-        toolRegistry.register(new GetFieldAtPositionTool(() -> jdtService));
-        toolRegistry.register(new GetHoverInfoTool(() -> jdtService));
+        toolRegistry.register(new GetProjectStructureTool(this::currentJdtService));
+        toolRegistry.register(new GetSymbolInfoTool(this::currentJdtService));
+        toolRegistry.register(new GetTypeAtPositionTool(this::currentJdtService));
+        toolRegistry.register(new GetMethodAtPositionTool(this::currentJdtService));
+        toolRegistry.register(new GetFieldAtPositionTool(this::currentJdtService));
+        toolRegistry.register(new GetHoverInfoTool(this::currentJdtService));
 
         // Batch 4: Javadoc & Method Analysis
-        toolRegistry.register(new GetJavadocTool(() -> jdtService));
-        toolRegistry.register(new GetSignatureHelpTool(() -> jdtService));
-        toolRegistry.register(new GetEnclosingElementTool(() -> jdtService));
-        toolRegistry.register(new GetSuperMethodTool(() -> jdtService));
+        toolRegistry.register(new GetJavadocTool(this::currentJdtService));
+        toolRegistry.register(new GetSignatureHelpTool(this::currentJdtService));
+        toolRegistry.register(new GetEnclosingElementTool(this::currentJdtService));
+        toolRegistry.register(new GetSuperMethodTool(this::currentJdtService));
 
         // Batch 5: Diagnostics & Call Hierarchy
-        toolRegistry.register(new GetDiagnosticsTool(() -> jdtService));
-        toolRegistry.register(new ValidateSyntaxTool(() -> jdtService));
-        toolRegistry.register(new GetCallHierarchyIncomingTool(() -> jdtService));
-        toolRegistry.register(new GetCallHierarchyOutgoingTool(() -> jdtService));
+        toolRegistry.register(new GetDiagnosticsTool(this::currentJdtService));
+        toolRegistry.register(new ValidateSyntaxTool(this::currentJdtService));
+        toolRegistry.register(new GetCallHierarchyIncomingTool(this::currentJdtService));
+        toolRegistry.register(new GetCallHierarchyOutgoingTool(this::currentJdtService));
 
         // Analysis tools
-        toolRegistry.register(new FindFieldWritesTool(() -> jdtService));
-        toolRegistry.register(new FindTestsTool(() -> jdtService));
-        toolRegistry.register(new FindUnusedCodeTool(() -> jdtService));
-        toolRegistry.register(new FindUnreachableCodeTool(() -> jdtService));
-        toolRegistry.register(new FindAffectedTestsTool(() -> jdtService));
-        toolRegistry.register(new FindPossibleBugsTool(() -> jdtService));
+        toolRegistry.register(new FindFieldWritesTool(this::currentJdtService));
+        toolRegistry.register(new FindTestsTool(this::currentJdtService));
+        toolRegistry.register(new FindUnusedCodeTool(this::currentJdtService));
+        toolRegistry.register(new FindUnreachableCodeTool(this::currentJdtService));
+        toolRegistry.register(new FindAffectedTestsTool(this::currentJdtService));
+        toolRegistry.register(new FindPossibleBugsTool(this::currentJdtService));
 
         // Refactoring tools
-        toolRegistry.register(new RenameSymbolTool(() -> jdtService));
-        toolRegistry.register(new OrganizeImportsTool(() -> jdtService));
-        toolRegistry.register(new ExtractVariableTool(() -> jdtService));
-        toolRegistry.register(new ExtractMethodTool(() -> jdtService));
+        toolRegistry.register(new RenameSymbolTool(this::currentJdtService));
+        toolRegistry.register(new OrganizeImportsTool(this::currentJdtService));
+        toolRegistry.register(new ExtractVariableTool(this::currentJdtService));
+        toolRegistry.register(new ExtractMethodTool(this::currentJdtService));
 
         // Fine-grained reference search (JDT-unique capabilities)
-        toolRegistry.register(new FindAnnotationUsagesTool(() -> jdtService));
-        toolRegistry.register(new FindTypeInstantiationsTool(() -> jdtService));
-        toolRegistry.register(new FindCastsTool(() -> jdtService));
-        toolRegistry.register(new FindInstanceofChecksTool(() -> jdtService));
-        toolRegistry.register(new FindThrowsDeclarationsTool(() -> jdtService));
-        toolRegistry.register(new FindCatchBlocksTool(() -> jdtService));
-        toolRegistry.register(new FindMethodReferencesTool(() -> jdtService));
-        toolRegistry.register(new FindTypeArgumentsTool(() -> jdtService));
+        toolRegistry.register(new FindAnnotationUsagesTool(this::currentJdtService));
+        toolRegistry.register(new FindTypeInstantiationsTool(this::currentJdtService));
+        toolRegistry.register(new FindCastsTool(this::currentJdtService));
+        toolRegistry.register(new FindInstanceofChecksTool(this::currentJdtService));
+        toolRegistry.register(new FindThrowsDeclarationsTool(this::currentJdtService));
+        toolRegistry.register(new FindCatchBlocksTool(this::currentJdtService));
+        toolRegistry.register(new FindMethodReferencesTool(this::currentJdtService));
+        toolRegistry.register(new FindTypeArgumentsTool(this::currentJdtService));
 
         // Compound analysis tools
-        toolRegistry.register(new AnalyzeFileTool(() -> jdtService));
-        toolRegistry.register(new AnalyzeTypeTool(() -> jdtService));
-        toolRegistry.register(new AnalyzeMethodTool(() -> jdtService));
-        toolRegistry.register(new GetTypeUsageSummaryTool(() -> jdtService));
+        toolRegistry.register(new AnalyzeFileTool(this::currentJdtService));
+        toolRegistry.register(new AnalyzeTypeTool(this::currentJdtService));
+        toolRegistry.register(new AnalyzeMethodTool(this::currentJdtService));
+        toolRegistry.register(new GetTypeUsageSummaryTool(this::currentJdtService));
 
         // Advanced refactoring tools
-        toolRegistry.register(new ExtractConstantTool(() -> jdtService));
-        toolRegistry.register(new InlineVariableTool(() -> jdtService));
-        toolRegistry.register(new InlineMethodTool(() -> jdtService));
-        toolRegistry.register(new ChangeMethodSignatureTool(() -> jdtService));
-        toolRegistry.register(new ExtractInterfaceTool(() -> jdtService));
-        toolRegistry.register(new ConvertAnonymousToLambdaTool(() -> jdtService));
+        toolRegistry.register(new ExtractConstantTool(this::currentJdtService));
+        toolRegistry.register(new InlineVariableTool(this::currentJdtService));
+        toolRegistry.register(new InlineMethodTool(this::currentJdtService));
+        toolRegistry.register(new ChangeMethodSignatureTool(this::currentJdtService));
+        toolRegistry.register(new ExtractInterfaceTool(this::currentJdtService));
+        toolRegistry.register(new ConvertAnonymousToLambdaTool(this::currentJdtService));
 
         // Quick fix tools
-        toolRegistry.register(new SuggestImportsTool(() -> jdtService));
-        toolRegistry.register(new GetQuickFixesTool(() -> jdtService));
-        toolRegistry.register(new ApplyQuickFixTool(() -> jdtService));
-        toolRegistry.register(new ApplyCleanupTool(() -> jdtService));
-        toolRegistry.register(new EncapsulateFieldTool(() -> jdtService));
-        toolRegistry.register(new PullUpTool(() -> jdtService));
-        toolRegistry.register(new PushDownTool(() -> jdtService));
-        toolRegistry.register(new ExtractSuperclassTool(() -> jdtService));
-        toolRegistry.register(new IntroduceParameterObjectTool(() -> jdtService));
-        toolRegistry.register(new MoveTypeToNewFileTool(() -> jdtService));
-        toolRegistry.register(new DiagnoseAndFixTool(() -> jdtService));
+        toolRegistry.register(new SuggestImportsTool(this::currentJdtService));
+        toolRegistry.register(new GetQuickFixesTool(this::currentJdtService));
+        toolRegistry.register(new ApplyQuickFixTool(this::currentJdtService));
+        toolRegistry.register(new ApplyCleanupTool(this::currentJdtService));
+        toolRegistry.register(new EncapsulateFieldTool(this::currentJdtService));
+        toolRegistry.register(new PullUpTool(this::currentJdtService));
+        toolRegistry.register(new PushDownTool(this::currentJdtService));
+        toolRegistry.register(new ExtractSuperclassTool(this::currentJdtService));
+        toolRegistry.register(new IntroduceParameterObjectTool(this::currentJdtService));
+        toolRegistry.register(new MoveTypeToNewFileTool(this::currentJdtService));
+        toolRegistry.register(new DiagnoseAndFixTool(this::currentJdtService));
 
         // Metrics tools
-        toolRegistry.register(new GetComplexityMetricsTool(() -> jdtService));
-        toolRegistry.register(new GetDependencyGraphTool(() -> jdtService));
-        toolRegistry.register(new FindCircularDependenciesTool(() -> jdtService));
+        toolRegistry.register(new GetComplexityMetricsTool(this::currentJdtService));
+        toolRegistry.register(new GetDependencyGraphTool(this::currentJdtService));
+        toolRegistry.register(new FindCircularDependenciesTool(this::currentJdtService));
 
         // Advanced analysis tools
-        toolRegistry.register(new AnalyzeChangeImpactTool(() -> jdtService));
-        toolRegistry.register(new AnalyzeControlFlowTool(() -> jdtService));
-        toolRegistry.register(new AnalyzeDataFlowTool(() -> jdtService));
-        toolRegistry.register(new GetDiRegistrationsTool(() -> jdtService));
-        toolRegistry.register(new GetJpaModelTool(() -> jdtService));
-        toolRegistry.register(new GetHttpEndpointsTool(() -> jdtService));
-        toolRegistry.register(new FindReflectionUsageTool(() -> jdtService));
-        toolRegistry.register(new FindLargeClassesTool(() -> jdtService));
-        toolRegistry.register(new FindNamingViolationsTool(() -> jdtService));
+        toolRegistry.register(new AnalyzeChangeImpactTool(this::currentJdtService));
+        toolRegistry.register(new AnalyzeControlFlowTool(this::currentJdtService));
+        toolRegistry.register(new AnalyzeDataFlowTool(this::currentJdtService));
+        toolRegistry.register(new GetDiRegistrationsTool(this::currentJdtService));
+        toolRegistry.register(new GetJpaModelTool(this::currentJdtService));
+        toolRegistry.register(new GetHttpEndpointsTool(this::currentJdtService));
+        toolRegistry.register(new FindReflectionUsageTool(this::currentJdtService));
+        toolRegistry.register(new FindLargeClassesTool(this::currentJdtService));
+        toolRegistry.register(new FindNamingViolationsTool(this::currentJdtService));
     }
 
     private void runMessageLoop() {
+        // Bound once for the life of this thread: stdio has exactly one session and
+        // exactly one thread reading it, so there's nothing to rebind per-message. A
+        // future per-request HTTP transport would bind/clear per request instead.
+        SessionContext.bind(session);
+        McpProtocolHandler protocolHandler = session.getProtocolHandler();
+
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(System.in, StandardCharsets.UTF_8));
              PrintWriter writer = new PrintWriter(System.out, true, StandardCharsets.UTF_8)) {
@@ -358,6 +374,8 @@ public class JavaLensApplication implements IApplication {
             }
         } catch (Exception e) {
             log.error("Error in message loop", e);
+        } finally {
+            SessionContext.clear();
         }
     }
 

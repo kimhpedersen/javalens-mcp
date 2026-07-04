@@ -6,9 +6,10 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
-import org.javalens.mcp.JavaLensApplication;
 import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.session.Session;
+import org.javalens.mcp.session.SessionContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -86,11 +87,15 @@ public abstract class AbstractTool implements Tool {
     public ToolResponse execute(JsonNode arguments) {
         IJdtService service = serviceSupplier.get();
         if (service == null) {
-            // Check loading state to provide more specific feedback
-            ProjectLoadingState loadingState = JavaLensApplication.getLoadingState();
+            // Check loading state to provide more specific feedback. No session bound
+            // (e.g. a test that never called SessionContext.bind) reads as NOT_LOADED,
+            // same as today's "server not started yet" default.
+            Session session = SessionContext.current();
+            ProjectLoadingState loadingState = session != null
+                ? session.getLoadingState() : ProjectLoadingState.NOT_LOADED;
             return switch (loadingState) {
                 case LOADING -> ToolResponse.projectLoading();
-                case FAILED -> ToolResponse.projectLoadFailed(JavaLensApplication.getLoadingError());
+                case FAILED -> ToolResponse.projectLoadFailed(session != null ? session.getLoadingError() : null);
                 default -> ToolResponse.projectNotLoaded();
             };
         }

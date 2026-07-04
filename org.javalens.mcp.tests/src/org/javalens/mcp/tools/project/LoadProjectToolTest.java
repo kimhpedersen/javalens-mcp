@@ -5,34 +5,54 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.session.ProjectRegistry;
+import org.javalens.mcp.session.Session;
+import org.javalens.mcp.session.SessionContext;
+import org.javalens.mcp.session.SessionManager;
 import org.javalens.mcp.tools.LoadProjectTool;
+import org.javalens.mcp.tools.ToolRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class LoadProjectToolTest {
 
+    /** Long enough that the background sweep never fires mid-test. */
+    private static final Duration NO_BACKGROUND_SWEEP = Duration.ofHours(1);
+
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private LoadProjectTool tool;
     private ObjectMapper objectMapper;
-    private AtomicReference<IJdtService> serviceRef;
+    private ProjectRegistry projectRegistry;
+    private Session session;
     private Path projectPath;
 
     @BeforeEach
     void setUp() throws Exception {
-        serviceRef = new AtomicReference<>();
-        tool = new LoadProjectTool(serviceRef::set);
         objectMapper = new ObjectMapper();
+        projectRegistry = new ProjectRegistry(NO_BACKGROUND_SWEEP, NO_BACKGROUND_SWEEP);
+        SessionManager sessionManager = new SessionManager(new ToolRegistry(), projectRegistry,
+            NO_BACKGROUND_SWEEP, NO_BACKGROUND_SWEEP);
+        session = sessionManager.create();
+        SessionContext.bind(session);
+        tool = new LoadProjectTool(projectRegistry);
         projectPath = helper.getFixturePath("simple-maven");
+    }
+
+    @AfterEach
+    void tearDown() {
+        SessionContext.clear();
+        projectRegistry.close();
     }
 
     @SuppressWarnings("unchecked")
@@ -68,7 +88,7 @@ class LoadProjectToolTest {
             "simple-maven fixture has com.example package; got: " + packages);
 
         // Verify service was set
-        assertNotNull(serviceRef.get(), "service reference must be populated on successful load");
+        assertNotNull(session.getJdtService(), "service reference must be populated on successful load");
     }
 
     @Test @DisplayName("missing projectPath -> exact INVALID_PARAMETER")
@@ -282,7 +302,7 @@ class LoadProjectToolTest {
         firstArgs.put("projectPath", projectPath.toString());
         ToolResponse r1 = tool.execute(firstArgs);
         assertTrue(r1.isSuccess());
-        IJdtService firstService = serviceRef.get();
+        IJdtService firstService = session.getJdtService();
         assertNotNull(firstService);
 
         // Now load multi-module-maven via the same tool instance.
@@ -294,11 +314,53 @@ class LoadProjectToolTest {
             "Second load_project call must succeed; got error: " +
                 (r2.getError() != null ? r2.getError().getMessage() : "n/a"));
 
-        IJdtService secondService = serviceRef.get();
+        IJdtService secondService = session.getJdtService();
         assertNotNull(secondService);
         assertNotSame(firstService, secondService,
             "Each load_project invocation must produce a fresh JdtService — otherwise " +
                 "subsequent tool calls would route through the previously-loaded project's index.");
+    }
+
+    @Test
+    @DisplayName("loading a second project disposes the first project's workspace entry")
+    void reload_disposesReplacedService() {
+        // There is no automatic sweep for this anymore (see WorkspaceManager's class
+        // Javadoc) — the tool itself must dispose the outgoing service on a successful
+        // reload, or the old project's workspace entry (and JDT model memory) leaks.
+        ObjectNode firstArgs = objectMapper.createObjectNode();
+        firstArgs.put("projectPath", projectPath.toString());
+        tool.execute(firstArgs);
+        IJdtService firstService = session.getJdtService();
+        assertTrue(firstService.getJavaProject().getProject().exists(),
+            "Precondition: first project must exist in the workspace before the reload");
+
+        Path multiModule = helper.getFixturePath("multi-module-maven");
+        ObjectNode secondArgs = objectMapper.createObjectNode();
+        secondArgs.put("projectPath", multiModule.toString());
+        ToolResponse r2 = tool.execute(secondArgs);
+
+        assertTrue(r2.isSuccess());
+        assertFalse(firstService.getJavaProject().getProject().exists(),
+            "A successful reload must dispose the replaced service's workspace project");
+    }
+
+    @Test
+    @DisplayName("a failed reload leaves the previous project intact and disposed of nothing")
+    void reload_failure_leavesPreviousServiceIntact() {
+        ObjectNode firstArgs = objectMapper.createObjectNode();
+        firstArgs.put("projectPath", projectPath.toString());
+        tool.execute(firstArgs);
+        IJdtService firstService = session.getJdtService();
+
+        ObjectNode badArgs = objectMapper.createObjectNode();
+        badArgs.put("projectPath", projectPath.resolve("does-not-exist").toString());
+        ToolResponse r2 = tool.execute(badArgs);
+
+        assertFalse(r2.isSuccess(), "Loading a non-existent path must fail");
+        assertSame(firstService, session.getJdtService(),
+            "A failed reload must not disturb the previously-registered service");
+        assertTrue(firstService.getJavaProject().getProject().exists(),
+            "A failed reload must not dispose the still-in-use previous project");
     }
 
     @Test

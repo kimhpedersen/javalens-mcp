@@ -2,13 +2,17 @@ package org.javalens.mcp.protocol;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.sync.DiskSyncMode;
 import org.javalens.mcp.fixtures.TestProjectHelper;
+import org.javalens.mcp.session.ProjectRegistry;
+import org.javalens.mcp.session.Session;
+import org.javalens.mcp.session.SessionContext;
+import org.javalens.mcp.session.SessionManager;
 import org.javalens.mcp.tools.FindReferencesTool;
 import org.javalens.mcp.tools.LoadProjectTool;
 import org.javalens.mcp.tools.ToolRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,12 +32,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class DiskSyncProtocolIntegrationTest {
 
+    /** Long enough that the background sweep never fires mid-test. */
+    private static final Duration NO_BACKGROUND_SWEEP = Duration.ofHours(1);
+
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
 
     private McpProtocolHandler handler;
     private ObjectMapper objectMapper;
-    private volatile IJdtService sharedService;
+    private ProjectRegistry projectRegistry;
+    private Session session;
     private Path projectCopy;
 
     @BeforeEach
@@ -40,12 +49,22 @@ class DiskSyncProtocolIntegrationTest {
         objectMapper = new ObjectMapper();
         ToolRegistry toolRegistry = new ToolRegistry();
         handler = new McpProtocolHandler(toolRegistry);
-        sharedService = null;
+        projectRegistry = new ProjectRegistry(NO_BACKGROUND_SWEEP, NO_BACKGROUND_SWEEP);
+        SessionManager sessionManager = new SessionManager(toolRegistry, projectRegistry,
+            NO_BACKGROUND_SWEEP, NO_BACKGROUND_SWEEP);
+        session = sessionManager.create();
+        SessionContext.bind(session);
 
-        toolRegistry.register(new LoadProjectTool(service -> this.sharedService = service));
-        toolRegistry.register(new FindReferencesTool(() -> this.sharedService));
+        toolRegistry.register(new LoadProjectTool(projectRegistry));
+        toolRegistry.register(new FindReferencesTool(() -> SessionContext.current().getJdtService()));
 
         projectCopy = helper.copyFixture("simple-maven");
+    }
+
+    @AfterEach
+    void tearDown() {
+        SessionContext.clear();
+        projectRegistry.close();
     }
 
     private JsonNode rpc(String request) throws Exception {
@@ -143,7 +162,7 @@ class DiskSyncProtocolIntegrationTest {
     @DisplayName("manual mode over the protocol keeps the stale answer")
     void manualMode_overProtocol() throws Exception {
         loadCopyOverProtocol();
-        ((JdtServiceImpl) sharedService).setDiskSyncMode(DiskSyncMode.MANUAL);
+        ((JdtServiceImpl) session.getJdtService()).setDiskSyncMode(DiskSyncMode.MANUAL);
 
         JsonNode before = toolPayload(findReferencesRequest());
         int sitesBefore = before.get("data").get("locations").size();
