@@ -4,6 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
 
+# Under Construction
+I am trying to refactor this project to allow usage for indexing very large code bases, by adding support for long a long lived mcp service that the LLM will communicate with over http. Design doc for this change is in multiplexing.md.
+
 An MCP server providing 75 semantic analysis tools for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
 
 ## Built for AI Agents
