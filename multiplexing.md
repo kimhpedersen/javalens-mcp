@@ -261,12 +261,32 @@ listener" — decide during implementation based on which is less invasive).
    at once (no cross-project serialization). `LoadedProjectTest`'s existing
    `runExclusive` test already pinned the lock's own behavior in isolation —
    this closes the gap that nothing production-side actually called it yet.
-5. **HTTP transport** — implement the `POST /mcp` (+ optional `DELETE`)
-   handler described above; spike the `com.sun.net.httpserver` OSGi
-   visibility question first and fall back to
-   `org.eclipse.equinox.http.jetty` if needed. Integration test: two
-   concurrent HTTP clients, `Mcp-Session-Id` handling, missing/unknown
-   session id -> 404.
+5. **HTTP transport — done.** Added `McpHttpTransport`
+   (`org.javalens.mcp.transport`), a `POST /mcp` (+ `DELETE /mcp`) handler
+   built on JDK's `com.sun.net.httpserver.HttpServer`. Per request: reads the
+   `Mcp-Session-Id` header; if absent, the body must be a JSON-RPC
+   `initialize` (peeked via Jackson) or the request 404s, otherwise a new
+   `Session` is created and its id returned via the `Mcp-Session-Id` response
+   header; if present but unknown to `SessionManager`, 404. Binds
+   `SessionContext` to the resolved session, calls
+   `session.getProtocolHandler().processMessage(body)`, unbinds, writes the
+   `application/json` response (202 with empty body for notifications, which
+   `processMessage` signals by returning null). `DELETE` maps directly onto
+   `SessionManager.terminate`. Runs on a bounded fixed thread pool (16
+   threads by default); binds to whatever `InetSocketAddress` the caller
+   passes (callers should pass loopback for now — see the Auth/exposure risk
+   below, not yet closed). No SSE (`GET /mcp`) — unneeded for parity, per the
+   design section above.
+   **OSGi visibility spike resolved**: added `com.sun.net.httpserver` to
+   `org.javalens.mcp`'s `Import-Package`; `McpHttpTransportTest` running
+   inside the real Tycho/Equinox test launch (not just a plain-classpath
+   spike) proved it resolves without needing the `org.eclipse.equinox.http.jetty`
+   fallback. That test also covers the required integration scenarios: two
+   concurrent HTTP clients getting isolated sessions, `Mcp-Session-Id`
+   round-tripping through `initialize`, missing/unknown session id -> 404,
+   and `DELETE` terminating a session (id 404s afterward).
+   Not wired into `JavaLensApplication.start()` yet — that's Phase 7
+   (dual-mode entry point).
 6. **Lifecycle & resource management** — idle-session TTL sweep, a cap on
    concurrent sessions (reject or LRU-evict beyond it — memory of N
    simultaneous JDT models in one JVM is the real ceiling here, not CPU),
