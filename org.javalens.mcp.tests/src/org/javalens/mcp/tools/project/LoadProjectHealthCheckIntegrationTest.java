@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
-import org.javalens.mcp.JavaLensApplication;
 import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
+import org.javalens.mcp.fixtures.TestRegistryBuilder;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.Tool;
 import org.javalens.mcp.tools.ToolRegistry;
@@ -15,8 +15,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -47,15 +45,9 @@ class LoadProjectHealthCheckIntegrationTest {
 
         // Build the app and run its REAL registerTools() so the load_project
         // tool carries its production callback (the place the bug lived).
-        JavaLensApplication app = new JavaLensApplication();
-        Field registryField = JavaLensApplication.class.getDeclaredField("toolRegistry");
-        registryField.setAccessible(true);
-        ToolRegistry r = new ToolRegistry();
-        registryField.set(app, r);
-        Method registerTools = JavaLensApplication.class.getDeclaredMethod("registerTools");
-        registerTools.setAccessible(true);
-        registerTools.invoke(app);
-        registry = r;
+        // No service yet — these tests call load_project themselves and assert
+        // it flips the bound session's attached project.
+        registry = TestRegistryBuilder.buildRegistry(null);
     }
 
     @SuppressWarnings("unchecked")

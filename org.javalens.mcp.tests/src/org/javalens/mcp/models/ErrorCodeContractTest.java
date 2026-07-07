@@ -228,23 +228,9 @@ class ErrorCodeContractTest {
         );
     }
 
-    /** Reflectively build the full production registry against the given service. */
-    private static org.javalens.mcp.tools.ToolRegistry buildRegistry(JdtServiceImpl svc) throws Exception {
-        org.javalens.mcp.JavaLensApplication app = new org.javalens.mcp.JavaLensApplication();
-        java.lang.reflect.Field svcField =
-            org.javalens.mcp.JavaLensApplication.class.getDeclaredField("jdtService");
-        svcField.setAccessible(true);
-        svcField.set(app, svc);
-        java.lang.reflect.Field registryField =
-            org.javalens.mcp.JavaLensApplication.class.getDeclaredField("toolRegistry");
-        registryField.setAccessible(true);
-        org.javalens.mcp.tools.ToolRegistry registry = new org.javalens.mcp.tools.ToolRegistry();
-        registryField.set(app, registry);
-        java.lang.reflect.Method registerTools =
-            org.javalens.mcp.JavaLensApplication.class.getDeclaredMethod("registerTools");
-        registerTools.setAccessible(true);
-        registerTools.invoke(app);
-        return registry;
+    /** Builds the full production registry against the given service (or none, if null). */
+    private static org.javalens.mcp.tools.ToolRegistry buildRegistry(JdtServiceImpl svc) {
+        return org.javalens.mcp.fixtures.TestRegistryBuilder.buildRegistry(svc);
     }
 
     private static final java.util.Set<String> SERVICE_INDEPENDENT =

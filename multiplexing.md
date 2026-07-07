@@ -245,12 +245,22 @@ listener" — decide during implementation based on which is less invasive).
    `org.javalens.mcp.tests/.../protocol/*IntegrationTest.java` and the
    production call site in `JavaLensApplication.registerTools()` were
    updated for the new two-arg constructor.
-4. **Per-project concurrency control** — the `runExclusive` lock lives on
-   `LoadedProject`, not `Session`, since it's the project that's shared.
-   Test that overlapping requests from *different sessions attached to the
-   same project* serialize, while requests against two different projects
-   run concurrently (e.g. assert wall-clock overlap via a slow tool call or
-   an injectable delay).
+4. **Per-project concurrency control — done.** `AbstractTool.execute()` now
+   resolves the ambient session's attached `LoadedProject` (via
+   `SessionContext.current()`) and, when one is attached, runs the disk-sync
+   verification (`ensureFresh()`) and `executeWithService()` inside its
+   `runExclusive` — the lock lives on `LoadedProject`, not `Session`, since
+   it's the project that's shared. No project attached (shouldn't happen once
+   `service` is non-null, since a non-null service implies an attached
+   project) falls back to running unlocked rather than throwing. Added
+   `AbstractToolConcurrencyTest`: one test attaches two sessions to the same
+   `LoadedProject` (via `ProjectRegistry.registerLoaded` + `attach`) and
+   asserts a slow `executeWithService` body never observes more than one
+   concurrent caller inside the locked section; a second test attaches two
+   sessions to two different projects and asserts both run inside the section
+   at once (no cross-project serialization). `LoadedProjectTest`'s existing
+   `runExclusive` test already pinned the lock's own behavior in isolation —
+   this closes the gap that nothing production-side actually called it yet.
 5. **HTTP transport** — implement the `POST /mcp` (+ optional `DELETE`)
    handler described above; spike the `com.sun.net.httpserver` OSGi
    visibility question first and fall back to

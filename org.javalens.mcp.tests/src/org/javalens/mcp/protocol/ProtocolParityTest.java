@@ -4,17 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
-import org.javalens.mcp.JavaLensApplication;
 import org.javalens.mcp.fixtures.PayloadCanonicalizer;
 import org.javalens.mcp.fixtures.TestProjectHelper;
+import org.javalens.mcp.fixtures.TestRegistryBuilder;
 import org.javalens.mcp.tools.ToolInvocationInputs;
 import org.javalens.mcp.tools.ToolRegistry;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
@@ -53,18 +51,7 @@ class ProtocolParityTest {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         Path projectPath = helper.getFixturePath("simple-maven");
 
-        JavaLensApplication app = new JavaLensApplication();
-        Field svcField = JavaLensApplication.class.getDeclaredField("jdtService");
-        svcField.setAccessible(true);
-        svcField.set(app, service);
-        Field registryField = JavaLensApplication.class.getDeclaredField("toolRegistry");
-        registryField.setAccessible(true);
-        ToolRegistry r = new ToolRegistry();
-        registryField.set(app, r);
-        Method registerTools = JavaLensApplication.class.getDeclaredMethod("registerTools");
-        registerTools.setAccessible(true);
-        registerTools.invoke(app);
-        registry = r;
+        registry = TestRegistryBuilder.buildRegistry(service);
 
         handler = new McpProtocolHandler(registry);
         handler.processMessage("{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{}}");

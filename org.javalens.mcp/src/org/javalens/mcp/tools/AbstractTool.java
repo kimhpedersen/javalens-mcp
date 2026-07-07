@@ -8,6 +8,7 @@ import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
 import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.session.LoadedProject;
 import org.javalens.mcp.session.Session;
 import org.javalens.mcp.session.SessionContext;
 
@@ -100,6 +101,22 @@ public abstract class AbstractTool implements Tool {
             };
         }
 
+        // Serialize against every other request attached to the same project (a
+        // different session on the same path, or a concurrent call on this one) —
+        // disk-sync repair and tool logic below aren't provably safe under
+        // concurrent JDT writers. Requests on different projects don't share a
+        // lock and run fully in parallel. No project attached yet (shouldn't
+        // happen here, since service is non-null) means nothing to serialize
+        // against.
+        Session session = SessionContext.current();
+        LoadedProject project = session != null ? session.getAttachedProject() : null;
+        if (project != null) {
+            return project.runExclusive(() -> executeVerified(service, arguments));
+        }
+        return executeVerified(service, arguments);
+    }
+
+    private ToolResponse executeVerified(IJdtService service, JsonNode arguments) {
         // #26: verify the model against disk and repair the delta before any
         // tool logic runs. Every answer from executeWithService is true of
         // disk at query time; an unverifiable model never answers.

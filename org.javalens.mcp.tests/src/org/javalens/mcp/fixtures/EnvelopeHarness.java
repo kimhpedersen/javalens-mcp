@@ -10,9 +10,6 @@ import org.javalens.mcp.protocol.McpProtocolHandler;
 import org.javalens.mcp.tools.Tool;
 import org.javalens.mcp.tools.ToolRegistry;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -37,29 +34,10 @@ public final class EnvelopeHarness {
     private final ToolRegistry registry;
 
     public EnvelopeHarness(JdtServiceImpl service) {
-        try {
-            JavaLensApplication app = new JavaLensApplication();
-            Field svcField = JavaLensApplication.class.getDeclaredField("jdtService");
-            svcField.setAccessible(true);
-            svcField.set(app, service);
-
-            Field registryField = JavaLensApplication.class.getDeclaredField("toolRegistry");
-            registryField.setAccessible(true);
-            ToolRegistry r = new ToolRegistry();
-            registryField.set(app, r);
-
-            Method registerTools = JavaLensApplication.class.getDeclaredMethod("registerTools");
-            registerTools.setAccessible(true);
-            registerTools.invoke(app);
-
-            this.registry = r;
-            this.handler = new McpProtocolHandler(r);
-            handler.processMessage(
-                "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{}}");
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(
-                "Failed to wire EnvelopeHarness through the real registerTools()", e);
-        }
+        this.registry = TestRegistryBuilder.buildRegistry(service);
+        this.handler = new McpProtocolHandler(registry);
+        handler.processMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{}}");
     }
 
     /** The production-registered tool registry (every tool, real wiring). */

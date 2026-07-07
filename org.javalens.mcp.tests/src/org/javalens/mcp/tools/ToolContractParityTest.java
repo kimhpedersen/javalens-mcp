@@ -6,14 +6,13 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.JavaLensApplication;
 import org.javalens.mcp.fixtures.TestProjectHelper;
+import org.javalens.mcp.fixtures.TestRegistryBuilder;
 import org.javalens.mcp.models.ToolResponse;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -48,6 +47,8 @@ class ToolContractParityTest {
     @RegisterExtension
     static TestProjectHelper helper = new TestProjectHelper();
 
+    private static TestRegistryBuilder.Built built;
+    private static TestRegistryBuilder.Built builtWithService;
     private static ToolRegistry registry;
     private static ToolRegistry registryWithService;
     private static JdtServiceImpl loadedService;
@@ -67,32 +68,18 @@ class ToolContractParityTest {
 
     @BeforeAll
     static void setUpRegistry() throws Exception {
-        // Service-less registry — every tool gets a () -> null supplier.
-        JavaLensApplication app = new JavaLensApplication();
-        Field registryField = JavaLensApplication.class.getDeclaredField("toolRegistry");
-        registryField.setAccessible(true);
-        ToolRegistry r = new ToolRegistry();
-        registryField.set(app, r);
-        Method registerTools = JavaLensApplication.class.getDeclaredMethod("registerTools");
-        registerTools.setAccessible(true);
-        registerTools.invoke(app);
-        registry = r;
+        // Service-less registry — every tool's session is attached to nothing.
+        built = TestRegistryBuilder.build(null);
+        registry = built.registry();
 
-        // Service-backed registry: load simple-maven, then build a new JavaLensApplication
-        // with its jdtService field pointed at the loaded service.
+        // Service-backed registry: load simple-maven, then build a new registry
+        // whose bound session is attached to the loaded service.
         helper.beforeEach(null);
         loadedService = helper.loadProject("simple-maven");
         projectPath = helper.getFixturePath("simple-maven");
 
-        JavaLensApplication appWithService = new JavaLensApplication();
-        Field svcField = JavaLensApplication.class.getDeclaredField("jdtService");
-        svcField.setAccessible(true);
-        svcField.set(appWithService, loadedService);
-
-        ToolRegistry rWithService = new ToolRegistry();
-        registryField.set(appWithService, rWithService);
-        registerTools.invoke(appWithService);
-        registryWithService = rWithService;
+        builtWithService = TestRegistryBuilder.build(loadedService);
+        registryWithService = builtWithService.registry();
 
         objectMapper = new ObjectMapper();
     }
@@ -164,6 +151,7 @@ class ToolContractParityTest {
     @Test
     @DisplayName("Every tool's execute() returns a well-formed response with no service loaded")
     void everyTool_executeWithoutService_returnsErrorResponse() {
+        built.bind();
         Set<String> threw = new TreeSet<>();
         Set<String> nullResp = new TreeSet<>();
         Set<String> successWithoutService = new TreeSet<>();
@@ -212,6 +200,7 @@ class ToolContractParityTest {
     @Test
     @DisplayName("Every tool can be invoked against simple-maven with a known-valid input and produces a well-formed response")
     void everyTool_validInvocation_producesWellFormedResponse() {
+        builtWithService.bind();
         Map<String, ObjectNode> inputs = buildValidInputs();
         Set<String> notInRegistry = new TreeSet<>(inputs.keySet());
         for (String name : registryWithService.getToolNames()) notInRegistry.remove(name);
@@ -270,6 +259,7 @@ class ToolContractParityTest {
     @Test
     @DisplayName("Tools that document specific output concepts in OUTPUT: line actually emit those concepts on success")
     void everyTool_documentedOutputConceptsAppear() {
+        builtWithService.bind();
         // Concept-to-field map: words/phrases that may appear in a tool's OUTPUT: line,
         // mapped to the field name(s) we expect in a successful response. This is the
         // doc/impl parity check the plan calls for. The map is intentionally specific —
